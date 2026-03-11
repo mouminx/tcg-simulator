@@ -62,11 +62,16 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   }
 
   // ── Touch tilt: hold 180ms then drag to tilt ────────────────────────────────
+  // If the finger moves significantly before the timer fires it's a scroll — cancel tilt.
   function handleTouchStart(e) {
     clearTimeout(touchState.current.timer);
     touchState.current.active = false;
+    touchState.current.scrolling = false;
+    const t = e.touches[0];
+    touchState.current.startX = t.clientX;
+    touchState.current.startY = t.clientY;
     touchState.current.timer = setTimeout(() => {
-      touchState.current.active = true;
+      if (!touchState.current.scrolling) touchState.current.active = true;
     }, 180);
   }
 
@@ -84,10 +89,19 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     const el = wrapRef.current;
     if (!el) return;
     function onTouchMove(e) {
-      if (!touchState.current.active) return;
+      const t = e.touches[0];
+      if (!touchState.current.active) {
+        // Before tilt activates: detect scroll intent by significant movement
+        const dx = Math.abs(t.clientX - touchState.current.startX);
+        const dy = Math.abs(t.clientY - touchState.current.startY);
+        if (dx > 6 || dy > 6) {
+          touchState.current.scrolling = true;
+          clearTimeout(touchState.current.timer);
+        }
+        return;
+      }
       e.preventDefault();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      const t = e.touches[0];
       rafRef.current = requestAnimationFrame(() => applyTilt(t.clientX, t.clientY));
     }
     el.addEventListener('touchmove', onTouchMove, { passive: false });

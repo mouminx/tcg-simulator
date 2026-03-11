@@ -2110,6 +2110,7 @@
   width: 220px;
   height: 320px;
   cursor: default;
+  touch-action: none; /* let JS handle all touch so tilt doesn't fight scroll */
 }
 
 .card-face-wrapper.viewer-card .card-rarity  { font-size: 0.9rem; }
@@ -4201,5 +4202,25 @@
   .unpack-pack-row {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── Card viewer ── */
+  .card-viewer-modal {
+    flex-direction: column;
+    padding: 2rem 1.25rem 1.5rem;
+    gap: 1.25rem;
+    width: calc(100vw - 2rem);
+    max-width: 340px;
+  }
+  .card-face-wrapper.viewer-card {
+    width: 160px;
+    height: 232px;
+  }
+  .card-face-wrapper.viewer-card .card-rarity { font-size: 0.75rem; }
+  .card-face-wrapper.viewer-card .card-name   { font-size: 1.05rem; }
+  .card-face-wrapper.viewer-card .card-value  { font-size: 0.9rem; }
+  .card-viewer-panel {
+    min-width: 0;
+    width: 100%;
   }
 }
