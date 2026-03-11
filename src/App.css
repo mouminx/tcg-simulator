@@ -4116,3 +4116,86 @@
   background: color-mix(in srgb, var(--rc) 22%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--rc) 40%, transparent);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MOBILE  (≤ 640px)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* ── Global ── */
+  .main {
+    padding: 1rem;
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 0 1rem;
+  }
+  .header h1 {
+    font-size: 1.1rem;
+  }
+
+  /* ── Tab bar ── */
+  .tab-bar {
+    justify-content: flex-start;
+  }
+  .tab-bar button {
+    padding: 0 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  /* ── Collection ── */
+  .search-input {
+    width: 100%;
+    max-width: 100%;
+    flex: 1;
+  }
+  .filters-top-row {
+    flex-wrap: wrap;
+  }
+
+  /* ── Market ── */
+  .market-panels {
+    flex-direction: column;
+  }
+  .market-sparkline {
+    display: none;
+  }
+  .market-card-preview {
+    width: 44px;
+    height: 64px;
+  }
+  .market-card-preview .card-face-wrapper {
+    transform: scale(0.4);
+    transform-origin: top left;
+  }
+  .market-row-price {
+    min-width: 0;
+  }
+  .market-row {
+    gap: 0.5rem;
+    padding: 0.6rem;
+  }
+  .market-row-info {
+    min-width: 0;
+  }
+
+  /* ── Lab ── */
+  .lab-layout {
+    grid-template-columns: 1fr;
+  }
+  /* Move action panel above card picker on mobile */
+  .lab-panel--action {
+    order: -1;
+  }
+  .lab-card-grid {
+    padding: 20px 12px 40px 12px;
+    max-height: 320px;
+  }
+
+  /* ── Unpack ── */
+  .unpack-pack-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
