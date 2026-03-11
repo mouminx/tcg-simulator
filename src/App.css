@@ -4193,9 +4193,16 @@
   .lab-panel--action {
     order: -1;
   }
+  /* Clip card rows at panel edge; grid scrolls horizontally inside */
+  .lab-panel--picker {
+    overflow: hidden;
+  }
   .lab-card-grid {
     padding: 20px 12px 40px 12px;
     max-height: 320px;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* ── Unpack ── */
