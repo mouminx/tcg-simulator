@@ -4,13 +4,12 @@ import UnpackPage from './components/UnpackPage';
 import Collection from './components/Collection';
 import Market, { LEGENDARY_SLOT_PRICES, MYTHIC_SLOT_PRICES } from './components/Market';
 import Lab from './components/Lab';
-import FXEditor from './components/FXEditor';
 import { openPack, PACK_TYPES, STARTING_BALANCE, fmt, getGradeCost, getImprintCost, getCardSellValue } from './game/cards';
 import './App.css';
 
-const VIEWS = { SHOP: 'shop', UNPACK: 'unpack', COLLECTION: 'collection', MARKET: 'market', LAB: 'lab', FX: 'fx' };
-const TAB_ICONS = { shop: '⊙', unpack: '✦', collection: '⊞', market: '↗', lab: '⚗', fx: '✏' };
-const VIEW_ORDER = [VIEWS.SHOP, VIEWS.UNPACK, VIEWS.COLLECTION, VIEWS.LAB, VIEWS.MARKET, VIEWS.FX];
+const VIEWS = { SHOP: 'shop', UNPACK: 'unpack', COLLECTION: 'collection', MARKET: 'market', LAB: 'lab' };
+const TAB_ICONS = { shop: '⊙', unpack: '✦', collection: '⊞', market: '↗', lab: '⚗' };
+const VIEW_ORDER = [VIEWS.SHOP, VIEWS.UNPACK, VIEWS.COLLECTION, VIEWS.LAB, VIEWS.MARKET];
 
 const SAVE_VERSION = 6;
 const DEFAULT_MARKET = { legendarySlots: 0, mythicSlots: 0 };
@@ -167,41 +166,42 @@ export default function App() {
     <div className="app">
       <header className="header">
         <h1>TCG Simulator</h1>
-        <nav>
-          {VIEW_ORDER.map((v, i) => {
-            let label;
-            if (v === VIEWS.SHOP) label = 'Shop';
-            else if (v === VIEWS.UNPACK) label = packs.length > 0 ? `Open (${packs.length})` : 'Open';
-            else if (v === VIEWS.COLLECTION) label = `Collection (${collection.length})`;
-            else if (v === VIEWS.MARKET) label = 'Market';
-            else if (v === VIEWS.LAB) label = 'Lab';
-            else label = 'FX';
-            return (
-              <button
-                key={v}
-                ref={el => {
-                  tabRefs.current[i] = el;
-                  if (v === VIEWS.UNPACK) unpackBtnRef.current = el;
-                  if (v === VIEWS.COLLECTION) collectionBtnRef.current = el;
-                }}
-                className={view === v ? 'active' : ''}
-                onClick={() => setView(v)}
-                disabled={opening}
-              >
-                <span className="tab-icon">{TAB_ICONS[v]}</span>
-                {label}
-              </button>
-            );
-          })}
-          <div
-            className="nav-underline"
-            style={{ left: `${underline.left}px`, width: `${underline.width}px` }}
-          />
-        </nav>
         <div className={`balance${balancePumping ? ' balance--pumping' : ''}`}>
           💵 {fmt(displayBalance)}
         </div>
       </header>
+
+      <nav className="tab-bar">
+        {VIEW_ORDER.map((v, i) => {
+          let label;
+          if (v === VIEWS.SHOP) label = 'Shop';
+          else if (v === VIEWS.UNPACK) label = packs.length > 0 ? `Open (${packs.length})` : 'Open';
+          else if (v === VIEWS.COLLECTION) label = `Collection (${collection.length})`;
+          else if (v === VIEWS.MARKET) label = 'Market';
+          else if (v === VIEWS.LAB) label = 'Lab';
+          else label = 'Market';
+          return (
+            <button
+              key={v}
+              ref={el => {
+                tabRefs.current[i] = el;
+                if (v === VIEWS.UNPACK) unpackBtnRef.current = el;
+                if (v === VIEWS.COLLECTION) collectionBtnRef.current = el;
+              }}
+              className={view === v ? 'active' : ''}
+              onClick={() => setView(v)}
+              disabled={opening}
+            >
+              <span className="tab-icon">{TAB_ICONS[v]}</span>
+              {label}
+            </button>
+          );
+        })}
+        <div
+          className="nav-underline"
+          style={{ left: `${underline.left}px`, width: `${underline.width}px` }}
+        />
+      </nav>
 
       <main className="main">
         {view === VIEWS.SHOP && (
@@ -237,7 +237,6 @@ export default function App() {
             balance={balance}
           />
         )}
-        {view === VIEWS.FX && <FXEditor />}
       </main>
     </div>
   );

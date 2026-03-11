@@ -1,4 +1,4 @@
-import { forwardRef, useRef } from 'react';
+import { forwardRef, useRef, useEffect } from 'react';
 import { RARITIES, TIERS, TAGS, fmt } from '../game/cards';
 
 // Rarities that get the rainbow foil coating
@@ -12,8 +12,9 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   const tag  = card.tag ? TAGS[card.tag] : null;
 
   // Internal ref for mouse tracking; merged with the forwarded ref below
-  const wrapRef = useRef(null);
-  const rafRef  = useRef(null);
+  const wrapRef    = useRef(null);
+  const rafRef     = useRef(null);
+  const touchState = useRef({ active: false, timer: null });
 
   function mergeRef(el) {
     wrapRef.current = el;
@@ -21,26 +22,22 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     else if (ref) ref.current = el;
   }
 
-  function handleMouseMove(e) {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      const el = wrapRef.current;
-      if (!el) return;
-      const r  = el.getBoundingClientRect();
-      const cx = r.width  / 2;
-      const cy = r.height / 2;
-      const dx = e.clientX - r.left - cx;
-      const dy = e.clientY - r.top  - cy;
-      el.style.setProperty('--rx',  -(dy / cy) * 15);
-      el.style.setProperty('--ry',   (dx / cx) * 15);
-      el.style.setProperty('--mx',  ((e.clientX - r.left) / r.width)  * 100);
-      el.style.setProperty('--my',  ((e.clientY - r.top)  / r.height) * 100);
-      el.style.setProperty('--hyp', Math.min(Math.hypot(dx / cx, dy / cy), 1));
-    });
+  function applyTilt(clientX, clientY) {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r  = el.getBoundingClientRect();
+    const cx = r.width  / 2;
+    const cy = r.height / 2;
+    const dx = clientX - r.left - cx;
+    const dy = clientY - r.top  - cy;
+    el.style.setProperty('--rx',  -(dy / cy) * 15);
+    el.style.setProperty('--ry',   (dx / cx) * 15);
+    el.style.setProperty('--mx',  ((clientX - r.left) / r.width)  * 100);
+    el.style.setProperty('--my',  ((clientY - r.top)  / r.height) * 100);
+    el.style.setProperty('--hyp', Math.min(Math.hypot(dx / cx, dy / cy), 1));
   }
 
-  function handleMouseLeave() {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  function resetTilt() {
     const el = wrapRef.current;
     if (!el) return;
     el.classList.add('holo-spring');
@@ -50,9 +47,52 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     setTimeout(() => el?.classList.remove('holo-spring'), 600);
   }
 
+  function handleMouseMove(e) {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => applyTilt(e.clientX, e.clientY));
+  }
+
+  function handleMouseLeave() {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    resetTilt();
+  }
+
   function handleMouseEnter() {
     wrapRef.current?.classList.remove('holo-spring');
   }
+
+  // ── Touch tilt: hold 180ms then drag to tilt ────────────────────────────────
+  function handleTouchStart(e) {
+    clearTimeout(touchState.current.timer);
+    touchState.current.active = false;
+    touchState.current.timer = setTimeout(() => {
+      touchState.current.active = true;
+    }, 180);
+  }
+
+  function handleTouchEnd() {
+    clearTimeout(touchState.current.timer);
+    if (touchState.current.active) {
+      touchState.current.active = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      resetTilt();
+    }
+  }
+
+  // Must use addEventListener (not React synthetic) to pass { passive: false }
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    function onTouchMove(e) {
+      if (!touchState.current.active) return;
+      e.preventDefault();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      const t = e.touches[0];
+      rafRef.current = requestAnimationFrame(() => applyTilt(t.clientX, t.clientY));
+    }
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, []);
 
   const hasFoil    = holo && FOIL_RARITIES.has(card.rarity);
   const hasSparkle = holo && SPARKLE_RARITIES.has(card.rarity);
@@ -66,6 +106,8 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
       onMouseMove={holo ? handleMouseMove : undefined}
       onMouseLeave={holo ? handleMouseLeave : undefined}
       onMouseEnter={holo ? handleMouseEnter : undefined}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       <div className="card-face-inner">
         <div className="card-face-front" style={{ backgroundColor: rarity.color }}>
