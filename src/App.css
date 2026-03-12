@@ -4363,35 +4363,67 @@ html, body {
   }
 }
 
-/* ── Touch devices: disable hover-triggered animations ──────────────────────
-   @media (hover: none) targets devices where the primary pointer cannot hover
-   (phones, tablets). Disabling these prevents the card-twirl, tier shines,
-   and glow pulses from firing when a card is briefly touched.               */
+/* ── Touch / mobile devices: aggressive rendering optimizations ─────────────
+   @media (hover: none) matches phones and tablets (no pointer hover).       */
 @media (hover: none) {
-  /* Suppress card twirl + glow on touch */
+
+  /* 1. BACKGROUND — stop the liquid-bg animation (full-viewport repaint at
+        60 fps, biggest single heat source). Use a static gradient instead. */
+  .app {
+    animation: none;
+    background: linear-gradient(-45deg, #0f172a 0%, #1a0b40 40%, #0c1d3a 70%, #0a1f30 100%);
+    background-size: 100% 100%;
+  }
+
+  /* 2. COMPOSITING LAYERS — remove preserve-3d from card inner so each card
+        does NOT get its own GPU layer. backface-visibility: hidden on the
+        faces already hides the back face without needing a 3D context.      */
+  .card-face-inner {
+    transform-style: flat;
+  }
+
+  /* 3. TAG VFX — always-on animations using mix-blend-mode. These run
+        forever on every tagged card and force GPU compositing.              */
+  .tag-vfx { display: none; }
+
+  /* 4. PACK RAYS — tier-4/5 rays in pack opening spin forever.             */
+  .pack-opening .card-face-wrapper.tier-4::before,
+  .pack-opening .card-face-wrapper.tier-5::before { display: none; }
+
+  /* 5. Suppress card twirl + glow on touch */
   .card-face-wrapper:hover .card-face-inner { animation: none; }
   .card-face-wrapper:hover { filter: none; }
 
-  /* Suppress tier hover shines */
+  /* 6. Suppress tier hover shines */
   .card-face-wrapper.tier-3:hover .card-tier-overlay::after,
   .card-face-wrapper.tier-4:hover .card-tier-overlay::after,
   .card-face-wrapper.tier-5:hover .card-tier-overlay::after { animation: none; }
 
-  /* Suppress tier-5 border pulse */
+  /* 7. Suppress tier-5 border pulse */
   .card-face-wrapper.tier-5:hover .card-face-front,
   .card-face-wrapper.tier-5:hover .card-face-back { animation: none; }
 
-  /* Suppress pack-opening hover rays */
+  /* 8. Suppress pack-opening hover rays */
   .pack-opening .card-face-wrapper.tier-4:hover::before { opacity: 0; animation: none; }
   .pack-opening .card-face-wrapper.tier-5:hover::before { animation: none; }
 
-  /* Suppress unpack fan hover lift */
+  /* 9. Suppress unpack fan hover lift */
   .unpack-pack-item:hover {
     transform: rotate(var(--pack-angle, 0deg));
     filter: none;
   }
 
-  /* Keep sell overlay always visible on touch (no hover to reveal it) */
+  /* 10. Keep sell overlay always visible on touch (no hover to reveal it) */
   .card-face-wrapper .sell-overlay { opacity: 1; }
   .card-face-wrapper .card-value   { opacity: 1; }
+}
+
+/* ── Accessibility / low-power: respect OS reduced-motion preference ────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .app { animation: none; }
 }
