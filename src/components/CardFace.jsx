@@ -130,10 +130,9 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           <div className="card-tier-overlay" />
           {tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
 
-          {/* Header row: name left, value right */}
+          {/* Header row: name only — grade badge occupies top-right via absolute */}
           <div className="card-header-row">
             <span className="card-name">{card.name}</span>
-            <span className="card-value">{fmt(card.value)}</span>
           </div>
 
           {/* Art window — 3:2 */}
@@ -150,7 +149,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
               {rarity.name}
             </span>
             <span className="card-tag-pill card-tag-pill--tier">
-              T{TIERS[tier].name}
+              T{tier}
             </span>
             {tag && (
               <span className="card-tag-pill card-tag-pill--tag">
@@ -158,6 +157,9 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
               </span>
             )}
           </div>
+
+          {/* Value — below the tag pills */}
+          <div className="card-value">{fmt(card.value)}</div>
 
           {/* Holo layers — sit above art, below header/tags */}
           {hasFoil    && <div className="holo-foil"    aria-hidden="true" />}

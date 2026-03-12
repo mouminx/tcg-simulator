@@ -1005,6 +1005,8 @@
   background: rgba(0,0,0,0.25);
   position: relative;
   z-index: 1;
+  border: 1.5px solid var(--glow-color, rgba(255,255,255,0.3));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--glow-color, #fff) 40%, transparent);
 }
 
 .card-art-img {
@@ -1075,11 +1077,10 @@
   to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 
-.center-card .card-name        { font-size: 1rem; }
-.center-card .card-value       { font-size: 0.8rem; padding: 2px 5px; }
-.center-card .card-tag-pill    { font-size: 0.6rem; padding: 2px 6px; }
-.center-card .card-tags-row    { gap: 3px; margin-top: 2px; }
-.center-card .card-header-row  { margin-bottom: 2px; }
+.center-card .card-name       { font-size: 1rem; }
+.center-card .card-value      { font-size: 0.8rem; padding: 2px 5px; }
+.center-card .card-tag-pill   { font-size: 0.6rem; padding: 2px 6px; }
+.center-card .card-tags-row   { gap: 3px; }
 
 /* Queue row */
 .cards-queue {
@@ -1137,7 +1138,10 @@
   padding: 1px 3px;
   border-radius: 3px;
   flex-shrink: 0;
+  align-self: flex-start;
   transition: opacity 0.15s;
+  position: relative;
+  z-index: 8;
 }
 
 /* Flying pack animation */
@@ -2200,11 +2204,10 @@
   touch-action: none; /* let JS handle all touch so tilt doesn't fight scroll */
 }
 
-.card-face-wrapper.viewer-card .card-name       { font-size: 1.1rem; }
-.card-face-wrapper.viewer-card .card-value      { font-size: 0.85rem; padding: 2px 5px; }
-.card-face-wrapper.viewer-card .card-tag-pill   { font-size: 0.58rem; padding: 2px 6px; }
-.card-face-wrapper.viewer-card .card-tags-row   { gap: 3px; margin-top: 2px; }
-.card-face-wrapper.viewer-card .card-header-row { margin-bottom: 2px; }
+.card-face-wrapper.viewer-card .card-name      { font-size: 1.1rem; }
+.card-face-wrapper.viewer-card .card-value     { font-size: 0.85rem; padding: 2px 5px; }
+.card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.58rem; padding: 2px 6px; }
+.card-face-wrapper.viewer-card .card-tags-row  { gap: 3px; }
 
 /* Suppress the default hover glow — holo tilt handles the visual feedback */
 .card-face-wrapper.viewer-card:hover {
