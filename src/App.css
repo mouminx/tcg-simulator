@@ -4354,3 +4354,36 @@ html, body {
     width: 100%;
   }
 }
+
+/* ── Touch devices: disable hover-triggered animations ──────────────────────
+   @media (hover: none) targets devices where the primary pointer cannot hover
+   (phones, tablets). Disabling these prevents the card-twirl, tier shines,
+   and glow pulses from firing when a card is briefly touched.               */
+@media (hover: none) {
+  /* Suppress card twirl + glow on touch */
+  .card-face-wrapper:hover .card-face-inner { animation: none; }
+  .card-face-wrapper:hover { filter: none; }
+
+  /* Suppress tier hover shines */
+  .card-face-wrapper.tier-3:hover .card-tier-overlay::after,
+  .card-face-wrapper.tier-4:hover .card-tier-overlay::after,
+  .card-face-wrapper.tier-5:hover .card-tier-overlay::after { animation: none; }
+
+  /* Suppress tier-5 border pulse */
+  .card-face-wrapper.tier-5:hover .card-face-front,
+  .card-face-wrapper.tier-5:hover .card-face-back { animation: none; }
+
+  /* Suppress pack-opening hover rays */
+  .pack-opening .card-face-wrapper.tier-4:hover::before { opacity: 0; animation: none; }
+  .pack-opening .card-face-wrapper.tier-5:hover::before { animation: none; }
+
+  /* Suppress unpack fan hover lift */
+  .unpack-pack-item:hover {
+    transform: rotate(var(--pack-angle, 0deg));
+    filter: none;
+  }
+
+  /* Keep sell overlay always visible on touch (no hover to reveal it) */
+  .card-face-wrapper .sell-overlay { opacity: 1; }
+  .card-face-wrapper .card-value   { opacity: 1; }
+}

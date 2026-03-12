@@ -15,7 +15,7 @@ export default function Collection({ cards, onSell }) {
   const [priceMax, setPriceMax] = useState('');
   const [dragRect, setDragRect] = useState(null);
   const [viewingCard, setViewingCard] = useState(null);
-  const [visibleCount, setVisibleCount] = useState(60);
+  const [visibleCount, setVisibleCount] = useState(30);
 
   const lastClickedIdxRef = useRef(null);
   const isDraggingRef = useRef(false);
@@ -32,7 +32,7 @@ export default function Collection({ cards, onSell }) {
     const el = sentinelRef.current;
     if (!el) return;
     const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setVisibleCount(n => n + 60);
+      if (entry.isIntersecting) setVisibleCount(n => n + 30);
     }, { rootMargin: '200px' });
     obs.observe(el);
     return () => obs.disconnect();
@@ -49,7 +49,7 @@ export default function Collection({ cards, onSell }) {
   const filterKey = `${search}|${filterRarity}|${sortBy}`;
   if (prevFilterKey.current !== filterKey) {
     prevFilterKey.current = filterKey;
-    if (visibleCount !== 60) setVisibleCount(60);
+    if (visibleCount !== 30) setVisibleCount(30);
   }
 
   const filtered = [...cards]
