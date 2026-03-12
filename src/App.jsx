@@ -34,6 +34,7 @@ export default function App() {
   const [collection, setCollection] = useState(() => loadState().collection);
   const [packs, setPacks] = useState(() => loadState().packs ?? []);
   const [market, setMarket] = useState(() => ({ ...DEFAULT_MARKET, ...(loadState().market ?? {}) }));
+  const [packsOpened, setPacksOpened] = useState(() => loadState().packsOpened ?? 0);
   const [view, setView] = useState(VIEWS.SHOP);
   const [pendingCards, setPendingCards] = useState([]);
   const [pendingPackType, setPendingPackType] = useState(null);
@@ -67,8 +68,8 @@ export default function App() {
   }, [balance]);
 
   useEffect(() => {
-    saveState({ balance, collection, packs, market });
-  }, [balance, collection, packs, market]);
+    saveState({ balance, collection, packs, market, packsOpened });
+  }, [balance, collection, packs, market, packsOpened]);
 
   useEffect(() => {
     const tabIndex = VIEW_ORDER.indexOf(view);
@@ -86,10 +87,12 @@ export default function App() {
 
   function handleOpenPack(packId) {
     const pack = packs.find(p => p.id === packId);
-    const cards = openPack(pack?.packTypeId ?? 'iron');
+    const boosted = packsOpened < 3;
+    const cards = openPack(pack?.packTypeId ?? 'iron', boosted);
     setPacks(prev => prev.filter(p => p.id !== packId));
     setPendingCards(cards);
     setPendingPackType(PACK_TYPES[pack?.packTypeId] ?? PACK_TYPES.iron);
+    setPacksOpened(n => n + 1);
   }
 
   function handlePackDone() {

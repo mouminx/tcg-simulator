@@ -65,12 +65,14 @@ export default function PackCard({ size = 'md', packType }) {
     }, 180);
   }
 
-  function handleTouchEnd() {
+  function handleTouchEnd(e) {
     clearTimeout(touchState.current.timer);
     if (touchState.current.active) {
       touchState.current.active = false;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       resetTilt();
+      // Prevent the synthetic click so a tilt gesture doesn't also open the pack
+      e.preventDefault();
     }
   }
 

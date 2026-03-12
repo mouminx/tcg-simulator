@@ -298,11 +298,21 @@ function rollValue(rarity, tier, tag) {
 
 let nextId = Date.now();
 
-export function openPack(packTypeId = 'iron') {
+// Multiplier applied to legendary/mythic weights for the first 3 pack openings
+const NEW_PLAYER_BOOST = 10;
+
+export function openPack(packTypeId = 'iron', boosted = false) {
   const packType = PACK_TYPES[packTypeId] ?? PACK_TYPES.iron;
   const size = packType.cardCount ?? 5;
+  const weights = boosted
+    ? {
+        ...packType.rarityWeights,
+        legendary: (packType.rarityWeights.legendary || 1) * NEW_PLAYER_BOOST,
+        mythic:    (packType.rarityWeights.mythic    || 0.5) * NEW_PLAYER_BOOST,
+      }
+    : packType.rarityWeights;
   return Array.from({ length: size }, () => {
-    const rarity = rollRarity(packType.rarityWeights);
+    const rarity = rollRarity(weights);
     const tier   = rollTier(packType.tierWeights);
     const tag    = rollTag(packType.tagBoost ?? null);
     const names  = CARD_NAMES[rarity];
