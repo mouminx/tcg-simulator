@@ -1,6 +1,7 @@
-import { forwardRef, useRef, useEffect, useState } from 'react';
+import { forwardRef, useRef, useEffect } from 'react';
 import { RARITIES, TIERS, TAGS, fmt } from '../game/cards';
 import { CARD_ART, CARD_ART_POSITION } from '../game/cardArt';
+import { CARD_COLORS } from '../game/cardColors';
 
 // Rarities that get the rainbow foil coating
 const FOIL_RARITIES    = new Set(['uncommon', 'rare', 'epic', 'legendary', 'mythic']);
@@ -114,26 +115,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   const artSrc      = CARD_ART[card.name];
   const artPosition = CARD_ART_POSITION[card.name] ?? 'center center';
 
-  // Extract average art color for card background.
-  // Downscale to 8×8, average all pixels, darken to ~50% for a rich bg.
-  const [bgColor, setBgColor] = useState(null);
-  function handleArtLoad(e) {
-    try {
-      const img = e.currentTarget;
-      const canvas = document.createElement('canvas');
-      canvas.width = 8; canvas.height = 8;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, 8, 8);
-      const { data } = ctx.getImageData(0, 0, 8, 8);
-      let r = 0, g = 0, b = 0;
-      const n = data.length / 4;
-      for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; }
-      const darken = 0.5;
-      setBgColor(`rgb(${Math.round(r/n*darken)},${Math.round(g/n*darken)},${Math.round(b/n*darken)})`);
-    } catch { /* tainted canvas — fall back to rarity color */ }
-  }
-
-  const cardBg = bgColor ?? rarity.color;
+  const cardBg = CARD_COLORS[card.name] ?? rarity.color;
 
   return (
     <div
@@ -160,7 +142,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           {/* Art window — 3:2 */}
           <div className="card-art-window">
             {artSrc
-              ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" loading="lazy" decoding="async" style={{ objectPosition: artPosition }} onLoad={handleArtLoad} />
+              ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" loading="lazy" decoding="async" style={{ objectPosition: artPosition }} />
               : <div className="card-art-placeholder" />
             }
           </div>
