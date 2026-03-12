@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import PackCard from './PackCard';
 import { PACK_TYPES } from '../game/cards';
 
-const PACK_PAGE = 12;
+const PACK_PAGE = 10;
 
 export default function Packs({ packs, onOpenPack }) {
   const [visibleCount, setVisibleCount] = useState(PACK_PAGE);

@@ -1505,7 +1505,7 @@ html, body {
   /* Skip layout/paint/composite for off-screen cards.
      contain-intrinsic-size reserves the correct space while skipped. */
   content-visibility: auto;
-  contain-intrinsic-size: 0 160px;
+  contain-intrinsic-size: auto 160px;
 }
 
 /* Sell-out animation */

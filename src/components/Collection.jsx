@@ -15,7 +15,7 @@ export default function Collection({ cards, onSell }) {
   const [priceMax, setPriceMax] = useState('');
   const [dragRect, setDragRect] = useState(null);
   const [viewingCard, setViewingCard] = useState(null);
-  const [visibleCount, setVisibleCount] = useState(30);
+  const [visibleCount, setVisibleCount] = useState(20);
 
   const lastClickedIdxRef = useRef(null);
   const isDraggingRef = useRef(false);
@@ -35,23 +35,20 @@ export default function Collection({ cards, onSell }) {
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && !fired) {
         fired = true;
-        setVisibleCount(n => n + 30);
+        setVisibleCount(n => n + 20);
       }
-    }, { rootMargin: '200px' });
+    }, { rootMargin: '500px' });
     obs.observe(el);
     return () => obs.disconnect();
   }, [visibleCount]);
 
-  // Reset pagination when filters/sort change.
-  // Runs in an effect (not during render) to avoid the setState-during-render
-  // anti-pattern that was causing extra renders and scroll-position jumps.
+  // When filters/sort change, reset pagination and scroll to top.
+  // Without scrollTo(0,0), the old scroll position could land past the new
+  // shorter list and appear as an accidental snap-to-top.
   const filterKey = `${search}|${filterRarity}|${sortBy}`;
-  const prevFilterKey = useRef(filterKey);
   useEffect(() => {
-    if (prevFilterKey.current !== filterKey) {
-      prevFilterKey.current = filterKey;
-      setVisibleCount(30);
-    }
+    setVisibleCount(20);
+    window.scrollTo(0, 0);
   }, [filterKey]);
 
   // Compute counts + filtered early so handlers can close over them
