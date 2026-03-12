@@ -11,8 +11,12 @@ export default function Packs({ packs, onOpenPack }) {
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
+    let fired = false;
     const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setVisibleCount(n => n + PACK_PAGE);
+      if (entry.isIntersecting && !fired) {
+        fired = true;
+        setVisibleCount(n => n + PACK_PAGE);
+      }
     }, { rootMargin: '200px' });
     obs.observe(el);
     return () => obs.disconnect();

@@ -25,32 +25,40 @@ export default function Collection({ cards, onSell }) {
   const sentinelRef = useRef(null);
 
   // Auto-load more cards when sentinel scrolls into view.
-  // Depend on visibleCount so the observer disconnects + reconnects after each
-  // batch — this prevents it firing multiple times before React can re-render,
-  // which was causing cascade loads and a page crash.
+  // `fired` local var ensures the observer fires at most once per effect
+  // lifecycle, preventing the race where it fires multiple times before
+  // React can commit the new visibleCount and disconnect the old observer.
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
+    let fired = false;
     const obs = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setVisibleCount(n => n + 30);
+      if (entry.isIntersecting && !fired) {
+        fired = true;
+        setVisibleCount(n => n + 30);
+      }
     }, { rootMargin: '200px' });
     obs.observe(el);
     return () => obs.disconnect();
   }, [visibleCount]);
+
+  // Reset pagination when filters/sort change.
+  // Runs in an effect (not during render) to avoid the setState-during-render
+  // anti-pattern that was causing extra renders and scroll-position jumps.
+  const filterKey = `${search}|${filterRarity}|${sortBy}`;
+  const prevFilterKey = useRef(filterKey);
+  useEffect(() => {
+    if (prevFilterKey.current !== filterKey) {
+      prevFilterKey.current = filterKey;
+      setVisibleCount(30);
+    }
+  }, [filterKey]);
 
   // Compute counts + filtered early so handlers can close over them
   const counts = Object.keys(RARITIES).reduce((acc, r) => {
     acc[r] = cards.filter(c => c.rarity === r).length;
     return acc;
   }, {});
-
-  // Reset pagination when filters/sort change
-  const prevFilterKey = useRef(null);
-  const filterKey = `${search}|${filterRarity}|${sortBy}`;
-  if (prevFilterKey.current !== filterKey) {
-    prevFilterKey.current = filterKey;
-    if (visibleCount !== 30) setVisibleCount(30);
-  }
 
   const filtered = [...cards]
     .filter(c =>

@@ -1502,6 +1502,10 @@ html, body {
   position: relative;
   width: 110px;
   height: 160px;
+  /* Skip layout/paint/composite for off-screen cards.
+     contain-intrinsic-size reserves the correct space while skipped. */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 160px;
 }
 
 /* Sell-out animation */
