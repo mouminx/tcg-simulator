@@ -1,3 +1,9 @@
+/* Prevent momentum-scroll overscroll from snapping the page up and
+   accidentally registering a tap on the nav bar */
+html, body {
+  overscroll-behavior-y: none;
+}
+
 /* Layout */
 .app {
   min-height: 100vh;

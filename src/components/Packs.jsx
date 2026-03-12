@@ -16,7 +16,7 @@ export default function Packs({ packs, onOpenPack }) {
     }, { rootMargin: '200px' });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
+  }, [visibleCount]);
 
   if (packs.length === 0) {
     return (

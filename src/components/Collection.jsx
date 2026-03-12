@@ -24,7 +24,10 @@ export default function Collection({ cards, onSell }) {
   const cardSlotRefs = useRef(new Map()); // Map<cardId, DOMElement>
   const sentinelRef = useRef(null);
 
-  // Auto-load more cards when sentinel scrolls into view
+  // Auto-load more cards when sentinel scrolls into view.
+  // Depend on visibleCount so the observer disconnects + reconnects after each
+  // batch — this prevents it firing multiple times before React can re-render,
+  // which was causing cascade loads and a page crash.
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -33,7 +36,7 @@ export default function Collection({ cards, onSell }) {
     }, { rootMargin: '200px' });
     obs.observe(el);
     return () => obs.disconnect();
-  }, []);
+  }, [visibleCount]);
 
   // Compute counts + filtered early so handlers can close over them
   const counts = Object.keys(RARITIES).reduce((acc, r) => {
