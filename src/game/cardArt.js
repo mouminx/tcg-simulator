@@ -23,3 +23,18 @@ for (const [path, mod] of Object.entries(commonFiles)) {
 // }
 
 export const CARD_ART = artMap;
+
+/**
+ * Per-card object-position overrides for the 3:2 art window.
+ * Default is 'center center'. Add entries here to shift the crop focus.
+ * Values: CSS object-position e.g. 'center 70%' (shift toward bottom)
+ */
+export const CARD_ART_POSITION = {
+  'River Eel':   'center 80%',
+  'Reed Viper':  'center 80%',
+  'Fungal Mole': 'center 75%',
+  'Leaf Sprite': 'center 75%',
+  'Dusty Crow':  'center 80%',
+  'Hollow Owl':  'center 75%',
+  'Ash Lizard':  'center 80%',
+};

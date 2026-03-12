@@ -1,6 +1,6 @@
 import { forwardRef, useRef, useEffect } from 'react';
 import { RARITIES, TIERS, TAGS, fmt } from '../game/cards';
-import { CARD_ART } from '../game/cardArt';
+import { CARD_ART, CARD_ART_POSITION } from '../game/cardArt';
 
 // Rarities that get the rainbow foil coating
 const FOIL_RARITIES    = new Set(['uncommon', 'rare', 'epic', 'legendary', 'mythic']);
@@ -111,7 +111,8 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
 
   const hasFoil    = holo && FOIL_RARITIES.has(card.rarity);
   const hasSparkle = holo && SPARKLE_RARITIES.has(card.rarity);
-  const artSrc     = CARD_ART[card.name];
+  const artSrc      = CARD_ART[card.name];
+  const artPosition = CARD_ART_POSITION[card.name] ?? 'center center';
 
   return (
     <div
@@ -138,7 +139,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           {/* Art window — 3:2 */}
           <div className="card-art-window">
             {artSrc
-              ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" />
+              ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" style={{ objectPosition: artPosition }} />
               : <div className="card-art-placeholder" />
             }
           </div>
