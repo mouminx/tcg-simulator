@@ -22,8 +22,14 @@ for (const [path, mod] of Object.entries(uncommonFiles)) {
   artMap[name] = mod.default;
 }
 
+const rareFiles = import.meta.glob('../assets/cards/rare/*.png', { eager: true });
+for (const [path, mod] of Object.entries(rareFiles)) {
+  const name = titleCase(path.split('/').pop().replace('.png', ''));
+  artMap[name] = mod.default;
+}
+
 // Add more rarities here as you add folders:
-// const rareFiles = import.meta.glob('../assets/cards/rare/*.png', { eager: true });
+// const epicFiles = import.meta.glob('../assets/cards/epic/*.png', { eager: true });
 // ...
 
 export const CARD_ART = artMap;
