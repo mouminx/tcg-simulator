@@ -16,11 +16,15 @@ for (const [path, mod] of Object.entries(commonFiles)) {
   artMap[name] = mod.default;
 }
 
-// Uncomment as you add images for other rarities:
-// const uncommonFiles = import.meta.glob('../assets/cards/uncommon/*.png', { eager: true });
-// for (const [path, mod] of Object.entries(uncommonFiles)) {
-//   artMap[titleCase(path.split('/').pop().replace('.png', ''))] = mod.default;
-// }
+const uncommonFiles = import.meta.glob('../assets/cards/uncommon/*.png', { eager: true });
+for (const [path, mod] of Object.entries(uncommonFiles)) {
+  const name = titleCase(path.split('/').pop().replace('.png', ''));
+  artMap[name] = mod.default;
+}
+
+// Add more rarities here as you add folders:
+// const rareFiles = import.meta.glob('../assets/cards/rare/*.png', { eager: true });
+// ...
 
 export const CARD_ART = artMap;
 
@@ -30,11 +34,20 @@ export const CARD_ART = artMap;
  * Values: CSS object-position e.g. 'center 70%' (shift toward bottom)
  */
 export const CARD_ART_POSITION = {
-  'River Eel':   'center 20%',
-  'Reed Viper':  'center 20%',
+  'River Eel': 'center 10%',
+  'Reed Viper': 'center 20%',
   'Fungal Mole': 'center 25%',
   'Leaf Sprite': 'center 25%',
-  'Dusty Crow':  'center 20%',
-  'Hollow Owl':  'center 25%',
-  'Ash Lizard':  'center 20%',
+  'Dusty Crow': 'center 20%',
+  'Hollow Owl': 'center 25%',
+  'Ash Lizard': 'center 20%',
+  'Pebble Ram': 'center 20%',
+  'Gust Robin': 'center 20%',
+  'Pale Moth': 'center 20%',
+  'Moss Turtle': 'center 35%',
+  'Cinderfly': 'center 20%',
+  'Tidal Shrimp': 'center 40%',
+  'Dusk Sparrow': 'center 35%',
+  'Snag Heron': 'center 10%',
+  'Cobble Imp': 'center 35%',
 };
