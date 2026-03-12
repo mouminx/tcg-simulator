@@ -102,6 +102,12 @@ const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionB
     if (nextIdx >= cards.length) setPhase(PHASES.DONE);
   }
 
+  function handleSkip() {
+    setQueuedCards(cards);
+    setCurrentIdx(cards.length);
+    setPhase(PHASES.DONE);
+  }
+
   function handleCollect() {
     setCollecting(true);
     const target = collectionBtnRef?.current;
@@ -185,6 +191,12 @@ const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionB
 
       {phase === PHASES.REVEALING && (
         <p className="cards-remaining">{cardsLeft} remaining</p>
+      )}
+
+      {phase !== PHASES.DONE && (
+        <button className="skip-anim-btn" onClick={handleSkip}>
+          Skip
+        </button>
       )}
     </div>
   );

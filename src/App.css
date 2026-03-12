@@ -1994,6 +1994,10 @@
 }
 
 /* ── Collect button (inside opening-stage) ── */
+.skip-anim-btn {
+  display: none; /* shown only on mobile via media query */
+}
+
 .collect-btn {
   padding: 0.75rem 2rem;
   font-size: 1rem;
@@ -4129,6 +4133,20 @@
    MOBILE  (≤ 640px)
    ═══════════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 640px) {
+
+  /* ── Skip animation button (mobile only) ── */
+  .skip-anim-btn {
+    display: block;
+    margin: 0.75rem auto 0;
+    padding: 0.5rem 1.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #94a3b8;
+    background: transparent;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    cursor: pointer;
+  }
 
   /* ── Global ── */
   .main {
