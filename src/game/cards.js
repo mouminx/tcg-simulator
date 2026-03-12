@@ -1,10 +1,10 @@
 export const RARITIES = {
   common:    { name: 'Common',    color: '#9ca3af', weight: 55, valueMin: 0.10,  valueMax: 1.00  },
-  uncommon:  { name: 'Uncommon',  color: '#22c55e', weight: 25, valueMin: 1.00,  valueMax: 4.00  },
-  rare:      { name: 'Rare',      color: '#3b82f6', weight: 12, valueMin: 4.00,  valueMax: 18.00 },
-  epic:      { name: 'Epic',      color: '#a855f7', weight: 5,  valueMin: 18.00, valueMax: 65.00 },
-  legendary: { name: 'Legendary', color: '#eab308', weight: 1,  valueMin: 65.00, valueMax: 200.00 },
-  mythic:    { name: 'Mythic',    color: '#ef4444', weight: 0.5,  valueMin: 200.00, valueMax: 500.00 },
+  uncommon:  { name: 'Uncommon',  color: '#17d968', weight: 25, valueMin: 1.00,  valueMax: 4.00  },
+  rare:      { name: 'Rare',      color: '#1f7dff', weight: 12, valueMin: 4.00,  valueMax: 18.00 },
+  epic:      { name: 'Epic',      color: '#b04bff', weight: 5,  valueMin: 18.00, valueMax: 65.00 },
+  legendary: { name: 'Legendary', color: '#ffb200', weight: 1,  valueMin: 65.00, valueMax: 200.00 },
+  mythic:    { name: 'Mythic',    color: '#ff4268', weight: 0.5,  valueMin: 200.00, valueMax: 500.00 },
 };
 
 // Tier I–V: progressively rarer visual effects + value multiplier

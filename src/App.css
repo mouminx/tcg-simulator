@@ -934,6 +934,8 @@ html, body {
 
 /* ── 3D Card Face ── */
 .card-face-wrapper {
+  --card-detail-scale: 0.64;
+  --card-tag-scale: 0.72;
   width: 110px;
   height: 160px;
   perspective: 600px;
@@ -998,8 +1000,11 @@ html, body {
 .card-face-front {
   align-items: stretch;
   justify-content: flex-start;
-  padding: 14px 6px 5px;
-  gap: 3px;
+  padding:
+    calc(14px * var(--card-detail-scale))
+    calc(6px * var(--card-detail-scale))
+    calc(5px * var(--card-detail-scale));
+  gap: calc(3px * var(--card-detail-scale));
 }
 
 .card-face-back {
@@ -1014,7 +1019,7 @@ html, body {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 3px;
+  gap: calc(3px * var(--card-detail-scale));
   flex-shrink: 0;
   position: relative;
   z-index: 8;
@@ -1026,7 +1031,7 @@ html, body {
 .card-art-window {
   width: 90%;
   align-self: center;
-  margin-top: 3px;
+  margin-top: calc(3px * var(--card-detail-scale));
   aspect-ratio: 3 / 2.2;
   border-radius: 0;
   overflow: hidden;
@@ -1068,42 +1073,130 @@ html, body {
 /* Tag pills row */
 .card-tags-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
+  flex-wrap: nowrap;
+  gap: calc(3px * var(--card-tag-scale));
   flex-shrink: 0;
   position: relative;
+  isolation: isolate;
   z-index: 8;
   width: 90%;
+  box-sizing: border-box;
   align-self: center;
+  margin-top: calc(5px * var(--card-tag-scale));
+  padding:
+    calc(4px * var(--card-tag-scale))
+    calc(2px * var(--card-tag-scale))
+    calc(4px * var(--card-tag-scale));
+}
+
+.card-tags-row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 42%, rgba(0,0,0,0.12) 100%),
+    linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 22%, rgba(0,0,0,0.14) 100%),
+    rgba(8, 12, 18, 0.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(0,0,0,0.34),
+    0 1px 4px rgba(0,0,0,0.22);
+  z-index: -1;
 }
 
 .card-tag-pill {
-  font-size: 0.42rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  --pill-base: rgba(22, 28, 38, 0.82);
+  --pill-base-hi: rgba(255,255,255,0.12);
+  --pill-base-deep: rgba(0,0,0,0.16);
+  --pill-accent: transparent;
+  font-size: calc(0.48rem * var(--card-tag-scale));
+  font-weight: 900;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(16px * var(--card-tag-scale));
+  padding:
+    calc(1px * var(--card-tag-scale))
+    calc(8px * var(--card-tag-scale))
+    0;
+  position: relative;
+  overflow: visible;
+  border-radius: 0;
   color: #fff;
-  line-height: 1.6;
+  line-height: 1.25;
   white-space: nowrap;
-  background: rgba(255,255,255,0.18);
+  text-shadow: 0 1px 1px rgba(0,0,0,0.32);
 }
 
-/* Rarity pill uses rarity color via inline style */
-/* Tier pill — neutral dark */
-.card-tag-pill--tier {
-  background: rgba(0,0,0,0.35);
+.card-tag-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1px;
+  padding: calc(1.5px * var(--card-tag-scale));
+  background: linear-gradient(145deg, #fff5a0 0%, #f0c040 25%, #c88010 65%, #7a4e00 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.34));
+  transform: skewX(-20deg);
+  transform-origin: center;
+  z-index: 0;
+  pointer-events: none;
 }
 
-/* Special tag pill (holo, foil etc) — slightly brighter */
+.card-tag-pill::after {
+  content: '';
+  position: absolute;
+  inset: calc(1.5px * var(--card-tag-scale));
+  border-radius: 1px;
+  background-color: var(--pill-base);
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0.12) 18%, rgba(0,0,0,0.12) 60%, rgba(255,255,255,0.05) 100%),
+    linear-gradient(115deg, transparent 0 24%, rgba(255,255,255,0.24) 38%, rgba(255,255,255,0.06) 48%, transparent 62%),
+    linear-gradient(135deg, var(--pill-base-hi), var(--pill-base) 38%, var(--pill-base-deep) 100%),
+    linear-gradient(90deg, rgba(255,255,255,0.08), transparent 24%, rgba(0,0,0,0.16) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    inset 0 -1px 0 rgba(0,0,0,0.22),
+    0 0 6px rgba(240,192,64,0.14);
+  transform: skewX(-20deg);
+  transform-origin: center;
+  opacity: 1;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.card-tag-pill__label {
+  position: relative;
+  z-index: 2;
+  display: block;
+}
+
 .card-tag-pill--tag {
-  background: rgba(255,255,255,0.28);
+  --tag-color: #a78bfa;
+  color: #f8fafc;
+  --pill-base: var(--tag-color);
+  --pill-base-hi: rgba(255,255,255,0.22);
+  --pill-base-deep: rgba(0,0,0,0.28);
+  padding-left: calc(8px * var(--card-tag-scale));
 }
+
+.card-tag-pill--tag-holo         { --tag-color: #59d9ff; color: #08202b; text-shadow: 0 1px 0 rgba(255,255,255,0.22); }
+.card-tag-pill--tag-foil         { --tag-color: #d8dee8; color: #1a2230; text-shadow: 0 1px 0 rgba(255,255,255,0.30); }
+.card-tag-pill--tag-reverse      { --tag-color: #ff87d2; color: #311020; }
+.card-tag-pill--tag-shadow       { --tag-color: #8d87ff; }
+.card-tag-pill--tag-nexus        { --tag-color: #b45cff; }
+.card-tag-pill--tag-prismatic    { --tag-color: #ff73f1; }
+.card-tag-pill--tag-firstEdition { --tag-color: #ffd84d; color: #362400; text-shadow: 0 1px 0 rgba(255,255,255,0.28); }
+
 
 /* Tier stars — in the header row, right side */
 .card-tier-stars {
-  font-size: 0.45rem;
+  font-size: calc(0.7rem * var(--card-detail-scale));
   letter-spacing: 0.08em;
   line-height: 1;
   flex-shrink: 0;
@@ -1125,6 +1218,8 @@ html, body {
 
 /* Center card — shown one at a time, click to queue */
 .center-card {
+  --card-detail-scale: 1.33;
+  --card-tag-scale: 1.25;
   position: absolute;
   width: 200px;
   height: 300px;
@@ -1135,11 +1230,6 @@ html, body {
   from { opacity: 0; transform: scale(0.65) translateY(24px); }
   to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
-
-.center-card .card-name       { font-size: 1rem; }
-.center-card .card-value      { font-size: 0.8rem; padding: 2px 5px; }
-.center-card .card-tag-pill   { font-size: 0.6rem; padding: 2px 6px; }
-.center-card .card-tags-row   { gap: 3px; }
 
 /* Queue row */
 .cards-queue {
@@ -1177,7 +1267,7 @@ html, body {
 }
 
 .card-name {
-  font-size: 0.48rem;
+  font-size: calc(0.75rem * var(--card-detail-scale));
   font-weight: 700;
   color: #fff;
   text-align: left;
@@ -2260,17 +2350,13 @@ html, body {
 
 /* Large card in viewer — overrides the default 110×160 size */
 .card-face-wrapper.viewer-card {
+  --card-detail-scale: 1;
+  --card-tag-scale: 1;
   width: 220px;
   height: 320px;
   cursor: default;
   touch-action: none; /* let JS handle all touch so tilt doesn't fight scroll */
 }
-
-.card-face-wrapper.viewer-card .card-name      { font-size: 0.75rem; }
-.card-face-wrapper.viewer-card .card-value     { font-size: 0.72rem; padding: 2px 5px; }
-.card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.48rem; padding: 2px 6px; }
-.card-face-wrapper.viewer-card .card-tier-stars { font-size: 0.7rem; }
-.card-face-wrapper.viewer-card .card-tags-row  { gap: 3px; }
 
 /* Suppress the default hover glow — holo tilt handles the visual feedback */
 .card-face-wrapper.viewer-card:hover {
@@ -4389,6 +4475,8 @@ html, body {
     max-width: 420px;
   }
   .card-face-wrapper.viewer-card {
+    --card-detail-scale: 1.266;
+    --card-tag-scale: 1.292;
     width: 315px;
     height: 456px;
   }
@@ -4396,10 +4484,6 @@ html, body {
     display: flex;
     justify-content: center;
   }
-  .card-face-wrapper.viewer-card .card-name      { font-size: 0.95rem; }
-  .card-face-wrapper.viewer-card .card-value     { font-size: 0.88rem; }
-  .card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.62rem; padding: 3px 8px; }
-  .card-face-wrapper.viewer-card .card-tier-stars { font-size: 1rem; }
   .card-viewer-panel {
     min-width: 0;
     width: 100%;

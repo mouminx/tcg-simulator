@@ -173,12 +173,15 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
 
           {/* Tag pills: rarity, tag */}
           <div className="card-tags-row">
-            <span className="card-tag-pill" style={{ backgroundColor: rarity.color }}>
-              {rarity.name}
+            <span
+              className={`card-tag-pill card-tag-pill--rarity card-tag-pill--rarity-${card.rarity}`}
+              style={{ '--pill-base': rarity.color }}
+            >
+              <span className="card-tag-pill__label">{rarity.name}</span>
             </span>
             {tag && (
-              <span className="card-tag-pill card-tag-pill--tag">
-                {tag.name}
+              <span className={`card-tag-pill card-tag-pill--tag card-tag-pill--tag-${card.tag}`}>
+                <span className="card-tag-pill__label">{tag.name}</span>
               </span>
             )}
           </div>

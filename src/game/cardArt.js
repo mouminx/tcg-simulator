@@ -28,9 +28,11 @@ for (const [path, mod] of Object.entries(rareFiles)) {
   artMap[name] = mod.default;
 }
 
-// Add more rarities here as you add folders:
-// const epicFiles = import.meta.glob('../assets/cards/epic/*.png', { eager: true });
-// ...
+const epicFiles = import.meta.glob('../assets/cards/epic/*.png', { eager: true });
+for (const [path, mod] of Object.entries(epicFiles)) {
+  const name = titleCase(path.split('/').pop().replace('.png', ''));
+  artMap[name] = mod.default;
+}
 
 export const CARD_ART = artMap;
 
