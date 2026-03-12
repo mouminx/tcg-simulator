@@ -15,6 +15,7 @@ export default function Collection({ cards, onSell }) {
   const [priceMax, setPriceMax] = useState('');
   const [dragRect, setDragRect] = useState(null);
   const [viewingCard, setViewingCard] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(60);
 
   const lastClickedIdxRef = useRef(null);
   const isDraggingRef = useRef(false);
@@ -27,6 +28,14 @@ export default function Collection({ cards, onSell }) {
     acc[r] = cards.filter(c => c.rarity === r).length;
     return acc;
   }, {});
+
+  // Reset pagination when filters/sort change
+  const prevFilterKey = useRef(null);
+  const filterKey = `${search}|${filterRarity}|${sortBy}`;
+  if (prevFilterKey.current !== filterKey) {
+    prevFilterKey.current = filterKey;
+    if (visibleCount !== 60) setVisibleCount(60);
+  }
 
   const filtered = [...cards]
     .filter(c =>
@@ -371,7 +380,7 @@ export default function Collection({ cards, onSell }) {
           className={`collection-grid${selectMode ? ' collection-grid--selecting' : ''}`}
           onMouseDown={handleGridMouseDown}
         >
-          {filtered.map((card, idx) => {
+          {filtered.slice(0, visibleCount).map((card, idx) => {
             const isSelling = sellingIds.has(card.id);
             const isSelected = selectedIds.has(card.id);
             const classes = [
@@ -403,6 +412,16 @@ export default function Collection({ cards, onSell }) {
               </div>
             );
           })}
+        </div>
+      )}
+      {filtered.length > visibleCount && (
+        <div className="load-more-row">
+          <button
+            className="load-more-btn"
+            onClick={() => setVisibleCount(n => n + 60)}
+          >
+            Show more ({filtered.length - visibleCount} remaining)
+          </button>
         </div>
       )}
       {viewingCard && (
