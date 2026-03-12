@@ -1,5 +1,6 @@
 import { forwardRef, useRef, useEffect } from 'react';
 import { RARITIES, TIERS, TAGS, fmt } from '../game/cards';
+import { CARD_ART } from '../game/cardArt';
 
 // Rarities that get the rainbow foil coating
 const FOIL_RARITIES    = new Set(['uncommon', 'rare', 'epic', 'legendary', 'mythic']);
@@ -110,6 +111,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
 
   const hasFoil    = holo && FOIL_RARITIES.has(card.rarity);
   const hasSparkle = holo && SPARKLE_RARITIES.has(card.rarity);
+  const artSrc     = CARD_ART[card.name];
 
   return (
     <div
@@ -126,19 +128,42 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
       <div className="card-face-inner">
         <div className="card-face-front" style={{ backgroundColor: rarity.color }}>
           <div className="card-tier-overlay" />
-          {/* tag visual effect layer — sits above tier-overlay, below text */}
           {tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
-          <div className="card-rarity">
-            {rarity.name}
-            {tier > 1 && <span className="card-tier-badge"> · Tier {TIERS[tier].name}</span>}
+
+          {/* Header row: name left, value right */}
+          <div className="card-header-row">
+            <span className="card-name">{card.name}</span>
+            <span className="card-value">{fmt(card.value)}</span>
           </div>
-          <div className="card-name">{card.name}</div>
-          <div className="card-value">{fmt(card.value)}</div>
-          {tag && <div className="card-tag-badge">{tag.name}</div>}
-          {/* holo layers sit above card art/text, below the sell overlay */}
+
+          {/* Art window — 3:2 */}
+          <div className="card-art-window">
+            {artSrc
+              ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" />
+              : <div className="card-art-placeholder" />
+            }
+          </div>
+
+          {/* Tag pills: rarity, tier, tag */}
+          <div className="card-tags-row">
+            <span className="card-tag-pill" style={{ backgroundColor: rarity.color }}>
+              {rarity.name}
+            </span>
+            <span className="card-tag-pill card-tag-pill--tier">
+              T{TIERS[tier].name}
+            </span>
+            {tag && (
+              <span className="card-tag-pill card-tag-pill--tag">
+                {tag.name}
+              </span>
+            )}
+          </div>
+
+          {/* Holo layers — sit above art, below header/tags */}
           {hasFoil    && <div className="holo-foil"    aria-hidden="true" />}
           {holo       && <div className="holo-glare"   aria-hidden="true" />}
           {hasSparkle && <div className="holo-sparkle" aria-hidden="true" />}
+
           {card.fuseScore != null && (
             <div className="card-fuse-badge">⊕{card.fuseScore}</div>
           )}

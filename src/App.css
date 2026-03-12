@@ -965,16 +965,93 @@
   -webkit-backface-visibility: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem;
   border: 2px solid rgba(255,255,255,0.2);
   box-shadow: 0 4px 18px rgba(0,0,0,0.4);
   overflow: hidden;
 }
 
+.card-face-front {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 6px 6px 5px;
+  gap: 3px;
+}
+
 .card-face-back {
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
   transform: rotateY(180deg);
+}
+
+/* Header row: card name left, value right */
+.card-header-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 8;
+}
+
+/* Art window — 3:2 aspect ratio */
+.card-art-window {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.25);
+  position: relative;
+  z-index: 1;
+}
+
+.card-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.card-art-placeholder {
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.15);
+}
+
+/* Tag pills row */
+.card-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 8;
+}
+
+.card-tag-pill {
+  font-size: 0.42rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #fff;
+  line-height: 1.6;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.18);
+}
+
+/* Rarity pill uses rarity color via inline style */
+/* Tier pill — neutral dark */
+.card-tag-pill--tier {
+  background: rgba(0,0,0,0.35);
+}
+
+/* Special tag pill (holo, foil etc) — slightly brighter */
+.card-tag-pill--tag {
+  background: rgba(255,255,255,0.28);
 }
 
 .card-back-text {
@@ -998,9 +1075,11 @@
   to   { opacity: 1; transform: scale(1)    translateY(0); }
 }
 
-.center-card .card-rarity { font-size: 0.85rem; }
-.center-card .card-name   { font-size: 1.2rem; }
-.center-card .card-value  { font-size: 1rem; margin-top: 0.6rem; }
+.center-card .card-name        { font-size: 1rem; }
+.center-card .card-value       { font-size: 0.8rem; padding: 2px 5px; }
+.center-card .card-tag-pill    { font-size: 0.6rem; padding: 2px 6px; }
+.center-card .card-tags-row    { gap: 3px; margin-top: 2px; }
+.center-card .card-header-row  { margin-bottom: 2px; }
 
 /* Queue row */
 .cards-queue {
@@ -1037,29 +1116,27 @@
   margin-top: 0.5rem;
 }
 
-.card-rarity {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: rgba(255,255,255,0.8);
-  margin-bottom: 0.5rem;
-}
-
 .card-name {
-  font-size: 0.95rem;
+  font-size: 0.58rem;
+  font-weight: 700;
   color: #fff;
-  text-align: center;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  text-align: left;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 .card-value {
-  font-size: 0.8rem;
+  font-size: 0.52rem;
   color: rgba(255,255,255,0.9);
   font-weight: 700;
-  margin-top: 0.4rem;
-  background: rgba(0,0,0,0.25);
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  background: rgba(0,0,0,0.3);
+  padding: 1px 3px;
+  border-radius: 3px;
+  flex-shrink: 0;
   transition: opacity 0.15s;
 }
 
@@ -1659,16 +1736,19 @@
   z-index: 0;
 }
 
-/* Push text content above all holo effects (foil z5, glare z6, sparkle z7) */
-.card-face-front .card-rarity,
-.card-face-front .card-name,
-.card-face-front .card-value,
-.card-face-front .card-tag-badge,
+/* Push text/UI above all holo effects (foil z5, glare z6, sparkle z7) */
+.card-face-front .card-header-row,
+.card-face-front .card-tags-row,
 .card-face-front .card-fuse-badge,
 .card-face-front .card-grade-badge,
 .card-face-front .sell-overlay {
   position: relative;
   z-index: 8;
+}
+/* Art window sits below holo so the shimmer plays over the image */
+.card-face-front .card-art-window {
+  position: relative;
+  z-index: 1;
 }
 
 .card-tier-overlay::before,
@@ -2120,9 +2200,11 @@
   touch-action: none; /* let JS handle all touch so tilt doesn't fight scroll */
 }
 
-.card-face-wrapper.viewer-card .card-rarity  { font-size: 0.9rem; }
-.card-face-wrapper.viewer-card .card-name    { font-size: 1.3rem; }
-.card-face-wrapper.viewer-card .card-value   { font-size: 1.05rem; margin-top: 0.7rem; }
+.card-face-wrapper.viewer-card .card-name       { font-size: 1.1rem; }
+.card-face-wrapper.viewer-card .card-value      { font-size: 0.85rem; padding: 2px 5px; }
+.card-face-wrapper.viewer-card .card-tag-pill   { font-size: 0.58rem; padding: 2px 6px; }
+.card-face-wrapper.viewer-card .card-tags-row   { gap: 3px; margin-top: 2px; }
+.card-face-wrapper.viewer-card .card-header-row { margin-bottom: 2px; }
 
 /* Suppress the default hover glow — holo tilt handles the visual feedback */
 .card-face-wrapper.viewer-card:hover {
@@ -4244,9 +4326,9 @@
     width: 160px;
     height: 232px;
   }
-  .card-face-wrapper.viewer-card .card-rarity { font-size: 0.75rem; }
-  .card-face-wrapper.viewer-card .card-name   { font-size: 1.05rem; }
-  .card-face-wrapper.viewer-card .card-value  { font-size: 0.9rem; }
+  .card-face-wrapper.viewer-card .card-name      { font-size: 0.9rem; }
+  .card-face-wrapper.viewer-card .card-value     { font-size: 0.72rem; }
+  .card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.5rem; padding: 1px 5px; }
   .card-viewer-panel {
     min-width: 0;
     width: 100%;
