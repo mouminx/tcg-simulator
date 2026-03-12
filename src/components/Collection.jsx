@@ -421,6 +421,7 @@ export default function Collection({ cards, onSell }) {
                 <CardFace
                   card={card}
                   className={classes}
+                  visualMode="compact"
                   onClick={selectMode
                     ? (e) => toggleSelect(card.id, idx, e)
                     : () => setViewingCard(card)

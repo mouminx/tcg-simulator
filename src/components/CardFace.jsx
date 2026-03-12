@@ -8,10 +8,11 @@ const FOIL_RARITIES    = new Set(['uncommon', 'rare', 'epic', 'legendary', 'myth
 // Rarities that also get sparkle dots on top
 const SPARKLE_RARITIES = new Set(['epic', 'legendary', 'mythic']);
 
-const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell, holo }, ref) {
+const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell, holo, visualMode = 'full' }, ref) {
   const rarity = RARITIES[card.rarity];
   const tier = card.tier ?? 1;
   const tag  = card.tag ? TAGS[card.tag] : null;
+  const compactVisuals = visualMode === 'compact';
 
   // Internal ref for mouse tracking; merged with the forwarded ref below
   const wrapRef    = useRef(null);
@@ -125,6 +126,10 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
 
   const cardBg = (() => {
     if (!Array.isArray(palette)) return palette ?? rarity.color;
+    if (compactVisuals) {
+      const [r0, g0, b0] = palette[0];
+      return `rgb(${r0},${g0},${b0})`;
+    }
     const [r0, g0, b0] = palette[0]; // darkest as solid base
     const spots = palette.map(([r, g, b], i) => {
       const [x, y] = SPOTS[i] ?? [50, 50];
@@ -141,7 +146,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   return (
     <div
       ref={mergeRef}
-      className={`card-face-wrapper tier-${tier} ${className || ''} ${holo ? `holo-active holo--${card.rarity}` : ''} ${card.tag ? `has-tag-${card.tag}` : ''}`}
+      className={`card-face-wrapper tier-${tier} ${compactVisuals ? 'card-face-wrapper--compact' : ''} ${className || ''} ${holo ? `holo-active holo--${card.rarity}` : ''} ${card.tag ? `has-tag-${card.tag}` : ''}`}
       style={{ '--glow-color': glowColor }}
       onClick={onClick}
       onMouseMove={holo ? handleMouseMove : undefined}
@@ -152,8 +157,8 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     >
       <div className="card-face-inner">
         <div className="card-face-front" style={{ background: cardBg }}>
-          <div className="card-tier-overlay" />
-          {tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
+          {!compactVisuals && <div className="card-tier-overlay" />}
+          {!compactVisuals && tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
 
           {/* Header row: name left, tier stars right */}
           <div className="card-header-row">
@@ -211,7 +216,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           )}
         </div>
         <div className="card-face-back" style={{ background: cardBg }}>
-          <div className="card-tier-overlay" />
+          {!compactVisuals && <div className="card-tier-overlay" />}
           <span className="card-back-text">TCG</span>
           {tier > 1 && <span className="card-back-tier">T{TIERS[tier].name}</span>}
         </div>
