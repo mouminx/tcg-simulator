@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import PackCard from './PackCard';
 import { PACK_TYPES } from '../game/cards';
 
 const PACK_PAGE = 20;
 
 export default function Packs({ packs, onOpenPack }) {
-  const [showAll, setShowAll] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PACK_PAGE);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setVisibleCount(n => n + PACK_PAGE);
+    }, { rootMargin: '200px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   if (packs.length === 0) {
     return (
@@ -16,8 +27,7 @@ export default function Packs({ packs, onOpenPack }) {
     );
   }
 
-  const visible = showAll ? packs : packs.slice(0, PACK_PAGE);
-  const hidden  = packs.length - visible.length;
+  const visible = packs.slice(0, visibleCount);
 
   return (
     <div className="packs-view">
@@ -35,13 +45,7 @@ export default function Packs({ packs, onOpenPack }) {
           );
         })}
       </div>
-      {hidden > 0 && (
-        <div className="load-more-row">
-          <button className="load-more-btn" onClick={() => setShowAll(true)}>
-            Show all ({hidden} more)
-          </button>
-        </div>
-      )}
+      {packs.length > visibleCount && <div ref={sentinelRef} style={{ height: 1 }} />}
     </div>
   );
 }

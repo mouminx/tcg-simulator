@@ -22,6 +22,18 @@ export default function Collection({ cards, onSell }) {
   const dragStartRef = useRef(null);
   const gridRef = useRef(null);
   const cardSlotRefs = useRef(new Map()); // Map<cardId, DOMElement>
+  const sentinelRef = useRef(null);
+
+  // Auto-load more cards when sentinel scrolls into view
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setVisibleCount(n => n + 60);
+    }, { rootMargin: '200px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   // Compute counts + filtered early so handlers can close over them
   const counts = Object.keys(RARITIES).reduce((acc, r) => {
@@ -415,14 +427,7 @@ export default function Collection({ cards, onSell }) {
         </div>
       )}
       {filtered.length > visibleCount && (
-        <div className="load-more-row">
-          <button
-            className="load-more-btn"
-            onClick={() => setVisibleCount(n => n + 60)}
-          >
-            Show more ({filtered.length - visibleCount} remaining)
-          </button>
-        </div>
+        <div ref={sentinelRef} style={{ height: 1 }} />
       )}
       {viewingCard && (
         <div className="card-viewer-overlay" onClick={closeViewer}>
