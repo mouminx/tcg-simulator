@@ -56,4 +56,9 @@ export const CARD_ART_POSITION = {
   'Dusk Sparrow': 'center 35%',
   'Snag Heron': 'center 10%',
   'Cobble Imp': 'center 35%',
+  'Blight Lynx': 'center 20%',
+  'Swamp Basilisk': 'center 25%',
+  'Glacial Stag': 'center 20%',
+  'Ashen Stag': 'center 20%',
+  'Gale Hound': 'center 20%',
 };

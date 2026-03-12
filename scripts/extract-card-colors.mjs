@@ -1,6 +1,7 @@
 /**
- * Generates src/game/cardColors.js — a static map of card name → darkened
- * average RGB color sampled from the card's artwork PNG.
+ * Generates src/game/cardColors.js — a static map of card name → 4-color
+ * palette extracted from the card's artwork PNG (vertical quarters, darkened).
+ * Used to create a linear-gradient card background.
  *
  * Run whenever you add new art:
  *   npm run extract-colors
@@ -11,13 +12,52 @@ import { join, basename } from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
 
-const ROOT       = fileURLToPath(new URL('..', import.meta.url));
-const CARDS_DIR  = join(ROOT, 'src/assets/cards');
-const OUT_FILE   = join(ROOT, 'src/game/cardColors.js');
-const DARKEN     = 0.50; // multiply avg to get a rich dark background
+const ROOT         = fileURLToPath(new URL('..', import.meta.url));
+const CARDS_DIR    = join(ROOT, 'src/assets/cards');
+const OUT_FILE     = join(ROOT, 'src/game/cardColors.js');
+const DARKEN       = 0.50;  // multiply to get rich dark background
+const PALETTE_SIZE = 7;     // number of gradient stops
+const K_ITER       = 12;    // k-means iterations
 
 function titleCase(str) {
   return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function sqDist([r1, g1, b1], [r2, g2, b2]) {
+  return (r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2;
+}
+
+function luminance([r, g, b]) {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function kMeans(pixels, k) {
+  // Seed centroids evenly across the pixel array for stable results
+  const step = Math.floor(pixels.length / k);
+  let centroids = Array.from({ length: k }, (_, i) => [...pixels[i * step]]);
+
+  for (let iter = 0; iter < K_ITER; iter++) {
+    const sums   = Array.from({ length: k }, () => [0, 0, 0]);
+    const counts = new Array(k).fill(0);
+
+    for (const p of pixels) {
+      let minD = Infinity, minI = 0;
+      for (let i = 0; i < k; i++) {
+        const d = sqDist(p, centroids[i]);
+        if (d < minD) { minD = d; minI = i; }
+      }
+      sums[minI][0] += p[0];
+      sums[minI][1] += p[1];
+      sums[minI][2] += p[2];
+      counts[minI]++;
+    }
+
+    centroids = centroids.map((c, i) =>
+      counts[i] ? sums[i].map(v => v / counts[i]) : c
+    );
+  }
+
+  return centroids;
 }
 
 const colors = {};
@@ -34,20 +74,29 @@ for (const rarity of rarities) {
     if (!file.toLowerCase().endsWith('.png')) continue;
     const name = titleCase(basename(file, '.png'));
     try {
+      // Sample at 16×16 to get enough pixels for clustering without being slow
       const { data } = await sharp(join(dir, file))
-        .resize(8, 8, { fit: 'fill' })
+        .resize(16, 16, { fit: 'fill' })
         .removeAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
 
-      let r = 0, g = 0, b = 0;
-      const n = data.length / 3;
+      const pixels = [];
       for (let i = 0; i < data.length; i += 3) {
-        r += data[i]; g += data[i + 1]; b += data[i + 2];
+        pixels.push([data[i], data[i + 1], data[i + 2]]);
       }
-      colors[name] =
-        `rgb(${Math.round(r/n*DARKEN)},${Math.round(g/n*DARKEN)},${Math.round(b/n*DARKEN)})`;
-      console.log(`  ${name.padEnd(24)} → ${colors[name]}`);
+
+      // Find PALETTE_SIZE dominant distinct colors via k-means, sort dark→light
+      const centroids = kMeans(pixels, PALETTE_SIZE);
+      centroids.sort((a, b) => luminance(a) - luminance(b));
+
+      const palette = centroids.map(([r, g, b]) => [
+        Math.round(r * DARKEN),
+        Math.round(g * DARKEN),
+        Math.round(b * DARKEN),
+      ]);
+      colors[name] = palette;
+      console.log(`  ${name.padEnd(24)} → ${palette.map(c => `rgb(${c})`).join(' | ')}`);
     } catch (err) {
       console.warn(`  skipped ${file}: ${err.message}`);
     }

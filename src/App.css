@@ -939,6 +939,25 @@ html, body {
   perspective: 600px;
   flex-shrink: 0;
   cursor: pointer;
+  position: relative;
+}
+
+/* 3D gradient border — lives on each face so it flips with the card.
+   Bright gold top-left → dark bronze bottom-right = raised frame look. */
+.card-face-front::after,
+.card-face-back::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  padding: 2px;
+  background: linear-gradient(145deg, #fff5a0 0%, #f0c040 30%, #c88010 65%, #7a4e00 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 20;
 }
 
 .card-face-wrapper:hover {
@@ -971,15 +990,15 @@ html, body {
   -webkit-backface-visibility: hidden;
   display: flex;
   flex-direction: column;
-  border: 2px solid #c8a43a;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.4), 0 0 8px rgba(200,164,58,0.25);
+  border: none;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.4), 0 0 8px rgba(240,192,64,0.25);
   overflow: hidden;
 }
 
 .card-face-front {
   align-items: stretch;
   justify-content: flex-start;
-  padding: 6px 6px 5px;
+  padding: 14px 6px 5px;
   gap: 3px;
 }
 
@@ -999,31 +1018,38 @@ html, body {
   flex-shrink: 0;
   position: relative;
   z-index: 8;
+  width: 90%;
+  align-self: center;
 }
 
 /* Art window — 3:2.2 aspect ratio (10% taller than original 3:2) */
 .card-art-window {
-  width: 100%;
+  width: 90%;
+  align-self: center;
+  margin-top: 3px;
   aspect-ratio: 3 / 2.2;
-  border-radius: 4px;
+  border-radius: 0;
   overflow: hidden;
   flex-shrink: 0;
   background: rgba(0,0,0,0.25);
   position: relative;
   z-index: 1;
-  border: 2px solid #c8a43a;
+  border: 3px solid transparent;
+  /* 3D raised frame: bright gold top-left → dark bronze bottom-right */
+  border-image: linear-gradient(
+    145deg,
+    #fff5a0 0%,
+    #f0c040 25%,
+    #c88010 65%,
+    #7a4e00 100%
+  ) 1;
   box-shadow:
-    /* inset bevel — top/left lighter (highlight), bottom/right darker (shadow) */
-    inset 0  1px 0 rgba(255,255,255,0.40),
-    inset 1px 0  0 rgba(255,255,255,0.22),
-    inset 0 -1px 0 rgba(0,0,0,0.55),
-    inset -1px 0  0 rgba(0,0,0,0.35),
-    /* outer raised edge — thin lighter rim on top-left */
-    -1px -1px 0 rgba(255,255,255,0.12),
-    /* outer drop shadow — adds lift */
-    1px 2px 5px rgba(0,0,0,0.55),
+    /* inset recession — darkens the inside edge of the frame */
+    inset 1px 1px 3px rgba(0,0,0,0.45),
+    /* outer lift shadow */
+    0 3px 8px rgba(0,0,0,0.65),
     /* ambient gold glow */
-    0 0 7px rgba(200,164,58,0.4);
+    0 0 10px rgba(240,192,64,0.35);
 }
 
 .card-art-img {
@@ -1047,6 +1073,8 @@ html, body {
   flex-shrink: 0;
   position: relative;
   z-index: 8;
+  width: 90%;
+  align-self: center;
 }
 
 .card-tag-pill {
@@ -1072,6 +1100,20 @@ html, body {
 .card-tag-pill--tag {
   background: rgba(255,255,255,0.28);
 }
+
+/* Tier stars — in the header row, right side */
+.card-tier-stars {
+  font-size: 0.45rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tier-stars--1 { color: #b87333; text-shadow: 0 0 3px rgba(184,115,51,0.6); }  /* copper  */
+.tier-stars--2 { color: #cd7f32; text-shadow: 0 0 3px rgba(205,127,50,0.6); }  /* bronze  */
+.tier-stars--3 { color: #c0c0c0; text-shadow: 0 0 3px rgba(192,192,192,0.6); } /* silver  */
+.tier-stars--4 { color: #e8e8f8; text-shadow: 0 0 4px rgba(232,232,248,0.8); } /* platinum */
+.tier-stars--5 { color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.8); }   /* gold    */
 
 .card-back-text {
   font-size: 1.4rem;
@@ -1135,7 +1177,7 @@ html, body {
 }
 
 .card-name {
-  font-size: 0.58rem;
+  font-size: 0.48rem;
   font-weight: 700;
   color: #fff;
   text-align: left;
@@ -1502,10 +1544,6 @@ html, body {
   position: relative;
   width: 110px;
   height: 160px;
-  /* Skip layout/paint/composite for off-screen cards.
-     contain-intrinsic-size reserves the correct space while skipped. */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 160px;
 }
 
 /* Sell-out animation */
@@ -1542,9 +1580,12 @@ html, body {
 }
 
 /* Selected card */
+.card-face-wrapper.selected .card-face-front::after,
+.card-face-wrapper.selected .card-face-back::after {
+  background: #6366f1;
+}
 .card-face-wrapper.selected .card-face-front,
 .card-face-wrapper.selected .card-face-back {
-  border-color: #6366f1;
   box-shadow: 0 0 0 2px #6366f1, 0 4px 18px rgba(0,0,0,0.4);
 }
 
@@ -2225,9 +2266,10 @@ html, body {
   touch-action: none; /* let JS handle all touch so tilt doesn't fight scroll */
 }
 
-.card-face-wrapper.viewer-card .card-name      { font-size: 1.1rem; }
-.card-face-wrapper.viewer-card .card-value     { font-size: 0.85rem; padding: 2px 5px; }
-.card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.58rem; padding: 2px 6px; }
+.card-face-wrapper.viewer-card .card-name      { font-size: 0.75rem; }
+.card-face-wrapper.viewer-card .card-value     { font-size: 0.72rem; padding: 2px 5px; }
+.card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.48rem; padding: 2px 6px; }
+.card-face-wrapper.viewer-card .card-tier-stars { font-size: 0.7rem; }
 .card-face-wrapper.viewer-card .card-tags-row  { gap: 3px; }
 
 /* Suppress the default hover glow — holo tilt handles the visual feedback */
@@ -4354,9 +4396,10 @@ html, body {
     display: flex;
     justify-content: center;
   }
-  .card-face-wrapper.viewer-card .card-name      { font-size: 1.5rem; }
-  .card-face-wrapper.viewer-card .card-value     { font-size: 1.1rem; }
-  .card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.78rem; padding: 3px 8px; }
+  .card-face-wrapper.viewer-card .card-name      { font-size: 0.95rem; }
+  .card-face-wrapper.viewer-card .card-value     { font-size: 0.88rem; }
+  .card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.62rem; padding: 3px 8px; }
+  .card-face-wrapper.viewer-card .card-tier-stars { font-size: 1rem; }
   .card-viewer-panel {
     min-width: 0;
     width: 100%;

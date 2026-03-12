@@ -115,13 +115,34 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   const artSrc      = CARD_ART[card.name];
   const artPosition = CARD_ART_POSITION[card.name] ?? 'center center';
 
-  const cardBg = CARD_COLORS[card.name] ?? rarity.color;
+  const palette = CARD_COLORS[card.name];
+
+  // Seven spots scattered across the card [x%, y%]
+  const SPOTS = [
+    [15, 18], [82, 12], [48, 35],
+    [22, 62], [76, 58], [10, 88], [88, 85],
+  ];
+
+  const cardBg = (() => {
+    if (!Array.isArray(palette)) return palette ?? rarity.color;
+    const [r0, g0, b0] = palette[0]; // darkest as solid base
+    const spots = palette.map(([r, g, b], i) => {
+      const [x, y] = SPOTS[i] ?? [50, 50];
+      return `radial-gradient(ellipse at ${x}% ${y}%, rgba(${r},${g},${b},0.85) 0%, transparent 68%)`;
+    });
+    return `${spots.join(', ')}, rgb(${r0},${g0},${b0})`;
+  })();
+
+  // Mid-tone palette color for glow (gradients can't be used in box-shadow)
+  const glowColor = Array.isArray(palette)
+    ? `rgb(${palette[2].join(',')})`
+    : (palette ?? rarity.color);
 
   return (
     <div
       ref={mergeRef}
       className={`card-face-wrapper tier-${tier} ${className || ''} ${holo ? `holo-active holo--${card.rarity}` : ''} ${card.tag ? `has-tag-${card.tag}` : ''}`}
-      style={{ '--glow-color': cardBg }}
+      style={{ '--glow-color': glowColor }}
       onClick={onClick}
       onMouseMove={holo ? handleMouseMove : undefined}
       onMouseLeave={holo ? handleMouseLeave : undefined}
@@ -130,13 +151,16 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
       onTouchEnd={handleTouchEnd}
     >
       <div className="card-face-inner">
-        <div className="card-face-front" style={{ backgroundColor: cardBg }}>
+        <div className="card-face-front" style={{ background: cardBg }}>
           <div className="card-tier-overlay" />
           {tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
 
-          {/* Header row: name only — grade badge occupies top-right via absolute */}
+          {/* Header row: name left, tier stars right */}
           <div className="card-header-row">
             <span className="card-name">{card.name}</span>
+            <span className={`card-tier-stars tier-stars--${tier}`}>
+              {'✦'.repeat(tier)}
+            </span>
           </div>
 
           {/* Art window — 3:2 */}
@@ -147,13 +171,10 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
             }
           </div>
 
-          {/* Tag pills: rarity, tier, tag */}
+          {/* Tag pills: rarity, tag */}
           <div className="card-tags-row">
             <span className="card-tag-pill" style={{ backgroundColor: rarity.color }}>
               {rarity.name}
-            </span>
-            <span className="card-tag-pill card-tag-pill--tier">
-              T{tier}
             </span>
             {tag && (
               <span className="card-tag-pill card-tag-pill--tag">
@@ -186,7 +207,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
             </div>
           )}
         </div>
-        <div className="card-face-back" style={{ backgroundColor: cardBg }}>
+        <div className="card-face-back" style={{ background: cardBg }}>
           <div className="card-tier-overlay" />
           <span className="card-back-text">TCG</span>
           {tier > 1 && <span className="card-back-tier">T{TIERS[tier].name}</span>}
