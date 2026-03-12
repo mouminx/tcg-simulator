@@ -1741,10 +1741,10 @@
 }
 
 /* Push text/UI above all holo effects (foil z5, glare z6, sparkle z7) */
+/* Note: card-grade-badge is excluded — it's position:absolute with its own z-index:10 */
 .card-face-front .card-header-row,
 .card-face-front .card-tags-row,
 .card-face-front .card-fuse-badge,
-.card-face-front .card-grade-badge,
 .card-face-front .sell-overlay {
   position: relative;
   z-index: 8;
