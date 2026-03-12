@@ -159,9 +159,6 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
             )}
           </div>
 
-          {/* Value — below the tag pills */}
-          <div className="card-value">{fmt(card.value)}</div>
-
           {/* Holo layers — sit above art, below header/tags */}
           {hasFoil    && <div className="holo-foil"    aria-hidden="true" />}
           {holo       && <div className="holo-glare"   aria-hidden="true" />}
