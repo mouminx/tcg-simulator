@@ -1659,13 +1659,16 @@
   z-index: 0;
 }
 
-/* Push text content above the overlay */
+/* Push text content above all holo effects (foil z5, glare z6, sparkle z7) */
 .card-face-front .card-rarity,
 .card-face-front .card-name,
 .card-face-front .card-value,
+.card-face-front .card-tag-badge,
+.card-face-front .card-fuse-badge,
+.card-face-front .card-grade-badge,
 .card-face-front .sell-overlay {
   position: relative;
-  z-index: 1;
+  z-index: 8;
 }
 
 .card-tier-overlay::before,
