@@ -30,11 +30,11 @@ export const CARD_ART = artMap;
  * Values: CSS object-position e.g. 'center 70%' (shift toward bottom)
  */
 export const CARD_ART_POSITION = {
-  'River Eel':   'center 80%',
-  'Reed Viper':  'center 80%',
-  'Fungal Mole': 'center 75%',
-  'Leaf Sprite': 'center 75%',
-  'Dusty Crow':  'center 80%',
-  'Hollow Owl':  'center 75%',
-  'Ash Lizard':  'center 80%',
+  'River Eel':   'center 20%',
+  'Reed Viper':  'center 20%',
+  'Fungal Mole': 'center 25%',
+  'Leaf Sprite': 'center 25%',
+  'Dusty Crow':  'center 20%',
+  'Hollow Owl':  'center 25%',
+  'Ash Lizard':  'center 20%',
 };
