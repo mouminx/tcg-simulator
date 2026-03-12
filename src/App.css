@@ -4347,16 +4347,16 @@ html, body {
     max-width: 420px;
   }
   .card-face-wrapper.viewer-card {
-    width: 210px;
-    height: 304px;
+    width: 315px;
+    height: 456px;
   }
   .card-viewer-card-wrap {
     display: flex;
     justify-content: center;
   }
-  .card-face-wrapper.viewer-card .card-name      { font-size: 1.1rem; }
-  .card-face-wrapper.viewer-card .card-value     { font-size: 0.8rem; }
-  .card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.56rem; padding: 2px 6px; }
+  .card-face-wrapper.viewer-card .card-name      { font-size: 1.5rem; }
+  .card-face-wrapper.viewer-card .card-value     { font-size: 1.1rem; }
+  .card-face-wrapper.viewer-card .card-tag-pill  { font-size: 0.78rem; padding: 3px 8px; }
   .card-viewer-panel {
     min-width: 0;
     width: 100%;
