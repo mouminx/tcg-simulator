@@ -4509,9 +4509,15 @@ html, body {
     transform-style: flat;
   }
 
-  /* 3. TAG VFX — always-on animations using mix-blend-mode. These run
-        forever on every tagged card and force GPU compositing.              */
-  .tag-vfx { display: none; }
+  /* 3. TAG VFX — disable them in grids/lists on touch devices, but keep
+        them for the dedicated viewer card where only one card is rendered. */
+  .card-face-wrapper:not(.viewer-card) .tag-vfx { display: none; }
+
+  /* Viewer card should still read as premium on touch even before tilt
+     activates, so keep a small baseline holo intensity. */
+  .card-face-wrapper.viewer-card.holo-active {
+    --hyp: 0.28;
+  }
 
   /* 4. PACK RAYS — tier-4/5 rays in pack opening spin forever.             */
   .pack-opening .card-face-wrapper.tier-4::before,
