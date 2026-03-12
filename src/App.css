@@ -1001,10 +1001,10 @@ html, body {
   z-index: 8;
 }
 
-/* Art window — 3:2 aspect ratio */
+/* Art window — 3:2.2 aspect ratio (10% taller than original 3:2) */
 .card-art-window {
   width: 100%;
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 3 / 2.2;
   border-radius: 4px;
   overflow: hidden;
   flex-shrink: 0;
