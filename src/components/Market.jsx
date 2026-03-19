@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import CardFace from './CardFace';
-import { RARITIES, TIERS, fmt } from '../game/cards';
+import { RARITIES, TIERS, fmtStr } from '../game/cards';
+import Gold from './Gold';
 
 // Slot price schedules — each successive slot costs more
 export const LEGENDARY_SLOT_PRICES = [1500, 3000, 5500, 9000, 14000];
@@ -82,7 +83,7 @@ function MarketRow({ card, priceMap, sellingIds, soldPrices, onSell }) {
   if (soldPrice !== undefined) {
     return (
       <div className="market-row market-row--sold" style={{ '--rarity-color': rarity.color }}>
-        <div className="market-sold-popup">+{fmt(soldPrice)}</div>
+        <div className="market-sold-popup">+<Gold amount={soldPrice} /></div>
       </div>
     );
   }
@@ -109,11 +110,11 @@ function MarketRow({ card, priceMap, sellingIds, soldPrices, onSell }) {
       </div>
 
       <div className="market-row-price">
-        <div className="market-current-price" style={{ color: trendColor }}>{fmt(currentPrice)}</div>
+        <div className="market-current-price" style={{ color: trendColor }}><Gold amount={currentPrice} /></div>
         <div className={`market-pct ${up ? 'market-pct--up' : 'market-pct--down'}`}>
           {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
         </div>
-        <div className="market-base-price">base {fmt(card.value)}</div>
+        <div className="market-base-price">base <Gold amount={card.value} /></div>
       </div>
 
       <button
@@ -143,11 +144,11 @@ function BuySlot({ price, isNext, canAfford, onClick, rarityColor }) {
         <>
           <span className="market-slot-icon">+</span>
           <span className="market-slot-label">
-            {canAfford ? `Buy Slot · ${fmt(price)}` : `${fmt(price)} to unlock`}
+            {canAfford ? `Buy Slot · ${fmtStr(price)}` : `${fmtStr(price)} to unlock`}
           </span>
         </>
       ) : (
-        <span className="market-slot-future-price">{fmt(price)}</span>
+        <span className="market-slot-future-price"><Gold amount={price} /></span>
       )}
     </div>
   );

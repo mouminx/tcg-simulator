@@ -1,47 +1,52 @@
-# TCG Simulator — Claude Code Context
+# Cards of Arcana — Claude Code Context
 
-React + Vite collectible card game simulator. No backend — all state in localStorage.
+React + Vite collectible card game simulator. No backend; persistent state lives in `localStorage`, with gameplay/state orchestration centralized in `src/App.jsx`.
 
 ---
 
 ## Stack
 
-- **React 18** + **Vite 5** — functional components throughout, no class components
-- **CSS only** — no CSS-in-JS, no Tailwind; all styles in `src/App.css` (~4,400 lines)
-- **No state library** — all state lives in `App.jsx`, passed down as props
-- **sharp** (devDep) — Node-only, used by `scripts/extract-card-colors.mjs`
+- React 18 + Vite 5
+- CSS-only styling in `src/App.css`
+- No external state library
+- `sharp` is used only by `scripts/extract-card-colors.mjs`
 
 ---
 
 ## Project Structure
 
-```
+```text
 src/
-  App.jsx              Main state, navigation, all handlers
-  App.css              All styles (4,400+ lines)
+  App.jsx
+  App.css
   game/
-    cards.js           Rarities, packs, tiers, tags, openPack(), fusion, grading, imprinting
-    cardArt.js         Vite glob image imports + CARD_ART_POSITION overrides
-    cardColors.js      Auto-generated: card name → pre-computed avg art color (run extract-colors)
+    cards.js
+    arcana.js
+    arcanaCrafting.js
+    arcanaAttunement.js
+    arcanaPackOpening.js
+    foundry.js
+    wilderness.js
+    cardArt.js
+    cardColors.js
   components/
-    CardFace.jsx       Card rendering: 3D tilt, holo, grade badge, sell overlay
-    Collection.jsx     Grid + infinite scroll, filters, lasso select, card viewer modal
-    Packs.jsx          Pack grid with infinite scroll
-    PackCard.jsx       Reusable pack display with 3D tilt
-    PackOpening.jsx    Sequential card reveal animation
-    UnpackPage.jsx     Pack carousel + opening flow orchestration
-    Shop.jsx           Pack shop with buy animations
-    Lab.jsx            Fusion, grading, imprinting tabs
-    FusionAnimation.jsx Orbital card → slam → result animation
-    Market.jsx         Legendary/mythic slot-based trading with live price ticks
-    FXEditor.jsx       Dev tool for designing card visual effects
-  assets/cards/
-    common/            38 PNGs
-    uncommon/          36 PNGs
-    rare/              35 PNGs
-    epic/              (empty, ready for future art)
-scripts/
-  extract-card-colors.mjs   Reads all PNGs → writes src/game/cardColors.js
+    CardFace.jsx
+    HoverCardPreview.jsx
+    CardPocket.jsx
+    ResourcePocket.jsx
+    ResourceQuantityPopover.jsx
+    Shop.jsx
+    UnpackPage.jsx
+    AttunementStage.jsx
+    PackOpening.jsx
+    Collection.jsx
+    Arcana.jsx
+    EssenceCard.jsx
+    ResourceCard.jsx
+    Foundry.jsx
+    Wilderness.jsx
+    Lab.jsx
+    Market.jsx
 ```
 
 ---
@@ -49,183 +54,582 @@ scripts/
 ## Key Commands
 
 ```bash
-npm run dev              # Local dev server
-npm run build            # Production build
-npm run extract-colors   # Regenerate cardColors.js after adding new art
+npm run dev
+npm run build
+npm run extract-colors
 ```
 
-**Run `extract-colors` whenever new PNG art is added to `src/assets/cards/`.**
+Class card art lives in `src/assets/class-cards/{classType}.png` and is loaded automatically.
 
 ---
 
-## Game Data (src/game/cards.js)
+## Navigation
 
-### Rarities
-| Rarity    | Weight | Value Range      | Color     |
-|-----------|--------|------------------|-----------|
-| common    | 55     | $0.10 – $1.00    | #6b7280   |
-| uncommon  | 25     | $1.00 – $4.00    | #22c55e   |
-| rare      | 12     | $4.00 – $18.00   | #3b82f6   |
-| epic      | 5      | $18.00 – $65.00  | #a855f7   |
-| legendary | 1      | $65.00 – $200.00 | #f59e0b   |
-| mythic    | 0.5    | $200.00 – $500.00| #ec4899   |
+Current view order:
 
-### Tiers
-| Tier | Weight | Value Multiplier |
-|------|--------|-----------------|
-| 1    | 45     | 1.0×            |
-| 2    | 28     | 1.4×            |
-| 3    | 16     | 2.0×            |
-| 4    | 8      | 3.2×            |
-| 5    | 3      | 5.5×            |
+```text
+Cards → Summon → Collection → Arcana → Foundry → Wilderness → Lab → Market
+```
 
-### Tags (14% base chance per card)
-| Tag          | Multiplier | Weight |
-|--------------|-----------|--------|
-| holo         | 1.45×     | 35     |
-| foil         | 1.25×     | 30     |
-| reverse      | 1.30×     | 15     |
-| shadow       | 1.80×     | 8      |
-| nexus        | 2.10×     | 6      |
-| prismatic    | 1.75×     | 4      |
-| firstEdition | 3.50×     | 2      |
+Notes:
 
-### Fusion Recipes
-| From → To         | Cards | Cost    | Base Rate |
-|-------------------|-------|---------|-----------|
-| common → uncommon | 3     | $3.00   | 75%       |
-| uncommon → rare   | 4     | $8.00   | 55%       |
-| rare → epic       | 5     | $20.00  | 30%       |
-| epic → legendary  | 6     | $60.00  | 18%       |
-| legendary → mythic| 7     | $150.00 | 6%        |
-
-FuseScore carries forward: each 1 fuseScore adds 1.5% success chance (cap 95%), 2% imprint success, and biases tag inheritance toward duplicates.
-
-### Grading
-Base costs (doubles per regrading attempt): common $3 / uncommon $8 / rare $20 / epic $50 / legendary $125 / mythic $300.
-Grade 1–10, bell-curve distribution. Floor increases with rarity.
-
-### Imprinting
-Adds a tag to an untagged card. Destroys card on failure.
-Base costs: holo $25 / foil $20 / reverse $22 / shadow $45 / nexus $65 / prismatic $55 / 1st Ed $130.
-Multiplied by rarity: ×1 / ×1.6 / ×2.8 / ×5 / ×9 / ×18.
-
-### Pack Types (23 total)
-- **Core Set** (5 cards): Dusk, Iron, Arcane, Void, Primordial
-- **Horizon Set** (10 cards): Dawn, Steel, Mystic, Abyss, Eternal
-- **Vault Collection** (20 cards): Bastion, Aurum, Nexus
-- **Tag Editions** (15 cards, 1.2× tag chance boost): Chromatic (holo), Sterling (foil), Mirror (reverse), Umbra (shadow), Rift (nexus), Spectrum (prismatic)
-
-Void/Abyss, Primordial/Eternal, and Vault packs have significantly reduced legendary/mythic weights compared to base packs.
-
-### New Player Boost
-First 3 pack openings get a 10× multiplier on legendary/mythic weights. Tracked via `packsOpened` in state + localStorage.
+- `Cards` is the nav label for `VIEWS.SHOP`
+- `Summon` is the pack opening tab (`VIEWS.UNPACK`)
+- `Foundry` and `Wilderness` are both production gameplay pages, not placeholders
+- Active navbar tabs emit glowing rune/glyph particles
 
 ---
 
-## App State & localStorage
+## Save State
 
-**localStorage key:** `tcg-sim` — version 6. Mismatched version discards save.
+**localStorage key:** `tcg-sim`
+**Current save version:** `10`
+
+Current persisted shape:
 
 ```js
 {
-  balance:      number,
-  collection:   Card[],        // { id, name, rarity, tier, tag, value, grade?, gradeAttempts?, fuseScore? }
-  packs:        Pack[],        // { id, packTypeId }
-  market:       { legendarySlots: 0–5, mythicSlots: 0–5 },
-  packsOpened:  number,
-  version:      6
+  balance,
+  collection,
+  packs,
+  market,
+  resources,
+  arcanaInventory,
+  oreInventory,
+  ingotInventory,
+  mineSlots,
+  mineSlotCapacity,
+  mineClaimQueue,
+  forgeCardSlots,
+  forgeOreSlots,
+  forgeFuelSlots,
+  ingotClaimQueue,
+  gatheredInventory,
+  processedInventory,
+  gatheringSlots,
+  gatheringClaimQueue,
+  pocket,
+  resourcePocket,
+  pocketCapacity,
+  packsOpened,
+  version,
+  pocketSystemVersion,
 }
 ```
 
-**Views:** SHOP → UNPACK → COLLECTION → LAB → MARKET
+Important details:
+
+- `pocket` stores full card objects, not IDs
+- `resourcePocket` is a separate left-side pocket for resource stacks
+- `resources` is keyed by element resource IDs covering all 9 elements × 4 tiers (36 keys total)
+- `forgeFuelSlots` is per-row forge fuel state; older shared `forgeFuel` saves are migrated into slot 1
+- `collection` remains the source of truth for cards; slotted/pocketed cards are still actual card objects mirrored from it
+- Save version 9 → 10 migration (`migrateCards`) assigns a random class and re-rolls affixes for legacy creature cards
 
 ---
 
-## Card Face Design
+## Card System
 
-Card dimensions: **110×160px** in collection grid, **220×320px** default viewer, **315×456px** mobile viewer.
+Core game rules live in `src/game/cards.js`.
 
-**Layout (top → bottom):**
-1. Card name (top-left, small, truncates)
-2. Art window (aspect-ratio 3/2.2, `loading="lazy"`)
-3. Tag pills row: rarity (colored), tier (T1/T2/T3...), special tag if present
-4. Grade badge — absolute top-right (color-coded: gem/high/mid/low)
-5. Fuse badge — absolute bottom-left (⊕N)
-6. Sell overlay — appears in sell mode
-7. Holo layers (foil/glare/sparkle) — only when `holo` prop is true
+Cards represent **human unit classes**, not creatures.
 
-**Card background:** Pre-computed average art color from `CARD_COLORS[card.name]` (darkened 50%). Falls back to `rarity.color`.
-**Borders:** Both the card outer border and art window frame use a consistent gold `#c8a43a`.
+### Unit Classes
 
-**3D tilt:** CSS variables `--rx/--ry/--mx/--my/--hyp` driven by mouse/touch position.
-Touch: 180ms hold activates tilt, 6px scroll movement cancels it.
+| Class       | Efficiency Affix         | Attunement Affix         | Luck Affix         |
+|-------------|--------------------------|--------------------------|---------------------|
+| Miner       | Mining Efficiency        | Mining Attunement        | Mining Luck         |
+| Blacksmith  | Smelting Efficiency      | Smelting Attunement      | Smelting Luck       |
+| Lumberjack  | Logging Efficiency       | Logging Attunement       | Logging Luck        |
+| Hunter      | Hunting Efficiency       | Hunting Attunement       | Hunting Luck        |
+| Merchant    | Trade Efficiency         | Trade Attunement         | Trade Luck          |
+| Warrior     | Combat Efficiency        | Combat Attunement        | Combat Luck         |
+| Mage        | Arcane Efficiency        | Arcane Attunement        | Arcane Luck         |
+| Bard        | Inspiration Efficiency   | Inspiration Attunement   | Inspiration Luck    |
 
-**Holo layers** (only when `holo=true`, i.e. card viewer):
-- Foil: uncommon+ — rainbow gradient overlay
-- Glare: all holo — diagonal shine
-- Sparkle: epic+ — dot pattern
+Class is stored as `card.classType` (lowercase id). `card.name` is the display name (e.g. `'Miner'`).
 
-**Tier overlays** (always visible, CSS-only):
-- T1: subtle diagonal stripes
-- T2: crosshatch
-- T3: diamonds + hover shine sweep
-- T4: glitter + hover rays
-- T5: dense glitter + pulsing glow border
+Art lives in `src/assets/class-cards/{classType}.png`, loaded via `CLASS_ART` in `cardArt.js`.
+
+### Rarities
+
+| Rarity    | Weight | Value Range      | Accent |
+|-----------|--------|------------------|--------|
+| common    | 55     | $0.10 – $1.00    | white  |
+| uncommon  | 25     | $1.00 – $4.00    | green  |
+| rare      | 12     | $4.00 – $18.00   | blue   |
+| epic      | 5      | $18.00 – $65.00  | purple |
+| legendary | 1      | $65.00 – $200.00 | gold   |
+| mythic    | 0.5    | $200.00 – $500.00| red    |
+
+### Tier
+
+- Tier drives affix count (tier 1 = 1 affix … tier 5 = 5 affixes)
+- Rarity drives affix value range
+
+### Tags
+
+Base tag chance is 14%.
+
+`holo`, `foil`, `reverse`, `shadow`, `nexus`, `prismatic`, `firstEdition`
+
+### Affixes
+
+Each card draws affixes without replacement from a combined pool:
+- **3 class-specific affixes** (always available): Efficiency / Attunement / Luck
+- **7 general affixes** (filtered by `minTier`):
+  - Coin Generation (tier 1+)
+  - Essence Attunement (tier 1+)
+  - Resource Generation (tier 1+)
+  - Production Speed (tier 1+)
+  - Craftsmanship (tier 2+)
+  - Overflow (tier 2+)
+  - Prosperity (tier 3+)
+
+Affix semantics:
+- **Efficiency** → speed of resource generation (e.g. `miningSpeed`, `gatheringSpeed`, `smeltingSpeed`)
+- **Attunement** → output quantity bonus
+- **Luck** → chance for bonus / rare items
+- **Craftsmanship** → chance to produce a higher-level material
+- **Overflow** → chance to double production output
+- **Prosperity** → stacking gold + resource generation bonus
+
+Rules:
+- no duplicate affixes on the same card
+- higher affixes roll as `★`, are bold/gold, 50% chance
+- regular affixes render with `◆`
+
+Affixes are passive until the card is placed into an active system (mine, forge, gathering, etc.).
+
+---
+
+## Card Presentation
+
+`src/components/CardFace.jsx` is the single card renderer.
+
+Current visual layout:
+
+- top: card name
+- art frame with tier gem/rarity tab treatment attached to the frame
+- metadata tag rail for special tags only (`holo`, `foil`, etc.)
+- affix text in the body area
+
+Current notable visual systems:
+
+- custom rarity gem SVGs loaded from `src/assets/rarity-gems`
+- custom tier star SVGs loaded from `src/assets/tier stars`
+- full viewer cards use rich gradients/VFX
+- compact cards use cheaper rendering for Collection/Pocket/slot UIs
+- collection hover uses magnify, not turn
+- pocketed/slotted/unavailable collection cards are greyed out and non-hoverable
+
+---
+
+## Page Header Convention
+
+All production pages (Foundry, Wilderness, Arcana) share the same header markup pattern:
+
+```jsx
+<div className="foundry-header [page]-header">
+  <h2 className="foundry-title">[Page Name]</h2>
+  <p className="foundry-subtitle">[Description]</p>
+</div>
+```
+
+- `foundry-header` → `text-align: center`
+- `foundry-title` → serif gradient heading
+- `foundry-subtitle` → muted serif subheading
+- Page-specific wrapper class (e.g. `arcana-page-header`, `wilderness-header`) adds only positional overrides (e.g. `position: relative` for absolutely-positioned action buttons)
+
+---
+
+## Pack Types
+
+Pack definitions live in `PACK_TYPES` in `cards.js`.
+
+Notable pack:
+
+### Blank Slate
+
+- Arcana-ready pack
+- can open normally or with Calling/Surge/Inscription attunement
+- drops normal cards plus element mote rewards
+
+Blank Slate element rewards:
+
+- rolls 2–3 distinct element types
+- each rolled element gives 1–3 motes (lowest tier)
+- rewards are persisted into `resources` keyed by `{elementId}_mote`
+- reward cards appear after the main card reveal, then fly to the Arcana tab on collect
+
+---
+
+## Arcana System
+
+Arcana is fully data-driven.
+
+Modules:
+
+- `src/game/arcana.js` — element/essence definitions, ELEMENT_TIERS, ID helpers, RING_RECIPES, ARCANA_ITEMS_BY_ID
+- `src/game/arcanaCrafting.js` — legacy crafting helpers (not used by ring craft)
+- `src/game/arcanaAttunement.js` — pure slot/loadout logic for pack opening attunement
+- `src/game/arcanaPackOpening.js` — Blank Slate orchestration + element mote rewards
+
+### Elements (9 total)
+
+| Element    | Family  |
+|------------|---------|
+| Smoldering | Fire    |
+| Jolting    | Storm   |
+| Flowing    | Water   |
+| Blooming   | Nature  |
+| Gusting    | Wind    |
+| Hollowing  | Void    |
+| Gleaming   | Light   |
+| Ascending  | Aether  |
+| Grounding  | Earth   |
+
+### Element Tiers
+
+Each element exists in 4 tiers:
+
+| Tier          | Resource ID format          |
+|---------------|-----------------------------|
+| Mote          | `{elementId}_mote`          |
+| Wisp          | `{elementId}_wisp`          |
+| Essence       | `{elementId}` (bare id)     |
+| Quintessence  | `{elementId}_quintessence`  |
+
+Helpers in `arcana.js`:
+- `getElementResourceId(elementId, tier)` → resource ID string
+- `parseElementResourceId(resourceId)` → `{ elementId, tier }`
+- `ELEMENT_TIERS` → `['mote', 'wisp', 'essence', 'quintessence']`
+
+`DEFAULT_RESOURCES` covers all 36 resource IDs (9 elements × 4 tiers), initialised to `0`.
+
+### Arcana Families
+
+- **Charms** → Calling slot → creature/type bias
+- **Catalysts** → Surge slot → tier bias
+- **Sigils** → Inscription slot → tag bias
+
+### Ring Crafting System
+
+The Arcana Station uses a Minecraft-style ring crafting UI defined in `Arcana.jsx`.
+
+**Layout** — a 5×5 grid with named grid areas:
+
+```
+.    .       outer-n   .       .
+.    card-NW inner-n   card-NE .
+outer-W inner-W center inner-E outer-E
+.    card-SW inner-s   card-SE .
+.    .       outer-s   .       .
+```
+
+- **Outer ring** (4 slots): element resource slots at N, E, S, W
+- **Inner ring** (4 slots): element resource slots at N, E, S, W
+- **Corner slots** (4 slots): mage class card slots at NW, NE, SW, SE
+- **Center cell**: idle hexagon glyph → matched item art + name when recipe is recognized
+
+**Recipes** — defined in `RING_RECIPES` in `arcana.js` (19 total):
+- Charms use N–S axis (outer-n/s + inner-n/s)
+- Catalysts use E–W axis (outer-e/w + inner-e/w)
+- Sigils use mixed patterns
+- Pattern matching is **family-based, tier-agnostic**: a smoldering mote satisfies `smoldering` in a slot
+- Match requires all pattern slots filled AND no extra slots filled
+
+**Crafting cost**: placing elements in the ring is the cost — 1 of each placed element resource is consumed on craft.
+
+**Mage requirement**: recipes with `mages: N` require N mage-class cards in the corner slots.
+
+**State in `Arcana.jsx`**:
+- `ringSlots` — `{ [slotKey]: elementId | null }` for element slots
+- `cardSlots` — `{ [cornerKey]: cardObject | null }` for mage card slots
+- `pickerSlot` — which element slot is currently open for picking
+
+**Handler in `App.jsx`**: `handleRingCraft(itemId, placedResourceIds)` — consumes resources and appends to `arcanaInventory`.
+
+### Arcana Inventory
+
+Right side of the Arcana page shows crafted items using the same square inventory-card style as Foundry/Wilderness.
+
+### EssenceCard Component
+
+`src/components/EssenceCard.jsx` renders a square resource card for any element at any tier.
+
+- Accepts `essence` (object from ESSENCES), `count`, `tier` (default `'essence'`), `className`
+- Art is loaded via `import.meta.glob` from four folders:
+  - `src/assets/elements/motes/`
+  - `src/assets/elements/wisps/`
+  - `src/assets/elements/essences/`
+  - `src/assets/elements/quintessences/`
+- Filename key is the element id (e.g. `blooming`). Note: `blooming quintessence.png` has a typo (`quitessence`) — handled via `/quin?tessence/` regex.
+
+---
+
+## Collection
+
+`src/components/Collection.jsx`
+
+Current behavior:
+
+- left sidebar filters
+- binder takes remaining content width
+- filters include search, sort, rarity, tier, affix, and card type/tag
+- rarity filters show gem SVGs
+- large viewer modal uses a bigger card scale
+- cards can be pocketed
+- cards unavailable because they are in Pocket / Foundry / Wilderness are visibly locked out
+
+---
+
+## Card Pocket
+
+`src/components/CardPocket.jsx`
+
+Persistent card pocket. Positioned bottom-right by default; bottom-left when `positionLeft={true}`.
+
+```jsx
+<CardPocket positionLeft={view === VIEWS.ARCANA} ... />
+```
+
+- `card-pocket--left` CSS class is added when `positionLeft` is true
+- On the Arcana view the pocket sits on the left so it doesn't overlap the ring workspace
+
+Current rules:
+
+- default capacity: 3
+- expandable with gold up to 10
+- stores full card objects
+- cards overlap side-by-side and raise on hover
+- remove `X` appears only on hover
+- slotted cards disappear from Pocket and become unavailable in Collection
+
+Purpose:
+
+- transport cards into Mine, Forge, Wilderness gathering, and other slot-based systems
+
+---
+
+## Resource Pocket
+
+`src/components/ResourcePocket.jsx`
+
+Mirrored left-side pocket for resource stacks.
+
+Current interaction:
+
+- right-clicking an inventory resource opens a quantity slider starting at half the available stack
+- confirm moves that amount into the resource pocket
+- right-clicking a resource already in the pocket opens a carry slider
+- confirming carry puts a floating resource stack on the cursor
+- valid targets currently include resource inventories, forge fuel slots, and forge ore slots
+- invalid placement returns the carried stack back to the pocket
+
+This is the main path for loading forge fuel and forge ores.
+
+Art maps use `import.meta.glob` with suffix stripping:
+- Ore files named `{name} ore.png` → key `{name}` (strips `" ore"`)
+- Ingot files named `{name}.png` → key `{name}`
+
+---
+
+## Foundry
+
+Gameplay helpers: `src/game/foundry.js`
+UI: `src/components/Foundry.jsx`
+
+### The Mine
+
+- cards from Pocket can be socketed into mine slots
+- default mine slot count is 1, expandable up to 5
+- mining starts automatically when a card is placed
+- base rate is 1 ore per minute
+- `Mining Speed` affix reduces cycle time
+- completed ore goes into `mineClaimQueue`
+- user presses `Collect` to move queued ore into `oreInventory`
+
+Ore rolling uses:
+
+- `ORE_WEIGHTS_BY_RARITY`
+- `ORE_WEIGHT_TIER_ADJUSTMENTS`
+
+### The Forge
+
+Current forge is row-based.
+
+Each row runs left-to-right as:
+
+- slotted card
+- individual fuel slot
+- materials block:
+  - two optional small ingredient slots
+  - one smaller square ore slot beneath them
+- smelting arrow
+- square ingot output card
+
+Rules:
+
+- forge card slots: 3
+- fuel is per-row, not shared
+- fuel must be loaded manually from the resource pocket
+- coal provides 9 smelts at 3 smelts/minute
+- each row tracks its own fuel charges and timer ring
+- fuel is removable
+- ore is loaded from the resource pocket
+- completed ingots go to `ingotClaimQueue`
+- `Collect` moves queued ingots into `ingotInventory`
+
+Current forge simplification:
+
+- the two extra ingredient slots are UI-only placeholders; they do not have gameplay logic yet
+
+### Foundry Inventories
+
+Right sidebar:
+
+- Ore Inventory
+- Ingot Inventory
+
+Both use square resource cards with full image fill.
+
+---
+
+## Wilderness
+
+Gameplay helpers: `src/game/wilderness.js`
+UI: `src/components/Wilderness.jsx`
+
+Uses the same general split layout language as Foundry.
+
+### Gathering
+
+Cards from Pocket can be slotted to gather:
+
+- wood
+- fiber
+- resin
+- hyssop
+- mushrooms
+- hide
+- coal
+
+Rules:
+
+- gathering starts automatically when card is placed
+- uses a ring timer like Mine
+- `Gathering Speed` affix reduces cycle time
+- output goes to `gatheringClaimQueue`
+- user presses `Collect` to move queued resources into `gatheredInventory`
+
+### Processing
+
+Layout exists on the right side for:
+
+- timber
+- cloth
+- sealant
+- alkahest
+- mycelial extract
+- leather
+
+Processing is currently layout/UI only.
+
+Wilderness inventories also support right-click → quantity slider → resource pocket flow.
+
+---
+
+## Pack Opening Presentation
+
+`src/components/PackOpening.jsx`
+
+Sequence:
+
+- cards reveal sequentially
+- Blank Slate element mote rewards appear after all trading cards have been shown
+- element cards animate into a stack
+- reward text snaps in one by one (`+N [Family] Mote`)
+- on collect:
+  - cards fly to Collection
+  - element motes fly to Arcana
+
+Uses `parseElementResourceId` to resolve `{elementId}_mote` IDs into `{ elementId, tier }` for display.
 
 ---
 
 ## Art System
 
-**Adding new art:**
-1. Drop PNG into `src/assets/cards/{rarity}/` — filename must match card name (e.g., `River Eel.png`)
-2. Run `npm run extract-colors` to regenerate `cardColors.js`
-3. Optionally add an entry to `CARD_ART_POSITION` in `src/game/cardArt.js` to shift the crop focus
+### Unit Class Art
 
-`CARD_ART_POSITION` format: `'Card Name': 'center 20%'`
-Lower % = creature appears lower in frame (anchors toward top of image).
+Drop PNG named `{classType}.png` into `src/assets/class-cards/` (e.g. `miner.png`).
+Art is loaded automatically via `CLASS_ART` in `src/game/cardArt.js` — no script needed.
+All 8 class PNGs are already present.
+
+### Resource Art
+
+Foundry ores/ingots and Wilderness resources use square resource-card shells with full-bleed masked artwork.
+
+Relevant asset folders:
+
+- `src/assets/ores/` — ore PNGs named `{name} ore.png`
+- `src/assets/ingots/` — ingot PNGs named `{name}.png`
+- `src/assets/resources/` — wilderness resource PNGs
+
+Art is loaded via `import.meta.glob` in the respective component files; keys strip the `" ore"` suffix for ores so IDs like `"iron"` resolve correctly.
+
+### Element Art
+
+Element resource cards use art from:
+
+- `src/assets/elements/motes/`
+- `src/assets/elements/wisps/`
+- `src/assets/elements/essences/`
+- `src/assets/elements/quintessences/`
+
+### Rarity / Tier Assets
+
+- rarity gems: `src/assets/rarity-gems/`
+- tier stars: `src/assets/tier stars/`
 
 ---
 
-## Collection Infinite Scroll
+## Drag / Drop / Interaction Notes
 
-Renders 20 cards initially, loads 20 more when a sentinel element enters viewport (500px ahead).
-`IntersectionObserver` uses a `fired` guard to prevent cascade re-fires.
-Filter/sort changes reset to 20 and scroll to top (`window.scrollTo(0, 0)`).
+- card drag sources use `text/plain` / `card-id`
+- resource carry uses `data-resource-drop-target`
+- forge fuel target is `forge-fuel-slot`
+- forge ore target is `forge-ore-slot`
+- arcana ring card slots accept card drops directly from the pocket (mage cards only)
 
----
+Large hover previews are used instead of tiny text tooltips for:
 
-## Mobile Performance Optimizations
-
-- **Background animation disabled** (`@media (hover: none)`) — static gradient instead of `liquid-bg` repaint
-- **`transform-style: flat`** on card-face-inner (mobile) — removes GPU compositing layer per card
-- **`content-visibility: auto`** on `.collection-card-slot` — skips layout/paint for off-screen cards
-- **`loading="lazy"` + `decoding="async"`** on card art images
-- **Hover animations disabled** via `@media (hover: none)` — card twirl, tier shines, tag VFX, pack rays
-- **`overscroll-behavior-y: none`** on html/body — prevents rubber-band snap triggering nav taps
-- **`@media (prefers-reduced-motion: reduce)`** — collapses all animations
+- collection cards
+- pocket cards
+- foundry/wilderness slotted cards
 
 ---
 
-## CSS Architecture Notes
+## Performance Notes
 
-- `--glow-color` CSS variable set per card via inline style; used for hover drop-shadow
-- Art window and card borders both use hard-coded gold `#c8a43a` (not dynamic)
-- Holo card tilt overrides the card-twirl animation with `animation: none !important`
-- `.no-twirl` class suppresses twirl in select mode
-- Z-index stack within card-face-front: tier-overlay(1) → art(1) → holo layers(2–4) → text/badges(8–10)
-- `position: relative` required on elements that need z-index inside absolute holo layers
-- Grade badge has its own `position: absolute; z-index: 10` — do NOT add it to the `position: relative` group or it will lose its absolute positioning
+- compact card rendering is used in collection/pocket/slot-heavy views
+- mobile collection performance was improved by suppressing expensive gradients/VFX in compact mode
+- full effects return in expanded/viewer contexts
+- arcana ring slots use `cqi` (container query inline) units so the entire ring scales proportionally with viewport
 
 ---
 
 ## Known Patterns / Gotchas
 
-- **Read before Edit** — always read a file before editing or the Edit tool will fail
-- **`forwardRef` + merged ref** in CardFace — `wrapRef` (internal) merged with forwarded `ref`
-- **Canvas taint** — `handleArtLoad` canvas approach was replaced by pre-computed `cardColors.js`; do not re-introduce runtime canvas reads
-- **setState during render** — do not call `setVisibleCount` during render body; use `useEffect` (was a previous bug causing scroll jumps)
-- **IntersectionObserver cascade** — always use a local `fired` flag in the observer callback to prevent multiple fires per effect lifecycle
-- **Touch `e.preventDefault()`** in `handleTouchEnd` on PackCard — suppresses the synthetic click that would open a pack after a tilt gesture
-- **SAVE_VERSION** — increment this in `App.jsx` when the save schema changes; old saves are discarded
-- **`sharp` is devDep only** — not imported in any src/ file, only used by `scripts/extract-card-colors.mjs`
+- Read the current file before editing; this project changes fast.
+- `App.jsx` is the orchestration layer; pure business logic should stay in `src/game/*`.
+- If a card is consumed or removed from `collection`, also clear it from dependent systems:
+  - pocket
+  - mine
+  - forge
+  - wilderness gathering
+- `SAVE_VERSION` (currently `10`) and save migration in `App.jsx` must be reviewed when persisted schema changes.
+- Cards always have both `card.classType` (id) and `card.name` (display). Art lookup uses `CLASS_ART[card.classType]`.
+- Element resource IDs: bare `elementId` = essence tier; `{elementId}_mote/wisp/quintessence` for other tiers. Always use `getElementResourceId` / `parseElementResourceId` from `arcana.js` — never construct IDs manually.
+- `blooming quintessence.png` has a typo in the filename (`quitessence`). EssenceCard handles this via regex. Do not rename the file without updating the regex.
+- The Arcana ring crafting does NOT use `arcanaCrafting.js`'s `craftArcanaItem`. That module is retained for attunement logic only.

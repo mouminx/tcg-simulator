@@ -5,9 +5,10 @@ import {
   FUSION_RECIPES, IMPRINT_DATA, RARITY_ORDER,
   computeFuseScore, getFuseSuccessRate, rollTagInheritance,
   getImprintCost, getImprintSuccessChance,
-  makeCard, fmt,
+  makeCard, fmtStr,
 } from '../game/cards';
 import CardFace from './CardFace';
+import Gold from './Gold';
 import FusionAnimation from './FusionAnimation';
 
 const LAB_TABS = [
@@ -32,7 +33,7 @@ function ResultModal({ result, onClose }) {
             <h3 className="lab-result-title">
               {result.grade === 10 ? 'Gem Mint' : result.grade >= 8 ? 'Near Mint' : result.grade >= 6 ? 'Good' : result.grade >= 4 ? 'Fair' : 'Poor'}
             </h3>
-            <p className="lab-result-sub">Grade {result.grade} · Sell value: {fmt(result.newValue)}</p>
+            <p className="lab-result-sub">Grade {result.grade} · Sell value: <Gold amount={result.newValue} /></p>
             {result.attempts > 1 && (
               <p className="lab-result-sub lab-result-sub--dim">Attempt #{result.attempts}</p>
             )}
@@ -72,7 +73,7 @@ function ResultModal({ result, onClose }) {
           <>
             <div className="lab-result-icon lab-result-icon--success">✦</div>
             <h3 className="lab-result-title lab-result-title--success">Imprint Successful</h3>
-            <p className="lab-result-sub">{TAGS[result.tag].name} tag applied · New value: {fmt(result.newValue)}</p>
+            <p className="lab-result-sub">{TAGS[result.tag].name} tag applied · New value: <Gold amount={result.newValue} /></p>
           </>
         )}
 
@@ -257,7 +258,7 @@ function FuseSection({ cards, balance, onFuse }) {
                 <span className="lab-recipe-from" style={{ color: RARITIES[r].color }}>{RARITIES[r].name}</span>
                 <span className="lab-recipe-arrow">→</span>
                 <span className="lab-recipe-to" style={{ color: RARITIES[rec.result].color }}>{RARITIES[rec.result].name}</span>
-                <span className="lab-recipe-meta">{rec.count} cards · {fmt(rec.cost)}</span>
+                <span className="lab-recipe-meta">{rec.count} cards · <Gold amount={rec.cost} /></span>
                 <span className="lab-recipe-rate">{Math.round(rec.successRate * 100)}%</span>
               </div>
             );
@@ -286,7 +287,7 @@ function FuseSection({ cards, balance, onFuse }) {
               <div className="lab-info-table">
                 <div className="lab-info-row">
                   <span>Cost</span>
-                  <span className={canAfford ? '' : 'lab-val--bad'}>{fmt(recipe.cost)}</span>
+                  <span className={canAfford ? '' : 'lab-val--bad'}><Gold amount={recipe.cost} /></span>
                 </div>
                 <div className="lab-info-row">
                   <span>Fuse score</span>
@@ -356,7 +357,7 @@ function FuseSection({ cards, balance, onFuse }) {
             ? `Need ${recipe.count - selectedCards.length} more ${RARITIES[selRarity].name}`
             : !canAfford
             ? 'Insufficient funds'
-            : `Fuse · ${fmt(recipe.cost)} · ${Math.round(adjustedRate * 100)}%`}
+            : `Fuse · ${fmtStr(recipe.cost)} · ${Math.round(adjustedRate * 100)}%`}
         </button>
       </div>
 
@@ -438,7 +439,7 @@ function ImprintSection({ cards, balance, onImprint }) {
               >
                 <span className="lab-tag-btn-name">{tag.name}</span>
                 <span className="lab-tag-btn-cost">
-                  {card ? fmt(getImprintCost(tagKey, card.rarity)) : fmt(info.baseCost)}
+                  {card ? <Gold amount={getImprintCost(tagKey, card.rarity)} /> : <Gold amount={info.baseCost} />}
                 </span>
                 <span className="lab-tag-btn-fail">
                   {sc != null
@@ -455,7 +456,7 @@ function ImprintSection({ cards, balance, onImprint }) {
             <div className="lab-info-table">
               <div className="lab-info-row">
                 <span>Cost</span>
-                <span className={canAfford ? '' : 'lab-val--bad'}>{fmt(imprintCost)}</span>
+                <span className={canAfford ? '' : 'lab-val--bad'}><Gold amount={imprintCost} /></span>
               </div>
               <div className="lab-info-row">
                 <span>Fail chance</span>
@@ -470,7 +471,7 @@ function ImprintSection({ cards, balance, onImprint }) {
               </div>
               <div className="lab-info-row">
                 <span>Value if success</span>
-                <span>{fmt(previewValue)}</span>
+                <span><Gold amount={previewValue} /></span>
               </div>
               <div className="lab-info-row lab-info-row--note">
                 <span>On failure: card is permanently destroyed</span>
@@ -482,7 +483,7 @@ function ImprintSection({ cards, balance, onImprint }) {
               disabled={!canAfford}
             >
               {canAfford
-                ? `Imprint ${TAGS[selectedTag].name} · ${fmt(imprintCost)}`
+                ? `Imprint ${TAGS[selectedTag].name} · ${fmtStr(imprintCost)}`
                 : 'Insufficient funds'}
             </button>
           </>
@@ -548,7 +549,7 @@ function GradeSection({ cards, balance, onGrade }) {
             <div className="lab-info-table">
               <div className="lab-info-row">
                 <span>{isRegrade ? `Re-grade fee (×${Math.pow(2, attempts)})` : 'Grading fee'}</span>
-                <span className={canAfford ? (isRegrade ? 'lab-val--warn' : '') : 'lab-val--bad'}>{fmt(cost)}</span>
+                <span className={canAfford ? (isRegrade ? 'lab-val--warn' : '') : 'lab-val--bad'}><Gold amount={cost} /></span>
               </div>
               <div className="lab-info-row">
                 <span>Grade range</span>
@@ -579,7 +580,7 @@ function GradeSection({ cards, balance, onGrade }) {
               disabled={!canAfford}
             >
               {canAfford
-                ? isRegrade ? `Re-grade · ${fmt(cost)}` : `Grade · ${fmt(cost)}`
+                ? isRegrade ? `Re-grade · ${fmtStr(cost)}` : `Grade · ${fmtStr(cost)}`
                 : 'Insufficient funds'}
             </button>
           </>

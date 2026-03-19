@@ -1,9 +1,17 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import PackCard from './PackCard';
-import { PACK_TYPES, fmt } from '../game/cards';
+import { PACK_TYPES } from '../game/cards';
+import Gold from './Gold';
 
 const SECTIONS = [
+  {
+    id: 'arcana',
+    label: 'Arcana Packs',
+    tagline: '5 cards · Attunement-ready',
+    detail: 'Blank Slate packs can be routed through the Arcana Station before opening.',
+    packIds: ['blankSlate'],
+  },
   {
     id: 'core',
     label: 'Core Set',
@@ -148,7 +156,7 @@ export default function Shop({ balance, onBuyPack, packsNavRef }) {
                       <div className="pack-info">
                         <h3>{pt.name} Pack</h3>
                         <p>{pt.description}</p>
-                        <p className="pack-cost">{fmt(pt.cost)}</p>
+                        <p className="pack-cost"><Gold amount={pt.cost} /></p>
                       </div>
                       <button
                         ref={el => { buyBtnRefs.current[pt.id] = el; }}

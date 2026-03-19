@@ -1,3 +1,7 @@
+import { ARCANA_ITEMS_BY_ID, ARCANA_SLOTS } from './arcana';
+
+export { ESSENCES as ESSENCE_TYPES, DEFAULT_RESOURCES } from './arcana';
+
 export const RARITIES = {
   common:    { name: 'Common',    color: '#9ca3af', weight: 55, valueMin: 0.10,  valueMax: 1.00  },
   uncommon:  { name: 'Uncommon',  color: '#17d968', weight: 25, valueMin: 1.00,  valueMax: 4.00  },
@@ -14,6 +18,311 @@ export const TIERS = {
   3: { name: 'III', weight: 16, multiplier: 2.0 },
   4: { name: 'IV',  weight: 8,  multiplier: 3.2 },
   5: { name: 'V',   weight: 3,  multiplier: 5.5 },
+};
+
+export const AFFIX_VALUE_RANGES = {
+  common:    [1, 5],
+  uncommon:  [6, 11],
+  rare:      [12, 17],
+  epic:      [18, 23],
+  legendary: [24, 29],
+  mythic:    [30, 40],
+};
+
+export const HIGHER_AFFIX_CHANCE = 0.5;
+export const HIGHER_AFFIX_MULTIPLIER = 2;
+
+// ── Unit Class Definitions ─────────────────────────────────────────────────────
+
+// Rarity title ladders: each class has a distinct title per rarity.
+// card.name = resolveCardName(classKey, rarity, tier)  e.g. "Veteran Forgemaster"
+// card.classType = classKey                             e.g. "blacksmith"
+export const CLASS_REGISTRY = {
+  miner: {
+    id: 'miner',
+    label: 'Miner',
+    rarityTitles: {
+      common:    'Laborer',
+      uncommon:  'Miner',
+      rare:      'Delver',
+      epic:      'Deepdelver',
+      legendary: 'Earthseeker',
+      mythic:    'Worldbreaker',
+    },
+  },
+  blacksmith: {
+    id: 'blacksmith',
+    label: 'Blacksmith',
+    rarityTitles: {
+      common:    'Smith',
+      uncommon:  'Blacksmith',
+      rare:      'Forgemaster',
+      epic:      'Master Smith',
+      legendary: 'Runesmith',
+      mythic:    'Worldforger',
+    },
+  },
+  lumberjack: {
+    id: 'lumberjack',
+    label: 'Lumberjack',
+    rarityTitles: {
+      common:    'Woodsman',
+      uncommon:  'Lumberjack',
+      rare:      'Timberwright',
+      epic:      'Treecaller',
+      legendary: 'Ironbark Warden',
+      mythic:    'Elderwood Reaper',
+    },
+  },
+  hunter: {
+    id: 'hunter',
+    label: 'Hunter',
+    rarityTitles: {
+      common:    'Tracker',
+      uncommon:  'Hunter',
+      rare:      'Stalker',
+      epic:      'Beaststalker',
+      legendary: 'Wildswarden',
+      mythic:    'Apex Huntsman',
+    },
+  },
+  merchant: {
+    id: 'merchant',
+    label: 'Merchant',
+    rarityTitles: {
+      common:    'Peddler',
+      uncommon:  'Merchant',
+      rare:      'Trader',
+      epic:      'Guildmaster',
+      legendary: 'Magnate',
+      mythic:    'Golden Sovereign',
+    },
+  },
+  warrior: {
+    id: 'warrior',
+    label: 'Warrior',
+    rarityTitles: {
+      common:    'Fighter',
+      uncommon:  'Warrior',
+      rare:      'Veteran',
+      epic:      'Champion',
+      legendary: 'Warlord',
+      mythic:    'Godslayer',
+    },
+  },
+  mage: {
+    id: 'mage',
+    label: 'Mage',
+    rarityTitles: {
+      common:    'Adept',
+      uncommon:  'Mage',
+      rare:      'Spellbinder',
+      epic:      'Arcanist',
+      legendary: 'Archmage',
+      mythic:    'Star Sage',
+    },
+  },
+  bard: {
+    id: 'bard',
+    label: 'Bard',
+    rarityTitles: {
+      common:    'Minstrel',
+      uncommon:  'Bard',
+      rare:      'Skald',
+      epic:      'Virtuoso',
+      legendary: 'Songweaver',
+      mythic:    'Mythcaller',
+    },
+  },
+  forager: {
+    id: 'forager',
+    label: 'Forager',
+    rarityTitles: {
+      common:    'Gatherer',
+      uncommon:  'Forager',
+      rare:      'Herbseeker',
+      epic:      'Wildspeaker',
+      legendary: 'Greenwarden',
+      mythic:    'Verdant Sovereign',
+    },
+  },
+};
+
+export const UNIT_CLASSES = Object.values(CLASS_REGISTRY);
+export const UNIT_CLASSES_BY_ID = CLASS_REGISTRY;
+
+// Tier title prefixes — combined with rarity title to form the full card name.
+export const TIER_TITLES = {
+  1: 'Novice',
+  2: 'Seasoned',
+  3: 'Veteran',
+  4: 'Master',
+  5: 'Grandmaster',
+};
+
+/**
+ * Resolve the full display name for a unit card.
+ * e.g. resolveCardName('blacksmith', 'rare', 3) → "Veteran Forgemaster"
+ */
+export function resolveCardName(classKey, rarity, tier) {
+  const classDef = CLASS_REGISTRY[classKey];
+  const rarityTitle = classDef?.rarityTitles[rarity] ?? (classDef?.label ?? classKey);
+  const tierTitle   = TIER_TITLES[tier] ?? TIER_TITLES[1];
+  return `${tierTitle} ${rarityTitle}`;
+}
+
+// ── Class-Specific Affix Pools ────────────────────────────────────────────────
+// Each class has three affixes:
+//   Efficiency → speed of resource generation
+//   Attunement → output quantity bonus
+//   Luck       → chance for bonus / rare items
+
+export const CLASS_AFFIX_POOLS = {
+  miner: [
+    { id: 'miningEfficiency',  label: 'Mining Efficiency',  stat: 'miningSpeed'        },
+    { id: 'miningAttunement',  label: 'Mining Attunement',  stat: 'miningAttunement'   },
+    { id: 'miningLuck',        label: 'Mining Luck',        stat: 'miningLuck'         },
+  ],
+  blacksmith: [
+    { id: 'smeltingEfficiency',  label: 'Smelting Efficiency',  stat: 'smeltingSpeed'       },
+    { id: 'smeltingAttunement',  label: 'Smelting Attunement',  stat: 'smeltingAttunement'  },
+    { id: 'smeltingLuck',        label: 'Smelting Luck',        stat: 'smeltingLuck'        },
+  ],
+  lumberjack: [
+    { id: 'loggingEfficiency',  label: 'Logging Efficiency',  stat: 'gatheringSpeed'      },
+    { id: 'loggingAttunement',  label: 'Logging Attunement',  stat: 'loggingAttunement'   },
+    { id: 'loggingLuck',        label: 'Logging Luck',        stat: 'loggingLuck'         },
+  ],
+  hunter: [
+    { id: 'huntingEfficiency',  label: 'Hunting Efficiency',  stat: 'huntingSpeed'       },
+    { id: 'huntingAttunement',  label: 'Hunting Attunement',  stat: 'huntingAttunement'  },
+    { id: 'huntingLuck',        label: 'Hunting Luck',        stat: 'huntingLuck'        },
+  ],
+  merchant: [
+    { id: 'tradeEfficiency',  label: 'Trade Efficiency',  stat: 'tradeEfficiency'  },
+    { id: 'tradeAttunement',  label: 'Trade Attunement',  stat: 'tradeAttunement'  },
+    { id: 'tradeLuck',        label: 'Trade Luck',        stat: 'tradeLuck'        },
+  ],
+  warrior: [
+    { id: 'combatEfficiency',  label: 'Combat Efficiency',  stat: 'combatEfficiency'  },
+    { id: 'combatAttunement',  label: 'Combat Attunement',  stat: 'combatAttunement'  },
+    { id: 'combatLuck',        label: 'Combat Luck',        stat: 'combatLuck'        },
+  ],
+  mage: [
+    { id: 'arcaneEfficiency',  label: 'Arcane Efficiency',  stat: 'arcaneEfficiency'  },
+    { id: 'arcaneAttunement',  label: 'Arcane Attunement',  stat: 'arcaneAttunement'  },
+    { id: 'arcaneLuck',        label: 'Arcane Luck',        stat: 'arcaneLuck'        },
+  ],
+  bard: [
+    { id: 'inspirationEfficiency',  label: 'Inspiration Efficiency',  stat: 'inspirationEfficiency'  },
+    { id: 'inspirationAttunement',  label: 'Inspiration Attunement',  stat: 'inspirationAttunement'  },
+    { id: 'inspirationLuck',        label: 'Inspiration Luck',        stat: 'inspirationLuck'        },
+  ],
+  forager: [
+    { id: 'foragingEfficiency',  label: 'Foraging Efficiency',  stat: 'gatheringSpeed'      },
+    { id: 'foragingAttunement',  label: 'Foraging Attunement',  stat: 'foragingAttunement'  },
+    { id: 'foragingLuck',        label: 'Foraging Luck',        stat: 'foragingLuck'        },
+  ],
+};
+
+// ── General Affix Pool (any class can roll these) ──────────────────────────────
+
+export const GENERAL_AFFIXES = [
+  { id: 'coinGeneration',     label: 'Coin Generation',     stat: 'coinGeneration',     minTier: 1 },
+  { id: 'essenceAttunement',  label: 'Essence Attunement',  stat: 'essenceAttunement',  minTier: 1 },
+  { id: 'resourceGeneration', label: 'Resource Generation', stat: 'resourceGeneration', minTier: 1 },
+  { id: 'productionSpeed',    label: 'Production Speed',    stat: 'productionSpeed',    minTier: 1 },
+  { id: 'craftsmanship',      label: 'Craftsmanship',       stat: 'craftsmanship',      minTier: 2 },
+  { id: 'overflow',           label: 'Overflow',            stat: 'overflow',           minTier: 2 },
+  { id: 'prosperity',         label: 'Prosperity',          stat: 'prosperity',         minTier: 3 },
+];
+
+// Flat map of all affix definitions keyed by id — used for label lookup, display, etc.
+export const CARD_AFFIXES = Object.fromEntries([
+  ...Object.values(CLASS_AFFIX_POOLS).flat(),
+  ...GENERAL_AFFIXES,
+].map(affix => [affix.id, affix]));
+
+// All unique stat keys across all affixes
+const ALL_AFFIX_STATS = [...new Set([
+  ...Object.values(CLASS_AFFIX_POOLS).flat().map(a => a.stat),
+  ...GENERAL_AFFIXES.map(a => a.stat),
+])];
+
+export const DEFAULT_ACTIVE_AFFIX_BONUSES = Object.freeze(
+  Object.fromEntries(ALL_AFFIX_STATS.map(stat => [stat, 0])),
+);
+
+// ── Pack Types (unchanged) ────────────────────────────────────────────────────
+
+export const BASE_PACK_TIER_DISTRIBUTION = {
+  1: 78,
+  2: 15,
+  3: 5,
+  4: 1.7,
+  5: 0.3,
+};
+
+export const CATALYST_TIER_DISTRIBUTIONS = {
+  'emberstep-catalyst': {
+    1: 70,
+    2: 22,
+    3: 6,
+    4: 1.8,
+    5: 0.2,
+  },
+  'crestforge-catalyst': {
+    1: 68,
+    2: 16,
+    3: 12,
+    4: 3.5,
+    5: 0.5,
+  },
+  'mythrise-catalyst': {
+    1: 66,
+    2: 15,
+    3: 8,
+    4: 9,
+    5: 2,
+  },
+  'zenith-catalyst': {
+    1: 63,
+    2: 14,
+    3: 8,
+    4: 10,
+    5: 5,
+  },
+};
+
+export const INSCRIPTION_SIGIL_TAG_BOOSTS = {
+  'tideglow-sigil': {
+    tag: 'holo',
+    weightMultiplier: 3.5,
+  },
+  'windluster-sigil': {
+    tag: 'foil',
+    weightMultiplier: 3.5,
+  },
+  'ashmirror-sigil': {
+    tag: 'reverse',
+    weightMultiplier: 3.5,
+  },
+  'cinderveil-sigil': {
+    tag: 'shadow',
+    weightMultiplier: 4.0,
+  },
+  'riftheart-sigil': {
+    tag: 'nexus',
+    weightMultiplier: 4.0,
+  },
+  'starprism-sigil': {
+    tag: 'prismatic',
+    weightMultiplier: 5.0,
+  },
+  'dawnmark-sigil': {
+    tag: 'firstEdition',
+    weightMultiplier: 5.0,
+  },
 };
 
 // Tags — rolled independently, stack on top of rarity+tier
@@ -46,6 +355,13 @@ export const PACK_TYPES = {
     description: 'Balanced odds · The reliable pick',
     rarityWeights: { common: 57, uncommon: 26, rare: 13, epic: 3,   legendary: 0.75, mythic: 0.25 },
     tierWeights:   { 1: 45,  2: 28, 3: 16, 4: 8,  5: 3  },
+  },
+  blankSlate: {
+    id: 'blankSlate', name: 'Blank Slate', subtitle: 'Pack', cardCount: 5,
+    cost: 6.00, stars: '◌ ◌ ◌',
+    description: 'Attunement-ready · Arcana slots optional',
+    rarityWeights: { common: 57, uncommon: 26, rare: 13, epic: 3, legendary: 0.75, mythic: 0.25 },
+    tierWeights:   { 1: 78, 2: 15, 3: 5, 4: 1.7, 5: 0.3 },
   },
   arcane: {
     id: 'arcane', name: 'Arcane', subtitle: 'Pack', cardCount: 5,
@@ -129,7 +445,7 @@ export const PACK_TYPES = {
     tierWeights:   { 1: 0,   2: 4,  3: 16, 4: 34, 5: 46 },
   },
 
-  // ── Set 4: Tag Editions (15 cards, 1.2× boosted tag odds) ────────────
+  // ── Set 4: Tag Editions (15 cards, boosted tag odds) ────────────────
   holoEd: {
     id: 'holoEd', name: 'Chromatic', subtitle: 'Edition', cardCount: 15,
     cost: 35.00, stars: '◈ ◈ ◈ ◈',
@@ -180,77 +496,60 @@ export const PACK_TYPES = {
   },
 };
 
-const CARD_NAMES = {
-  common: [
-    // original 18
-    'Stone Golem', 'Forest Sprite', 'River Eel', 'Cave Bat', 'Mud Toad', 'Thorn Bush', 'Dusty Crow', 'Marsh Rat',
-    'Ember Beetle', 'Pond Skipper', 'Bramble Hare', 'Ash Lizard', 'Moss Turtle', 'Hollow Owl', 'Pebble Ram', 'Dune Scorpion',
-    'Fungal Mole', 'Reed Viper',
-    // 20 new
-    'Bog Newt', 'Crag Spider', 'Leaf Sprite', 'Rustle Bat', 'Shore Crab', 'Gust Robin', 'Pale Moth', 'Briar Cat',
-    'Flint Hog', 'Silt Frog', 'Candle Bug', 'Drift Seal', 'Cobble Imp', 'Burrow Rat', 'Snag Heron', 'Gravel Wyrm',
-    'Tidal Shrimp', 'Cinderfly', 'Dusk Sparrow', 'Slack Mole',
-  ],
-  uncommon: [
-    // original 16
-    'Ironhorn Beetle', 'Gale Stag', 'Shadow Fox', 'Frostfang Lynx', 'Vine Viper', 'Storm Hawk',
-    'Ashen Stag', 'Moonfang Wolf', 'Copper Scarab', 'Tide Runner', 'Blight Lynx', 'Runetail Gecko',
-    'Sunscale Cobra', 'Gale Hound', 'Thicket Maw', 'Grave Jackal',
-    // 20 new
-    'Obsidian Moth', 'Sparktail Fox', 'Glacial Stag', 'Swamp Basilisk', 'Dusk Serpent', 'Ember Falcon',
-    'Tide Prowler', 'Bone Raptor', 'Gilded Gecko', 'Crystal Hound', 'Hollow Stalker', 'Marsh Drake',
-    'Thornback Lynx', 'Cinder Wraith', 'Wind Razorback', 'Nether Mink',
-    'Coral Scythe', 'Bloodmoon Wolf', 'Veil Moth', 'Storm Beetle',
-  ],
-  rare: [
-    // original 15
-    'Sea Serpent', 'Lava Drake', 'Crystal Elemental', 'Void Panther', 'Thunder Bear',
-    'Dread Antler', 'Frostfang Yeti', 'Sunforged Lion', 'Mist Leviathan', 'Grim Maw', 'Bloom Hydra', 'Storm Ram',
-    'Obsidian Widow', 'Ironroot Behemoth', 'Cinder Roc',
-    // 20 new
-    'Frost Colossus', 'Plague Leviathan', 'Sun Hydra', 'Ashen Wyrm', 'Stormcaller Roc',
-    'Deep Basilisk', 'Bone Titan', 'Void Chimera', 'Emberlord Fox', 'Glacial Sphinx',
-    'Thornwall Golem', 'Abyssal Ray', 'Shiver Drake', 'Dusk Behemoth', 'Hollow Phoenix',
-    'Ember Colossus', 'Void Serpent', 'Iron Revenant', 'Tempest Golem', 'Cinder Leviathan',
-  ],
-  epic: [
-    // original 14
-    'Ancient Dragon', 'Celestial Phoenix', 'Abyssal Titan', 'Arcane Behemoth',
-    'Moonveil Serpent', 'Ember Tyrant', 'Storm Hydra', 'Verdant Leviathan', 'Duskwing Roc', 'Ivory Mammoth',
-    'Runebound Chimera', 'Ashen Colossus', 'Void Reaver', 'Glacier Wyrm',
-    // 20 new
-    'Starfire Drake', 'Bone Leviathan', 'Dawnbreaker Titan', 'Shadow Colossus', 'Eternal Phoenix',
-    'Plague Chimera', 'Iron Seraph', 'Voidborn Behemoth', 'Sundering Wyrm', 'Frostborn Titan',
-    'Hollow Colossus', 'Tempest Chimera', 'Ashen Seraph', 'Crimson Leviathan', 'Storm Reaver',
-    'Twilight Hydra', 'Cinder Colossus', 'Abyssal Seraph', 'Bone Chimera', 'Starborn Wyrm',
-  ],
-  legendary: [
-    // original 13
-    'The Undying Wyrm', 'World Eater', 'Eclipse Serpent',
-    'First Behemoth', 'Starfall Drake', 'Hollow Mammoth', 'Tempest Leviathan', 'Ashen Roc', 'Nightfang Alpha',
-    'Last Colossus', 'Dawnscale Seraph', 'Black Stag', 'Crownmaw',
-    // 20 new
-    'The First Dragon', 'Void Ascendant', 'Starborn Colossus', 'Ancient Nightmare', 'The Pale Leviathan',
-    'Ember Crown', 'Dawnbreaker Wyrm', 'The Last Seraph', 'Frozen King', 'Blood Sovereign',
-    'Hollow Titan', 'The Iron Revenant', 'Sundering Behemoth', 'The Void Shepherd', 'Celestial Warden',
-    'Twilight Sovereign', 'Stormborn Titan', 'The Undying Colossus', 'Ashen Monarch', 'Bone Sovereign',
-  ],
-  mythic: [
-    // original 12
-    'Primordial Titan', 'Chaos Incarnate',
-    'World Serpent', 'First Flame', 'Aether Warden', 'Final Horizon', 'Dream Devourer', 'Shatterhorn',
-    'Astral Behemoth', 'Veilwyrm', 'Heart of the Abyss', 'Eclipsed Chimera',
-    // 20 new
-    'The Eternal Flame', 'Void Incarnate', 'World Breaker', 'The Last Light', 'Abyss Sovereign',
-    'Cosmic Revenant', 'The Unborn', 'Starfall Titan', 'Heaven Eater', 'The Pale King',
-    'Twilight Sovereign', 'The Shattered Crown', 'Abyssal Monarch', 'Void Pantheon', 'The Forgotten One',
-    'Celestial Destroyer', 'Time Devourer', 'The Boundless', 'Fracture Incarnate', 'The Nameless One',
-  ],
-};
+// ── Utility ───────────────────────────────────────────────────────────────────
 
 export function fmt(amount) {
-  return `$${amount.toFixed(2)}`;
+  return Number(amount).toFixed(2);
 }
+
+export function fmtStr(amount) {
+  return `⬡ ${Number(amount).toFixed(2)}`;
+}
+
+function rollPercentInRange(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function resolveAffixDefinition(affix) {
+  const affixId = typeof affix === 'string' ? affix : affix?.id;
+  if (!affixId) return null;
+  // Legacy migration: old miningSpeed / gatheringSpeed / ingotSmelting IDs map directly
+  return CARD_AFFIXES[affixId] ?? null;
+}
+
+function resolveAffixStat(affix) {
+  return affix?.stat ?? resolveAffixDefinition(affix)?.stat ?? null;
+}
+
+export function formatAffixText(affix) {
+  const affixDef = resolveAffixDefinition(affix);
+  const label = affixDef?.label ?? affix?.id ?? '';
+  return `+${affix.value}% ${label}`;
+}
+
+export function getCardAffixBonuses(card) {
+  const bonuses = { ...DEFAULT_ACTIVE_AFFIX_BONUSES };
+  for (const affix of card?.affixes ?? []) {
+    const stat = resolveAffixStat(affix);
+    if (!stat || bonuses[stat] == null) continue;
+    bonuses[stat] += affix.value ?? 0;
+  }
+  return bonuses;
+}
+
+export function getActiveAffixBonuses(activeCards = []) {
+  const totals = { ...DEFAULT_ACTIVE_AFFIX_BONUSES };
+  for (const card of activeCards ?? []) {
+    for (const affix of card?.affixes ?? []) {
+      const stat = resolveAffixStat(affix);
+      if (!stat || totals[stat] == null) continue;
+      totals[stat] += affix.value ?? 0;
+    }
+  }
+  return totals;
+}
+
+// ── Rolling ───────────────────────────────────────────────────────────────────
 
 function rollRarity(weights) {
   const total = Object.values(weights).reduce((sum, w) => sum + w, 0);
@@ -272,13 +571,102 @@ function rollTier(weights) {
   return 1;
 }
 
-function rollTag(boost = null) {
-  if (Math.random() > TAG_CHANCE) return null;
-  if (boost?.exclusive) return boost.tag;
-  const weights = {};
-  for (const [key, t] of Object.entries(TAGS)) {
-    weights[key] = (boost?.tag === key) ? t.weight * boost.multiplier : t.weight;
+export function rollUnitClass() {
+  return UNIT_CLASSES[Math.floor(Math.random() * UNIT_CLASSES.length)];
+}
+
+// ── Affixes ───────────────────────────────────────────────────────────────────
+
+/**
+ * Roll affixes for a unit card.
+ * Tier = affix count (1–5).
+ * Pool = class-specific affixes (3) + general affixes filtered by minTier.
+ * Drawn without replacement — no duplicate affixes.
+ */
+export function rollCardAffixes(classType, rarity, tier = 1) {
+  const affixCount = Math.max(1, Math.min(Number(tier) || 1, 5));
+  const [minValue, maxValue] = AFFIX_VALUE_RANGES[rarity] ?? AFFIX_VALUE_RANGES.common;
+
+  const classPool = (CLASS_AFFIX_POOLS[classType] ?? []).map(a => ({ ...a }));
+  const generalPool = GENERAL_AFFIXES.filter(a => tier >= (a.minTier ?? 1)).map(a => ({ ...a }));
+  const combined = [...classPool, ...generalPool];
+
+  const rolledAffixes = [];
+  const remaining = [...combined];
+
+  for (let i = 0; i < affixCount && remaining.length > 0; i++) {
+    const index = Math.floor(Math.random() * remaining.length);
+    const affixDef = remaining.splice(index, 1)[0];
+    const baseValue = rollPercentInRange(minValue, maxValue);
+    const isHigher = Math.random() < HIGHER_AFFIX_CHANCE;
+    rolledAffixes.push({
+      id: affixDef.id,
+      stat: affixDef.stat,
+      value: isHigher ? baseValue * HIGHER_AFFIX_MULTIPLIER : baseValue,
+      isHigher,
+    });
   }
+
+  return rolledAffixes;
+}
+
+// ── Arcana slot resolution (unchanged) ────────────────────────────────────────
+
+function resolveCatalystConfig(selectedCatalyst = null) {
+  if (!selectedCatalyst) return null;
+  if (typeof selectedCatalyst === 'string') return ARCANA_ITEMS_BY_ID[selectedCatalyst] ?? null;
+  if (selectedCatalyst.itemId) return ARCANA_ITEMS_BY_ID[selectedCatalyst.itemId] ?? null;
+  if (selectedCatalyst.id) return ARCANA_ITEMS_BY_ID[selectedCatalyst.id] ?? null;
+  return null;
+}
+
+function resolveSigilConfig(selectedSigil = null) {
+  if (!selectedSigil) return null;
+  if (typeof selectedSigil === 'string') return ARCANA_ITEMS_BY_ID[selectedSigil] ?? null;
+  if (selectedSigil.itemId) return ARCANA_ITEMS_BY_ID[selectedSigil.itemId] ?? null;
+  if (selectedSigil.id) return ARCANA_ITEMS_BY_ID[selectedSigil.id] ?? null;
+  return null;
+}
+
+export function resolveActiveTierDistribution(selectedCatalyst = null) {
+  const catalystConfig = resolveCatalystConfig(selectedCatalyst);
+  if (!catalystConfig) return BASE_PACK_TIER_DISTRIBUTION;
+  if (catalystConfig.category !== 'catalyst') return BASE_PACK_TIER_DISTRIBUTION;
+  if (catalystConfig.effect?.slot !== ARCANA_SLOTS.SURGE) return BASE_PACK_TIER_DISTRIBUTION;
+  return CATALYST_TIER_DISTRIBUTIONS[catalystConfig.id] ?? BASE_PACK_TIER_DISTRIBUTION;
+}
+
+export function rollTierFromDistribution(selectedCatalyst = null) {
+  return rollTier(resolveActiveTierDistribution(selectedCatalyst));
+}
+
+export function resolveModifiedTagWeights(selectedSigil = null, packBoost = null) {
+  const weights = Object.fromEntries(
+    Object.entries(TAGS).map(([tagId, tagData]) => [tagId, tagData.weight]),
+  );
+
+  const sigilConfig = resolveSigilConfig(selectedSigil);
+  if (
+    sigilConfig?.category === 'sigil' &&
+    sigilConfig.effect?.slot === ARCANA_SLOTS.INSCRIPTION
+  ) {
+    const sigilBoost = INSCRIPTION_SIGIL_TAG_BOOSTS[sigilConfig.id];
+    if (sigilBoost && weights[sigilBoost.tag] != null) {
+      weights[sigilBoost.tag] *= sigilBoost.weightMultiplier;
+    }
+  }
+
+  if (packBoost?.tag && weights[packBoost.tag] != null) {
+    weights[packBoost.tag] *= packBoost.multiplier;
+  }
+
+  return weights;
+}
+
+function rollTag(packBoost = null, selectedSigil = null) {
+  if (Math.random() > TAG_CHANCE) return null;
+  if (packBoost?.exclusive) return packBoost.tag;
+  const weights = resolveModifiedTagWeights(selectedSigil, packBoost);
   const total = Object.values(weights).reduce((sum, w) => sum + w, 0);
   let roll = Math.random() * total;
   for (const [key, w] of Object.entries(weights)) {
@@ -298,12 +686,15 @@ function rollValue(rarity, tier, tag) {
 
 let nextId = Date.now();
 
-// Multiplier applied to legendary/mythic weights for the first 3 pack openings
 const NEW_PLAYER_BOOST = 10;
 
-export function openPack(packTypeId = 'iron', boosted = false) {
+// ── Pack Opening ──────────────────────────────────────────────────────────────
+
+export function openPack(packTypeId = 'iron', boosted = false, options = {}) {
   const packType = PACK_TYPES[packTypeId] ?? PACK_TYPES.iron;
   const size = packType.cardCount ?? 5;
+  const tierDistribution = resolveActiveTierDistribution(options.selectedCatalyst ?? options.surgeCatalyst ?? null);
+  const selectedSigil = options.selectedSigil ?? options.inscriptionSigil ?? null;
   const weights = boosted
     ? {
         ...packType.rarityWeights,
@@ -311,21 +702,53 @@ export function openPack(packTypeId = 'iron', boosted = false) {
         mythic:    (packType.rarityWeights.mythic    || 0.5) * NEW_PLAYER_BOOST,
       }
     : packType.rarityWeights;
+
   return Array.from({ length: size }, () => {
-    const rarity = rollRarity(weights);
-    const tier   = rollTier(packType.tierWeights);
-    const tag    = rollTag(packType.tagBoost ?? null);
-    const names  = CARD_NAMES[rarity];
-    const name   = names[Math.floor(Math.random() * names.length)];
-    const value  = rollValue(rarity, tier, tag);
-    return { id: nextId++, name, rarity, tier, tag, value };
+    const rarity    = rollRarity(weights);
+    const tier      = rollTier(tierDistribution);
+    const tag       = rollTag(packType.tagBoost ?? null, selectedSigil);
+    const unitClass = rollUnitClass();
+    const value     = rollValue(rarity, tier, tag);
+    const affixes   = rollCardAffixes(unitClass.id, rarity, tier);
+    return {
+      id: nextId++,
+      name: resolveCardName(unitClass.id, rarity, tier),
+      classType: unitClass.id,
+      artVariant: Math.floor(Math.random() * 5),
+      rarity,
+      tier,
+      tag,
+      value,
+      affixes,
+    };
+  });
+}
+
+// Welcome pack — one tier-1 common for every class, given free on first launch.
+export function openWelcomePack() {
+  return UNIT_CLASSES.map(unitClass => {
+    const rarity  = 'common';
+    const tier    = 1;
+    const value   = rollValue(rarity, tier, null);
+    const affixes = rollCardAffixes(unitClass.id, rarity, tier);
+    return {
+      id: nextId++,
+      name: resolveCardName(unitClass.id, rarity, tier),
+      classType: unitClass.id,
+      artVariant: Math.floor(Math.random() * 5),
+      rarity,
+      tier,
+      tag: null,
+      value,
+      affixes,
+    };
   });
 }
 
 export const STARTING_BALANCE = 25.00;
 export const CARDS_PER_PACK = 5;
 
-// ── Lab: Card Grading ────────────────────────────────────────────────────────
+// ── Lab: Card Grading ─────────────────────────────────────────────────────────
 
 export const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
@@ -333,22 +756,19 @@ export const GRADE_COSTS = {
   common: 3, uncommon: 8, rare: 20, epic: 50, legendary: 125, mythic: 300,
 };
 
-// Value multiplier applied to base card value when graded
 export const GRADE_MULTIPLIERS = {
   1: 0.50, 2: 0.65, 3: 0.80, 4: 0.95, 5: 1.10,
   6: 1.35, 7: 1.65, 8: 2.20, 9: 3.00, 10: 5.00,
 };
 
-// Minimum possible grade per rarity — higher rarity cards can't roll very low
 export const GRADE_FLOOR = {
   common: 1, uncommon: 1, rare: 1, epic: 2, legendary: 3, mythic: 5,
 };
 
 export function rollGrade(rarity = 'common') {
   const floor = GRADE_FLOOR[rarity] ?? 1;
-  // Bell curve weighted toward 6-7, rare 9-10 (indices 0-9 = grades 1-10)
   const weights = [2, 4, 6, 10, 16, 22, 20, 12, 6, 2];
-  for (let i = 0; i < floor - 1; i++) weights[i] = 0; // zero out below floor
+  for (let i = 0; i < floor - 1; i++) weights[i] = 0;
   const total = weights.reduce((s, w) => s + w, 0);
   let roll = Math.random() * total;
   for (let i = 0; i < weights.length; i++) {
@@ -363,7 +783,7 @@ export function getCardSellValue(card) {
   return Math.round(card.value * GRADE_MULTIPLIERS[card.grade] * 100) / 100;
 }
 
-// ── Lab: Fusion ──────────────────────────────────────────────────────────────
+// ── Lab: Fusion ───────────────────────────────────────────────────────────────
 
 export const FUSION_RECIPES = {
   common:    { count: 3, cost: 3.00,   successRate: 0.75, result: 'uncommon'  },
@@ -373,17 +793,28 @@ export const FUSION_RECIPES = {
   legendary: { count: 7, cost: 150.00, successRate: 0.06, result: 'mythic'    },
 };
 
-export function makeCard(rarity) {
-  const tier  = rollTier({ 1: 45, 2: 28, 3: 16, 4: 8, 5: 3 });
-  const names = CARD_NAMES[rarity];
-  const name  = names[Math.floor(Math.random() * names.length)];
-  const value = rollValue(rarity, tier, null);
-  return { id: nextId++, name, rarity, tier, tag: null, value };
+export function makeCard(rarity, classType = null) {
+  const tier       = rollTier({ 1: 45, 2: 28, 3: 16, 4: 8, 5: 3 });
+  const unitClass  = classType
+    ? (UNIT_CLASSES_BY_ID[classType] ?? rollUnitClass())
+    : rollUnitClass();
+  const value      = rollValue(rarity, tier, null);
+  const affixes    = rollCardAffixes(unitClass.id, rarity, tier);
+  return {
+    id: nextId++,
+    name: resolveCardName(unitClass.id, rarity, tier),
+    classType: unitClass.id,
+    artVariant: Math.floor(Math.random() * 5),
+    rarity,
+    tier,
+    tag: null,
+    value,
+    affixes,
+  };
 }
 
-// ── Lab: Tag Imprinting ──────────────────────────────────────────────────────
+// ── Lab: Tag Imprinting ───────────────────────────────────────────────────────
 
-// Base imprint cost (Common) — scales up with card rarity via IMPRINT_RARITY_MULT
 export const IMPRINT_DATA = {
   holo:         { baseCost: 25,  failRate: 0.20 },
   foil:         { baseCost: 20,  failRate: 0.25 },
@@ -404,37 +835,30 @@ export function getImprintCost(tag, rarity) {
   return Math.round(base * mult);
 }
 
-// ── Lab: Fuse Score ──────────────────────────────────────────────────────────
+// ── Lab: Fuse Score ───────────────────────────────────────────────────────────
 
-// New card's fuse score = number of input cards + sum of their existing fuse scores
 export function computeFuseScore(inputCards) {
   return inputCards.length + inputCards.reduce((sum, c) => sum + (c.fuseScore ?? 0), 0);
 }
 
-// Base success rate boosted by fuse score (capped at +20%)
 export function getFuseSuccessRate(recipe, fuseScore) {
   const bonus = Math.min((fuseScore ?? 0) * 0.015, 0.20);
   return Math.min(recipe.successRate + bonus, 0.95);
 }
 
-// Tag inheritance: chance scales with fuse score and duplicate tag count;
-// weighted toward tags that appear on more input cards
 export function rollTagInheritance(inputCards, fuseScore) {
   const tagged = inputCards.filter(c => c.tag);
   if (tagged.length === 0) return null;
 
-  // Count how many inputs share each tag
   const tagCounts = {};
   for (const c of tagged) tagCounts[c.tag] = (tagCounts[c.tag] ?? 0) + 1;
 
-  // Bonus for the most-duplicated tag: +12% per extra copy beyond the first
   const maxDupes = Math.max(...Object.values(tagCounts));
   const dupeBonus = (maxDupes - 1) * 0.12;
 
   const chance = Math.min(0.10 + (fuseScore ?? 0) * 0.025 + dupeBonus, 0.90);
   if (Math.random() > chance) return null;
 
-  // Weight = (count of cards with that tag) * (1 + fuseScore contribution)
   const weights = {};
   for (const c of tagged) {
     const w = tagCounts[c.tag] * (1 + (c.fuseScore ?? 0) * 0.15);
@@ -449,20 +873,37 @@ export function rollTagInheritance(inputCards, fuseScore) {
   return tagged[0].tag;
 }
 
-// Imprint success chance boosted by fuse score (high-score cards are easier to imprint)
 export function getImprintSuccessChance(tag, _rarity, fuseScore) {
   const base = 1 - IMPRINT_DATA[tag].failRate;
   const bonus = Math.min((fuseScore ?? 0) * 0.02, 0.25);
   return Math.min(base + bonus, 0.96);
 }
 
-// ── Lab: Grading (Legendary / Mythic only) ───────────────────────────────────
-
 export const GRADEABLE_RARITIES = new Set(['legendary', 'mythic']);
 
-// Re-grade cost doubles with each attempt: base, base×2, base×4, base×8 …
 export function getGradeCost(card) {
   const base = GRADE_COSTS[card.rarity];
   const attempts = card.gradeAttempts ?? 0;
   return attempts === 0 ? base : Math.round(base * Math.pow(2, attempts));
+}
+
+// ── Save Migration Helper ─────────────────────────────────────────────────────
+
+/**
+ * Migrate a legacy creature card (no classType) to a unit card.
+ * Preserves id, rarity, tier, tag, value, grade, fuseScore.
+ * Assigns a random class and re-rolls affixes from that class's pool.
+ */
+export function migrateCreatureCard(card) {
+  if (card.classType) return card; // already migrated
+  const unitClass = rollUnitClass();
+  const tier = card.tier ?? 1;
+  const affixes = rollCardAffixes(unitClass.id, card.rarity, tier);
+  return {
+    ...card,
+    name: resolveCardName(unitClass.id, card.rarity, tier),
+    classType: unitClass.id,
+    affixes,
+    elements: undefined, // remove legacy field
+  };
 }

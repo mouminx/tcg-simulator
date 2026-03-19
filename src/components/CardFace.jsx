@@ -1,12 +1,39 @@
 import { forwardRef, useRef, useEffect } from 'react';
-import { RARITIES, TIERS, TAGS, fmt } from '../game/cards';
-import { CARD_ART, CARD_ART_POSITION } from '../game/cardArt';
+import { RARITIES, TIERS, TAGS, formatAffixText } from '../game/cards';
+import Gold from './Gold';
+import { CLASS_ART } from '../game/cardArt';
 import { CARD_COLORS } from '../game/cardColors';
+import commonGem from '../assets/rarity-gems/common.svg';
+import uncommonGem from '../assets/rarity-gems/uncommon.svg';
+import rareGem from '../assets/rarity-gems/rare.svg';
+import epicGem from '../assets/rarity-gems/epic.svg';
+import legendaryGem from '../assets/rarity-gems/legendary.svg';
+import mythicGem from '../assets/rarity-gems/mythic.svg';
+import tier1Stars from '../assets/tier-stars/tier1.svg';
+import tier2Stars from '../assets/tier-stars/tier2.svg';
+import tier3Stars from '../assets/tier-stars/tier3.svg';
+import tier4Stars from '../assets/tier-stars/tier4.svg';
+import tier5Stars from '../assets/tier-stars/tier5.svg';
 
 // Rarities that get the rainbow foil coating
 const FOIL_RARITIES    = new Set(['uncommon', 'rare', 'epic', 'legendary', 'mythic']);
 // Rarities that also get sparkle dots on top
 const SPARKLE_RARITIES = new Set(['epic', 'legendary', 'mythic']);
+const RARITY_GEMS = {
+  common: commonGem,
+  uncommon: uncommonGem,
+  rare: rareGem,
+  epic: epicGem,
+  legendary: legendaryGem,
+  mythic: mythicGem,
+};
+const TIER_STAR_ASSETS = {
+  1: tier1Stars,
+  2: tier2Stars,
+  3: tier3Stars,
+  4: tier4Stars,
+  5: tier5Stars,
+};
 
 const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell, holo, visualMode = 'full' }, ref) {
   const rarity = RARITIES[card.rarity];
@@ -113,10 +140,16 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
 
   const hasFoil    = holo && FOIL_RARITIES.has(card.rarity);
   const hasSparkle = holo && SPARKLE_RARITIES.has(card.rarity);
-  const artSrc      = CARD_ART[card.name];
-  const artPosition = CARD_ART_POSITION[card.name] ?? 'center center';
+  const classVariants = CLASS_ART[card.classType];
+  const artSrc = classVariants
+    ? (classVariants[card.artVariant ?? 0] ?? classVariants[0] ?? null)
+    : null;
+  const artPosition = 'center 10%';
+  const rarityGemSrc = RARITY_GEMS[card.rarity];
+  const tierStarsSrc = TIER_STAR_ASSETS[tier] ?? tier1Stars;
 
-  const palette = CARD_COLORS[card.name];
+  const palette = CARD_COLORS[card.classType] ?? CARD_COLORS[card.name];
+  const affixes = card.affixes ?? [];
 
   // Seven spots scattered across the card [x%, y%]
   const SPOTS = [
@@ -163,33 +196,57 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           {/* Header row: name left, tier stars right */}
           <div className="card-header-row">
             <span className="card-name">{card.name}</span>
-            <span className={`card-tier-stars tier-stars--${tier}`}>
-              {'✦'.repeat(tier)}
-            </span>
           </div>
 
           {/* Art window — 3:2 */}
-          <div className="card-art-window">
-            {artSrc
-              ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" loading="lazy" decoding="async" style={{ objectPosition: artPosition }} />
-              : <div className="card-art-placeholder" />
-            }
+          <div className="card-art-frame">
+            <div className="card-art-window">
+              {artSrc
+                ? <img src={artSrc} alt={card.name} className="card-art-img" draggable="false" loading="lazy" decoding="async" style={{ objectPosition: artPosition }} />
+                : <div className="card-art-placeholder" />
+              }
+            </div>
+            <div className={`card-art-rarity-tab card-art-rarity-tab--${card.rarity}`} aria-label={rarity.name} title={rarity.name}>
+              <div className="card-art-rarity-tab__well">
+                <img
+                  src={rarityGemSrc}
+                  alt=""
+                  aria-hidden="true"
+                  className="card-art-rarity-tab__gem"
+                  draggable="false"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+            </div>
           </div>
 
-          {/* Tag pills: rarity, tag */}
-          <div className="card-tags-row">
-            <span
-              className={`card-tag-pill card-tag-pill--rarity card-tag-pill--rarity-${card.rarity}`}
-              style={{ '--pill-base': rarity.color }}
-            >
-              <span className="card-tag-pill__label">{rarity.name}</span>
-            </span>
-            {tag && (
+          {/* Tag pills: special finish only */}
+          {tag && (
+            <div className="card-tags-row">
               <span className={`card-tag-pill card-tag-pill--tag card-tag-pill--tag-${card.tag}`}>
                 <span className="card-tag-pill__label">{tag.name}</span>
               </span>
-            )}
-          </div>
+            </div>
+          )}
+
+          {affixes.length > 0 && (
+            <div className={`card-affix-list${compactVisuals ? ' card-affix-list--compact' : ''}`}>
+              {affixes.map(affix => (
+                <div
+                  key={`${card.id}-${affix.id}`}
+                  className={`card-affix-line${affix.isHigher ? ' card-affix-line--higher' : ''}`}
+                >
+                  <span className="card-affix-bullet" aria-hidden="true">
+                    {affix.isHigher ? '★' : '◆'}
+                  </span>
+                  <span className="card-affix-text">
+                    {formatAffixText(affix)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Holo layers — sit above art, below header/tags */}
           {hasFoil    && <div className="holo-foil"    aria-hidden="true" />}
@@ -199,6 +256,23 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           {card.fuseScore != null && (
             <div className="card-fuse-badge">⊕{card.fuseScore}</div>
           )}
+          <div className={`card-bottom-socket card-bottom-socket--tier-${tier}`} aria-label={`Tier ${tier}`}>
+            <div className="card-bottom-socket__well">
+              <div className="card-bottom-socket__stars" aria-hidden="true">
+                {Array.from({ length: tier }, (_, index) => (
+                  <img
+                    key={`${card.id}-bottom-tier-star-${index}`}
+                    src={tierStarsSrc}
+                    alt=""
+                    className="card-bottom-socket__star"
+                    draggable="false"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
           {card.grade != null && (
             <div className={`card-grade-badge grade-badge--${card.grade === 10 ? 'gem' : card.grade >= 8 ? 'high' : card.grade >= 5 ? 'mid' : 'low'}`}>
               {card.grade}
@@ -210,7 +284,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
                 className="sell-btn"
                 onClick={e => { e.stopPropagation(); onSell(); }}
               >
-                Sell {fmt(card.value)}
+                Sell <Gold amount={card.value} />
               </button>
             </div>
           )}

@@ -1,8 +1,120 @@
-import { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import CardFace from './CardFace';
+import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
 import { PACK_TYPES } from '../game/cards';
 
-const PHASES = { INTRO: 'intro', SPLITTING: 'splitting', REVEALING: 'revealing', DONE: 'done' };
+const PHASES = { INTRO: 'intro', SPLITTING: 'splitting', REVEALING: 'revealing', ESSENCE: 'essence', DONE: 'done' };
+
+const MOTE_ART = Object.fromEntries(
+  Object.entries(import.meta.glob('../assets/elements/motes/*.png', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+mote\.png$/i, '').toLowerCase(), src]),
+);
+
+const WISP_ART = Object.fromEntries(
+  Object.entries(import.meta.glob('../assets/elements/wisps/*.png', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+wisp\.png$/i, '').toLowerCase(), src]),
+);
+
+const ESSENCE_ART = Object.fromEntries(
+  Object.entries(import.meta.glob('../assets/elements/essences/*.png', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+essence\.png$/i, '').toLowerCase(), src]),
+);
+
+const QUINTESSENCE_ART = Object.fromEntries(
+  Object.entries(import.meta.glob('../assets/elements/quintessences/*.png', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+quin?tessence\.png$/i, '').toLowerCase(), src]),
+);
+
+const TIER_ART = {
+  mote: MOTE_ART,
+  wisp: WISP_ART,
+  essence: ESSENCE_ART,
+  quintessence: QUINTESSENCE_ART,
+};
+
+const TIER_LABELS = {
+  mote: 'Mote',
+  wisp: 'Wisp',
+  essence: 'Essence',
+  quintessence: 'Quintessence',
+};
+
+function fmtCount(count) {
+  return new Intl.NumberFormat('en-US').format(count ?? 0);
+}
+
+function formatArcanaDropName(essence, tier, amount) {
+  const tierLabel = TIER_LABELS[tier] ?? 'Essence';
+  const baseName = essence.name.replace(/ Essence$/i, '');
+  const plural = amount === 1 ? tierLabel : `${tierLabel}s`;
+  return `${baseName} ${plural}`;
+}
+
+function OpeningResourceCard({ essence, amount, tier }) {
+  const artSrc = TIER_ART[tier]?.[essence.id] ?? null;
+  const name = formatArcanaDropName(essence, tier, amount);
+  const description = getElementResourceDescription(
+    tier === 'essence' ? essence.id : `${essence.id}_${tier}`
+  );
+  const [tipPos, setTipPos] = useState(null);
+  const [clampedPos, setClampedPos] = useState(null);
+  const tipRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!tipPos || !tipRef.current) {
+      setClampedPos(null);
+      return;
+    }
+    const { width, height } = tipRef.current.getBoundingClientRect();
+    const OFFSET = 14;
+    let x = tipPos.x + OFFSET;
+    let y = tipPos.y + OFFSET;
+    if (x + width > window.innerWidth - 8) x = tipPos.x - width - OFFSET;
+    if (y + height > window.innerHeight - 8) y = tipPos.y - height - OFFSET;
+    setClampedPos({ x, y });
+  }, [tipPos]);
+
+  function handleMouseMove(event) {
+    setTipPos({ x: event.clientX, y: event.clientY });
+  }
+
+  return (
+    <>
+      <div
+        className="card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned inventory-tile opening-resource-card"
+        onMouseEnter={handleMouseMove}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setTipPos(null)}
+      >
+        <div className="card-face-inner">
+          <div
+            className="card-face-front foundry-square-resource__front opening-resource-card__front"
+            style={{ '--glow-color': essence.color }}
+          >
+            <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
+              <span className="foundry-square-resource__count">{fmtCount(amount)}</span>
+            </div>
+            <div className="foundry-square-resource__art-wrap">
+              {artSrc ? <img src={artSrc} alt={name} className="foundry-square-resource__art" /> : null}
+            </div>
+          </div>
+        </div>
+      </div>
+      {tipPos && createPortal(
+        <div
+          ref={tipRef}
+          className="resource-tooltip"
+          style={{ left: (clampedPos ?? tipPos).x, top: (clampedPos ?? tipPos).y }}
+        >
+          <span className="resource-tooltip__name">{name}</span>
+          {description && <span className="resource-tooltip__desc">{description}</span>}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
 
 function SplitPack({ phase, onClick, packType, flyAngle }) {
   const pt     = packType ?? PACK_TYPES.iron;
@@ -77,13 +189,26 @@ function SplitPack({ phase, onClick, packType, flyAngle }) {
   );
 }
 
-const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionBtnRef, packType }, ref) {
+const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], onDone, collectionBtnRef, inventoryTargetRef, packType }, ref) {
   const [phase, setPhase] = useState(PHASES.INTRO);
   const [flyAngle, setFlyAngle] = useState(0);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [queuedCards, setQueuedCards] = useState([]);
   const [collecting, setCollecting] = useState(false);
+  const [visibleEssenceCards, setVisibleEssenceCards] = useState(0);
+  const [visibleEssenceText, setVisibleEssenceText] = useState(0);
   const queueRefs = useRef([]);
+  const essenceRefs = useRef([]);
+
+  function startEssenceRewardSequence() {
+    if (essenceDrops.length === 0) {
+      setPhase(PHASES.DONE);
+      return;
+    }
+    setVisibleEssenceCards(0);
+    setVisibleEssenceText(0);
+    setPhase(PHASES.ESSENCE);
+  }
 
   function handleSplit() {
     // Random angle between -18° and 18°, never near zero
@@ -99,20 +224,20 @@ const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionB
     const nextIdx = currentIdx + 1;
     setQueuedCards(prev => [...prev, card]);
     setCurrentIdx(nextIdx);
-    if (nextIdx >= cards.length) setPhase(PHASES.DONE);
+    if (nextIdx >= cards.length) startEssenceRewardSequence();
   }
 
   function handleSkip() {
     setQueuedCards(cards);
     setCurrentIdx(cards.length);
-    setPhase(PHASES.DONE);
+    startEssenceRewardSequence();
   }
 
   function handleCollect() {
     setCollecting(true);
-    const target = collectionBtnRef?.current;
-    if (target) {
-      const targetRect = target.getBoundingClientRect();
+    const cardTarget = collectionBtnRef?.current;
+    if (cardTarget) {
+      const targetRect = cardTarget.getBoundingClientRect();
       const tx = targetRect.left + targetRect.width / 2;
       const ty = targetRect.top + targetRect.height / 2;
       queueRefs.current.forEach((el, i) => {
@@ -127,8 +252,52 @@ const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionB
         el.style.opacity = '0';
       });
     }
-    setTimeout(onDone, 750);
+
+    const essenceTarget = inventoryTargetRef?.current;
+    if (essenceTarget) {
+      const targetRect = essenceTarget.getBoundingClientRect();
+      const tx = targetRect.left + targetRect.width / 2;
+      const ty = targetRect.top + targetRect.height / 2;
+      essenceRefs.current.forEach((el, i) => {
+        if (!el || i >= visibleEssenceCards) return;
+        el.style.animation = 'none';
+        el.getBoundingClientRect();
+        const rect = el.getBoundingClientRect();
+        const dx = tx - (rect.left + rect.width / 2);
+        const dy = ty - (rect.top + rect.height / 2);
+        el.style.transition = `transform 0.52s ease ${i * 0.07}s, opacity 0.4s ease ${i * 0.07 + 0.1}s`;
+        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
+        el.style.opacity = '0';
+      });
+    }
+
+    const longestFlight = Math.max(queueRefs.current.length, visibleEssenceCards) * 70;
+    setTimeout(onDone, 750 + longestFlight);
   }
+
+  useEffect(() => {
+    if (phase !== PHASES.ESSENCE) return undefined;
+
+    const timers = [];
+
+    essenceDrops.forEach((_, index) => {
+      timers.push(setTimeout(() => {
+        setVisibleEssenceCards(index + 1);
+      }, 110 + index * 190));
+
+      timers.push(setTimeout(() => {
+        setVisibleEssenceText(index + 1);
+      }, 240 + index * 190));
+    });
+
+    timers.push(setTimeout(() => {
+      setPhase(PHASES.DONE);
+    }, 320 + essenceDrops.length * 190));
+
+    return () => {
+      timers.forEach(timer => clearTimeout(timer));
+    };
+  }, [phase, essenceDrops]);
 
   useImperativeHandle(ref, () => ({
     advance() {
@@ -137,14 +306,19 @@ const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionB
       } else if (phase === PHASES.REVEALING) {
         setQueuedCards(prev => [...prev, ...cards.slice(currentIdx)]);
         setCurrentIdx(cards.length);
+        startEssenceRewardSequence();
+      } else if (phase === PHASES.ESSENCE) {
+        setVisibleEssenceCards(essenceDrops.length);
+        setVisibleEssenceText(essenceDrops.length);
         setPhase(PHASES.DONE);
       } else if (phase === PHASES.DONE && !collecting) {
         handleCollect();
       }
     },
-  }), [phase, currentIdx, collecting, cards]);
+  }), [phase, currentIdx, collecting, cards, essenceDrops]);
 
   const cardsLeft = cards.length - currentIdx;
+  const showEssenceRewards = essenceDrops.length > 0 && (phase === PHASES.ESSENCE || phase === PHASES.DONE);
 
   return (
     <div className="pack-opening">
@@ -152,26 +326,70 @@ const PackOpening = forwardRef(function PackOpening({ cards, onDone, collectionB
         {phase === PHASES.INTRO && 'Click the pack to open it'}
         {phase === PHASES.SPLITTING && '\u00a0'}
         {phase === PHASES.REVEALING && 'Tap card to open next'}
-        {phase === PHASES.DONE && 'All cards queued!'}
+        {phase === PHASES.ESSENCE && 'Motes distilled'}
+        {phase === PHASES.DONE && 'Rewards ready'}
       </p>
 
-      <div className="opening-stage">
-        {(phase === PHASES.INTRO || phase === PHASES.SPLITTING) && (
-          <SplitPack phase={phase} onClick={handleSplit} packType={packType} flyAngle={flyAngle} />
-        )}
-        {phase === PHASES.REVEALING && (
-          <CardFace
-            key={currentIdx}
-            card={cards[currentIdx]}
-            onClick={handleQueueCurrent}
-            className="center-card"
-            holo
-          />
-        )}
-        {phase === PHASES.DONE && !collecting && (
-          <button className="collect-btn" onClick={handleCollect}>
-            Add to Collection
-          </button>
+      <div className={`opening-stage${showEssenceRewards ? ' opening-stage--with-rewards' : ''}`}>
+        <div className="opening-stage-main">
+          {(phase === PHASES.INTRO || phase === PHASES.SPLITTING) && (
+            <SplitPack phase={phase} onClick={handleSplit} packType={packType} flyAngle={flyAngle} />
+          )}
+          {phase === PHASES.REVEALING && (
+            <CardFace
+              key={currentIdx}
+              card={cards[currentIdx]}
+              onClick={handleQueueCurrent}
+              className="center-card"
+              holo
+            />
+          )}
+          {phase === PHASES.DONE && !collecting && (
+            <button className="collect-btn summon-btn summon-btn--primary" onClick={handleCollect}>
+              Claim Summon
+            </button>
+          )}
+        </div>
+
+        {showEssenceRewards && (
+          <aside className="opening-rewards-panel">
+            <div className="opening-rewards-panel__head">
+              <span className="opening-rewards-panel__title">Rewards</span>
+            </div>
+
+            <div className="opening-rewards-grid" aria-hidden="true">
+              {essenceDrops.map((drop, index) => {
+                const { elementId, tier } = parseElementResourceId(drop.essenceId);
+                const essence = ESSENCES_BY_ID[elementId];
+                if (!essence) return null;
+                return (
+                  <div
+                    key={`${drop.essenceId}-${index}`}
+                    ref={el => { essenceRefs.current[index] = el; }}
+                    className={`opening-reward-tile${index < visibleEssenceCards ? ' opening-reward-tile--visible' : ''}`}
+                  >
+                    <OpeningResourceCard essence={essence} amount={drop.amount} tier={tier} />
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="opening-rewards-list">
+              {essenceDrops.map((drop, index) => {
+                const { elementId, tier } = parseElementResourceId(drop.essenceId);
+                const essence = ESSENCES_BY_ID[elementId];
+                if (!essence) return null;
+                return (
+                  <p
+                    key={drop.essenceId}
+                    className={`opening-reward-line${index < visibleEssenceText ? ' opening-reward-line--visible' : ''}`}
+                  >
+                    +{drop.amount} {formatArcanaDropName(essence, tier, drop.amount)}
+                  </p>
+                );
+              })}
+            </div>
+          </aside>
         )}
       </div>
 
