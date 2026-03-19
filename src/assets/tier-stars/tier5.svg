@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_1" data-name=" 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <polygon points="64 0 64 64 81.29 46.71 64 0" fill="#107887"/>
+  <polygon points="64 64 46.71 46.71 64 0 64 64" fill="#82e5f4"/>
+  <polygon points="81.29 81.29 64 64 128 64 81.29 81.29" fill="#0a3335"/>
+  <polygon points="81.29 46.71 64 64 128 64 81.29 46.71" fill="#18979b"/>
+  <polygon points="81.29 81.29 64 128 64 64 81.29 81.29" fill="#0a1e1a"/>
+  <polygon points="46.71 81.29 64 64 64 128 46.71 81.29" fill="#118891"/>
+  <polygon points="0 64 46.71 81.29 64 64 0 64" fill="#107887"/>
+  <polygon points="46.71 46.71 0 64 64 64 46.71 46.71" fill="#39dbe2"/>
+</svg>
