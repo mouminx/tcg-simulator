@@ -33,3 +33,10 @@ src/assets/.optimized
 
 # electron-builder output (installers). Built artefacts, not source.
 release
+
+# macOS conflict duplicates ("StationMerge 2.jsx", "wood 2.webp"). Something syncing
+# ~/Documents created 112 of these inside src/ — byte-identical copies of tracked files.
+# Harmless where they sit, but the asset globs match them (dead keys in the bundle) and a
+# `git add -A` would commit them. Guard rather than remember.
+* [0-9].*
+* [0-9][0-9].*
