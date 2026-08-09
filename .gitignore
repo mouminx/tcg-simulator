@@ -30,3 +30,6 @@ src/assets-original
 # Timestamp stamp written by scripts/optimize-assets.mjs so it can tell what it has
 # already processed. Generated state, not source.
 src/assets/.optimized
+
+# electron-builder output (installers). Built artefacts, not source.
+release

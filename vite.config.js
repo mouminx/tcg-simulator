@@ -7,7 +7,15 @@ import react from '@vitejs/plugin-react'
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // Relative asset paths for the desktop build, absolute for the web.
+  //
+  // Vercel serves from a domain root, so `/assets/...` is correct there. The Electron shell serves
+  // `dist/` over a custom `app://` protocol from a synthetic host, and while absolute paths happen to
+  // resolve there too, relative ones are immune to whatever host or subpath the shell mounts at —
+  // including a plain file:// fallback. Cheap insurance for a build that has no dev server to catch
+  // the mistake.
+  base: mode === 'desktop' ? './' : '/',
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -23,4 +31,4 @@ export default defineConfig({
       return undefined; // everything else keeps Vite's default behaviour
     },
   },
-})
+}))
