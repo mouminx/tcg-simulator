@@ -126,6 +126,9 @@ function buildMenu() {
       submenu: [
         { role: 'togglefullscreen' },
         { role: 'reload' },
+        // DevTools only in a development run. A shipped game has no business offering an inspector,
+        // but testing the shell without one means debugging blind — and the renderer is the whole app.
+        ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' }]),
         { type: 'separator' },
         { role: 'quit' },
       ],
@@ -152,7 +155,14 @@ function lockZoom(contents) {
 function createWindow() {
   const win = new BrowserWindow({
     show: false,
-    fullscreen: true,
+    /**
+     * Fullscreen only in the packaged app. `npm run desktop` opens a large window instead, so the
+     * shell can sit beside a terminal while being tested — a fullscreen window with no chrome is
+     * genuinely awkward to develop against. Ctrl/Cmd+Cmd+F toggles either way, so the fullscreen
+     * path is still one keystroke from any dev run.
+     */
+    fullscreen: app.isPackaged,
+    ...(app.isPackaged ? {} : { width: 1600, height: 1000 }),
     backgroundColor: '#0d0a07', // matches .app's darkest gradient stop, so there is no white flash
     title: 'Cards of Arcana',
     webPreferences: {
