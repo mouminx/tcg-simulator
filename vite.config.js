@@ -17,6 +17,22 @@ export default defineConfig(({ mode }) => ({
   // the mistake.
   base: mode === 'desktop' ? './' : '/',
   plugins: [react()],
+  server: {
+    watch: {
+      /**
+       * Keep the watcher out of the desktop build's output directories.
+       *
+       * `release/` holds electron-builder's packaged app — including Electron's own bundled files —
+       * so every `npm run dist:desktop` fired a burst of HMR reloads at any browser tab that
+       * happened to be open, on files like `release/mac-arm64/LICENSES.chromium.html`. `build/`
+       * holds the generated icon, which `npm run icons` rewrites.
+       *
+       * Vite merges this with its own defaults (`.git`, `node_modules`) and already ignores the
+       * configured `outDir`, which is why `dist/` needs no entry here but these two do.
+       */
+      ignored: ['**/release/**', '**/build/**'],
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },

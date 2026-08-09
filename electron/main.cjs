@@ -205,14 +205,20 @@ app.whenReady().then(() => {
   applyCsp();
   serveDist();
   createWindow();
-
-  // macOS keeps the process alive with no windows; re-create on dock activate.
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
 });
 
-// Windows and Linux expect the app to exit with its last window.
+/**
+ * Quits on every platform, macOS included.
+ *
+ * The macOS convention is to keep the process alive with no windows and re-open one on dock
+ * activate, which is right for a document app you dip in and out of. It is wrong for a game: closing
+ * the window means "I'm done playing", and a fullscreen game left running with nothing on screen is
+ * indistinguishable from a hung process. It also blocked the terminal on every `npm run desktop`,
+ * since npm waits for a child that never exits.
+ *
+ * The `activate` handler that used to re-create a window went with it — once the app quits on the
+ * last window closing, `activate` can never fire with zero windows, so it was unreachable.
+ */
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
