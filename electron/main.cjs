@@ -26,7 +26,7 @@
  * protections to do it. Don't.
  */
 
-const { app, BrowserWindow, protocol, net, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, session, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -109,6 +109,46 @@ function applyCsp() {
   });
 }
 
+/**
+ * A deliberately small menu, replacing Electron's default.
+ *
+ * The default menu ships Edit, Speech, and zoom controls — none of which a card game wants, and the
+ * zoom items are actively harmful (see `lockZoom`). But the menu cannot simply be removed: on macOS
+ * the app menu is where Cmd+Q lives, and this window opens fullscreen with no chrome, so a player
+ * with no menu and no titlebar has no way out. Quit and Toggle Full Screen are the two things that
+ * have to exist. Reload is kept as an escape hatch if a render ever wedges.
+ */
+function buildMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    {
+      label: 'Game',
+      submenu: [
+        { role: 'togglefullscreen' },
+        { role: 'reload' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+  ]));
+}
+
+/**
+ * Swallows the browser zoom shortcuts.
+ *
+ * The whole layout is a fixed `100vh` flex column with `overflow: hidden` on html, body and #root —
+ * nothing scrolls, by design. Zooming does not scale that gracefully, it just pushes content past
+ * the viewport edge where it cannot be reached, and there is no scrollbar to recover with. Leaving
+ * the accelerators out of the menu is not enough: Chromium binds them internally.
+ */
+function lockZoom(contents) {
+  contents.setVisualZoomLevelLimits(1, 1); // pinch-to-zoom on a trackpad
+  contents.on('before-input-event', (event, input) => {
+    const mod = process.platform === 'darwin' ? input.meta : input.control;
+    if (mod && ['+', '-', '=', '0', 'Plus', 'Minus'].includes(input.key)) event.preventDefault();
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     show: false,
@@ -135,11 +175,23 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  lockZoom(win.webContents);
+
+  /**
+   * The renderer never navigates. It is a single page with no router, so any navigation away from
+   * the shell is either a bug or something hostile — and unlike a browser tab there is no back
+   * button to recover with. External links are handled by the window-open handler above.
+   */
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== win.webContents.getURL()) event.preventDefault();
+  });
+
   win.loadURL(`${APP_SCHEME}://-/index.html`);
   return win;
 }
 
 app.whenReady().then(() => {
+  buildMenu();
   applyCsp();
   serveDist();
   createWindow();
