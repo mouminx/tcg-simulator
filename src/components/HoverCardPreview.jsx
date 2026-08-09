@@ -31,7 +31,7 @@ export default function HoverCardPreview({ preview }) {
       className={`hover-card-preview hover-card-preview--${preview.dir ?? 'right'}`}
       style={{ left: preview.x, top: preview.y }}
     >
-      <CardFace card={preview.card} className="viewer-card hover-preview-card no-twirl" holo />
+      <CardFace card={preview.card} className="viewer-card hover-preview-card no-twirl" holo artDetail="full" />
     </div>,
     document.body,
   );

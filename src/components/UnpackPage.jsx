@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import PackCard from './PackCard';
 import PackOpening from './PackOpening';
-import { PACK_TYPES } from '../game/cards';
+import { getPackTypeById } from '../game/cards';
 import {
   assignInventoryItemToSlot,
   createEmptyAttunementLoadout,
@@ -13,14 +13,14 @@ import {
 import { ARCANA_ITEMS_BY_ID, ESSENCES_BY_ID } from '../game/arcana';
 
 // Charm artwork — mirrors Arcana.jsx imports
-import _cindergust from '../assets/cards/charms/cindergust.png';
-import _stormlash  from '../assets/cards/charms/stormlash.png';
-import _tidereed   from '../assets/cards/charms/tidereed.png';
-import _bloomtide  from '../assets/cards/charms/bloomtide.png';
-import _galebolt   from '../assets/cards/charms/galebolt.png';
-import _voidtide   from '../assets/cards/charms/voidtide.png';
-import _dawnseal   from '../assets/cards/charms/dawnseal.png';
-import _starveil   from '../assets/cards/charms/starveil.png';
+import _cindergust from '../assets/cards/charms/cindergust.webp';
+import _stormlash  from '../assets/cards/charms/stormlash.webp';
+import _tidereed   from '../assets/cards/charms/tidereed.webp';
+import _bloomtide  from '../assets/cards/charms/bloomtide.webp';
+import _galebolt   from '../assets/cards/charms/galebolt.webp';
+import _voidtide   from '../assets/cards/charms/voidtide.webp';
+import _dawnseal   from '../assets/cards/charms/dawnseal.webp';
+import _starveil   from '../assets/cards/charms/starveil.webp';
 
 const CHARM_ART = {
   'smoldering-charm': _cindergust,
@@ -37,7 +37,7 @@ const CHARM_ART = {
 let _draggingPack = null;
 
 // Order to pick next pack: lowest → highest rarity/cost
-const PACK_TYPE_ORDER = ['dusk', 'iron', 'blankSlate', 'arcane', 'void', 'primordial'];
+const PACK_TYPE_ORDER = ['dusk', 'iron', 'blankSlate', 'treasure', 'arcane', 'void', 'primordial'];
 
 function getNextPack(packs) {
   for (const typeId of PACK_TYPE_ORDER) {
@@ -494,10 +494,12 @@ export default function UnpackPage({
   packs,
   arcanaInventory,
   pendingCards,
+  pendingResourceCards,
   pendingEssenceDrops,
   pendingPackType,
   onOpenPack,
   onPackDone,
+  onCoinPop,
   collectionBtnRef,
   inventoryTargetRef,
 }) {
@@ -510,7 +512,7 @@ export default function UnpackPage({
   const fieldRef = useRef(null);
   const packOpeningRef = useRef(null);
 
-  const isOpening = pendingCards.length > 0;
+  const isOpening = pendingCards.length > 0 || pendingResourceCards.length > 0;
   const isBlankSlate = stagedPack?.pack.packTypeId === 'blankSlate';
   const attunementValidation = validateAttunementLoadout(
     draftLoadout, arcanaInventory, { requireAllSlotsFilled: false }
@@ -522,7 +524,7 @@ export default function UnpackPage({
   const totalAngle = packs.length > 1 ? Math.min(60, (packs.length - 1) * 10) : 0;
 
   function stagePackObject(pack) {
-    const packType = PACK_TYPES[pack.packTypeId] ?? PACK_TYPES.iron;
+    const packType = getPackTypeById(pack.packTypeId);
     setStagedPack({ pack, packType });
     setHiddenPackId(pack.id);
   }
@@ -533,7 +535,7 @@ export default function UnpackPage({
 
     const packEl = packItemRefs.current[pack.id];
     const fieldEl = fieldRef.current;
-    const packType = PACK_TYPES[pack.packTypeId] ?? PACK_TYPES.iron;
+    const packType = getPackTypeById(pack.packTypeId);
 
     if (packEl && fieldEl) {
       const packRect = packEl.getBoundingClientRect();
@@ -643,7 +645,7 @@ export default function UnpackPage({
             Acquire packs from the Shop to begin summoning
           </p>
         ) : packs.map((pack, i) => {
-          const packType = PACK_TYPES[pack.packTypeId] ?? PACK_TYPES.iron;
+          const packType = getPackTypeById(pack.packTypeId);
           const isHidden = hiddenPackId === pack.id;
           const angle = packs.length > 1 ? (i / (packs.length - 1) - 0.5) * totalAngle : 0;
           const angleRad = angle * Math.PI / 180;
@@ -676,8 +678,10 @@ export default function UnpackPage({
         <PackOpening
           ref={packOpeningRef}
           cards={pendingCards}
+          resourceCards={pendingResourceCards}
           essenceDrops={pendingEssenceDrops}
           onDone={handlePackDone}
+          onCoinPop={onCoinPop}
           collectionBtnRef={collectionBtnRef}
           inventoryTargetRef={inventoryTargetRef}
           packType={pendingPackType}

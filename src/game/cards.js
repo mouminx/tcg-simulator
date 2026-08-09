@@ -1,4 +1,4 @@
-import { ARCANA_ITEMS_BY_ID, ARCANA_SLOTS } from './arcana';
+import { ARCANA_ITEMS_BY_ID, ARCANA_SLOTS, getElementResourceId } from './arcana';
 
 export { ESSENCES as ESSENCE_TYPES, DEFAULT_RESOURCES } from './arcana';
 
@@ -31,6 +31,25 @@ export const AFFIX_VALUE_RANGES = {
 
 export const HIGHER_AFFIX_CHANCE = 0.5;
 export const HIGHER_AFFIX_MULTIPLIER = 2;
+export const COIN_GENERATION_REWARD_RANGES = {
+  common:    [1, 12],
+  uncommon:  [8, 24],
+  rare:      [18, 50],
+  epic:      [40, 85],
+  legendary: [70, 140],
+  mythic:    [120, 220],
+};
+export const ELEMENTAL_ATTUNEMENT_AFFIXES = [
+  { id: 'emberAttunement',     label: 'Ember Attunement',     stat: 'emberAttunement',     elementId: 'smoldering' },
+  { id: 'stormAttunement',     label: 'Storm Attunement',     stat: 'stormAttunement',     elementId: 'jolting' },
+  { id: 'tideAttunement',      label: 'Tide Attunement',      stat: 'tideAttunement',      elementId: 'flowing' },
+  { id: 'bloomAttunement',     label: 'Bloom Attunement',     stat: 'bloomAttunement',     elementId: 'blooming' },
+  { id: 'galeAttunement',      label: 'Gale Attunement',      stat: 'galeAttunement',      elementId: 'gusting' },
+  { id: 'voidAttunement',      label: 'Void Attunement',      stat: 'voidAttunement',      elementId: 'hollowing' },
+  { id: 'radianceAttunement',  label: 'Radiance Attunement',  stat: 'radianceAttunement',  elementId: 'gleaming' },
+  { id: 'celestialAttunement', label: 'Celestial Attunement', stat: 'celestialAttunement', elementId: 'ascending' },
+  { id: 'stoneAttunement',     label: 'Stone Attunement',     stat: 'stoneAttunement',     elementId: 'grounding' },
+];
 
 // ── Unit Class Definitions ─────────────────────────────────────────────────────
 
@@ -172,7 +191,8 @@ export function resolveCardName(classKey, rarity, tier) {
 }
 
 // ── Class-Specific Affix Pools ────────────────────────────────────────────────
-// Each class has three affixes:
+// Each class has efficiency / attunement / luck affixes, and some gathering
+// classes can also roll treasure sense.
 //   Efficiency → speed of resource generation
 //   Attunement → output quantity bonus
 //   Luck       → chance for bonus / rare items
@@ -192,11 +212,13 @@ export const CLASS_AFFIX_POOLS = {
     { id: 'loggingEfficiency',  label: 'Logging Efficiency',  stat: 'gatheringSpeed'      },
     { id: 'loggingAttunement',  label: 'Logging Attunement',  stat: 'loggingAttunement'   },
     { id: 'loggingLuck',        label: 'Logging Luck',        stat: 'loggingLuck'         },
+    { id: 'treasureSense',      label: 'Treasure Sense',      stat: 'treasureSense'       },
   ],
   hunter: [
     { id: 'huntingEfficiency',  label: 'Hunting Efficiency',  stat: 'huntingSpeed'       },
     { id: 'huntingAttunement',  label: 'Hunting Attunement',  stat: 'huntingAttunement'  },
     { id: 'huntingLuck',        label: 'Hunting Luck',        stat: 'huntingLuck'        },
+    { id: 'treasureSense',      label: 'Treasure Sense',      stat: 'treasureSense'      },
   ],
   merchant: [
     { id: 'tradeEfficiency',  label: 'Trade Efficiency',  stat: 'tradeEfficiency'  },
@@ -222,6 +244,7 @@ export const CLASS_AFFIX_POOLS = {
     { id: 'foragingEfficiency',  label: 'Foraging Efficiency',  stat: 'gatheringSpeed'      },
     { id: 'foragingAttunement',  label: 'Foraging Attunement',  stat: 'foragingAttunement'  },
     { id: 'foragingLuck',        label: 'Foraging Luck',        stat: 'foragingLuck'        },
+    { id: 'treasureSense',       label: 'Treasure Sense',       stat: 'treasureSense'       },
   ],
 };
 
@@ -229,7 +252,7 @@ export const CLASS_AFFIX_POOLS = {
 
 export const GENERAL_AFFIXES = [
   { id: 'coinGeneration',     label: 'Coin Generation',     stat: 'coinGeneration',     minTier: 1 },
-  { id: 'essenceAttunement',  label: 'Essence Attunement',  stat: 'essenceAttunement',  minTier: 1 },
+  ...ELEMENTAL_ATTUNEMENT_AFFIXES.map(affix => ({ ...affix, minTier: 1 })),
   { id: 'resourceGeneration', label: 'Resource Generation', stat: 'resourceGeneration', minTier: 1 },
   { id: 'productionSpeed',    label: 'Production Speed',    stat: 'productionSpeed',    minTier: 1 },
   { id: 'craftsmanship',      label: 'Craftsmanship',       stat: 'craftsmanship',      minTier: 2 },
@@ -362,6 +385,13 @@ export const PACK_TYPES = {
     description: 'Attunement-ready · Arcana slots optional',
     rarityWeights: { common: 57, uncommon: 26, rare: 13, epic: 3, legendary: 0.75, mythic: 0.25 },
     tierWeights:   { 1: 78, 2: 15, 3: 5, 4: 1.7, 5: 0.3 },
+  },
+  treasure: {
+    id: 'treasure', name: 'Treasure', subtitle: 'Pack', cardCount: 5,
+    cost: 0, stars: '✦ ✦',
+    description: 'Gold caches only · Found through Treasure Sense',
+    rarityWeights: { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0, mythic: 0 },
+    tierWeights:   { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
   },
   arcane: {
     id: 'arcane', name: 'Arcane', subtitle: 'Pack', cardCount: 5,
@@ -496,18 +526,69 @@ export const PACK_TYPES = {
   },
 };
 
+export const WELCOME_PACK_TYPE = {
+  id: 'welcome',
+  name: 'Welcome Pack',
+  subtitle: 'Initiate Bundle',
+  cardCount: 9,
+  cost: 0,
+  stars: '✧ ✧ ✧',
+  description: 'One of every class · Tier I commons · First steps',
+  rarityWeights: { common: 100 },
+  tierWeights: { 1: 100 },
+};
+
+export function getPackTypeById(packTypeId) {
+  return packTypeId === 'welcome'
+    ? WELCOME_PACK_TYPE
+    : (PACK_TYPES[packTypeId] ?? PACK_TYPES.iron);
+}
+
+export function openTreasurePack() {
+  return Array.from({ length: 5 }, (_, index) => {
+    const amount = rollIntInRange(10, 250);
+    const artKey = amount >= 50 ? 'lots of coins' : 'few coins';
+    return {
+      id: `treasure-reward-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+      type: 'coins',
+      name: amount >= 50 ? 'Lots of Coins' : 'Few Coins',
+      amount,
+      artKey,
+      description: 'A treasure cache of claimable gold pulled from a discovered treasure pack.',
+    };
+  });
+}
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
+/**
+ * The project's single money formatter: grouped thousands, always two decimals.
+ * `10000` reads as `10,000.00`, which is legible at a glance where `10000.00` is not.
+ */
 export function fmt(amount) {
-  return Number(amount).toFixed(2);
+  return Number(amount).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export function fmtStr(amount) {
-  return `⬡ ${Number(amount).toFixed(2)}`;
+  return `⬡ ${fmt(amount)}`;
 }
 
 function rollPercentInRange(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function rollDecimalInRange(min, max) {
+  const raw = min + Math.random() * (max - min);
+  return Math.round(raw * 100) / 100;
+}
+
+function rollIntInRange(min, max) {
+  const floorMin = Math.ceil(min);
+  const floorMax = Math.floor(max);
+  return Math.floor(Math.random() * (floorMax - floorMin + 1)) + floorMin;
 }
 
 function resolveAffixDefinition(affix) {
@@ -547,6 +628,37 @@ export function getActiveAffixBonuses(activeCards = []) {
     }
   }
   return totals;
+}
+
+export function rollAffixProcChance(percent) {
+  const chance = Math.max(0, Number(percent) || 0);
+  if (chance <= 0) return false;
+  return Math.random() * 100 < chance;
+}
+
+export function rollAttunementBonus(card, stat) {
+  const chance = getCardAffixBonuses(card)?.[stat] ?? 0;
+  return rollAffixProcChance(chance) ? 1 : 0;
+}
+
+export function rollCoinGenerationReward(card) {
+  const bonuses = getCardAffixBonuses(card);
+  const procChance = bonuses.coinGeneration ?? 0;
+  if (!rollAffixProcChance(procChance)) return 0;
+  const [minReward, maxReward] = COIN_GENERATION_REWARD_RANGES[card?.rarity] ?? COIN_GENERATION_REWARD_RANGES.common;
+  return rollIntInRange(minReward, maxReward);
+}
+
+export function rollElementalAttunementDrops(card) {
+  const bonuses = getCardAffixBonuses(card);
+  const drops = {};
+  for (const affix of ELEMENTAL_ATTUNEMENT_AFFIXES) {
+    const procChance = bonuses[affix.stat] ?? 0;
+    if (!rollAffixProcChance(procChance)) continue;
+    const resourceId = getElementResourceId(affix.elementId, 'mote');
+    drops[resourceId] = (drops[resourceId] ?? 0) + 1;
+  }
+  return drops;
 }
 
 // ── Rolling ───────────────────────────────────────────────────────────────────

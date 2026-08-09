@@ -56,14 +56,14 @@ const INITIAL_RING_SLOTS = Object.fromEntries(ELEMENT_SLOT_IDS.map(id => [id, nu
 const INITIAL_CARD_SLOTS = Object.fromEntries(CARD_SLOT_IDS.map(id => [id, null]));
 
 // ── Visual assets ─────────────────────────────────────────────────────────────
-import _cindergust from '../assets/cards/charms/cindergust.png';
-import _stormlash  from '../assets/cards/charms/stormlash.png';
-import _tidereed   from '../assets/cards/charms/tidereed.png';
-import _bloomtide  from '../assets/cards/charms/bloomtide.png';
-import _galebolt   from '../assets/cards/charms/galebolt.png';
-import _voidtide   from '../assets/cards/charms/voidtide.png';
-import _dawnseal   from '../assets/cards/charms/dawnseal.png';
-import _starveil   from '../assets/cards/charms/starveil.png';
+import _cindergust from '../assets/cards/charms/cindergust.webp';
+import _stormlash  from '../assets/cards/charms/stormlash.webp';
+import _tidereed   from '../assets/cards/charms/tidereed.webp';
+import _bloomtide  from '../assets/cards/charms/bloomtide.webp';
+import _galebolt   from '../assets/cards/charms/galebolt.webp';
+import _voidtide   from '../assets/cards/charms/voidtide.webp';
+import _dawnseal   from '../assets/cards/charms/dawnseal.webp';
+import _starveil   from '../assets/cards/charms/starveil.webp';
 
 const ITEM_ART = {
   'smoldering-charm': _cindergust, 'jolting-charm': _stormlash,
@@ -73,23 +73,23 @@ const ITEM_ART = {
 };
 
 const MOTE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/motes/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+mote\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/motes/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+mote\.webp$/i, '').toLowerCase(), src]),
 );
 
 const WISP_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/wisps/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+wisp\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/wisps/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+wisp\.webp$/i, '').toLowerCase(), src]),
 );
 
 const ESSENCE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/essences/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+essence\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/essences/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+essence\.webp$/i, '').toLowerCase(), src]),
 );
 
 const QUINTESSENCE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/quintessences/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+quin?tessence\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/quintessences/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+quin?tessence\.webp$/i, '').toLowerCase(), src]),
 );
 
 const TIER_ART = {

@@ -2,22 +2,22 @@ import { useMemo, useState } from 'react';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
 
 const ORE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/ores/*.png', { eager: true, import: 'default' })).map(([path, src]) => [
-    path.split('/').pop().replace(/\s+ore\.png$/i, '').toLowerCase(),
+  Object.entries(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' })).map(([path, src]) => [
+    path.split('/').pop().replace(/\s+ore\.webp$/i, '').toLowerCase(),
     src,
   ]),
 );
 
 const INGOT_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/ingots/*.png', { eager: true, import: 'default' })).map(([path, src]) => [
-    path.split('/').pop().replace(/\.png$/, '').toLowerCase(),
+  Object.entries(import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' })).map(([path, src]) => [
+    path.split('/').pop().replace(/\.webp$/, '').toLowerCase(),
     src,
   ]),
 );
 
 const WILDERNESS_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/resources/*.png', { eager: true, import: 'default' })).map(([path, src]) => [
-    path.split('/').pop().replace(/\.png$/, '').toLowerCase(),
+  Object.entries(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' })).map(([path, src]) => [
+    path.split('/').pop().replace(/\.webp$/, '').toLowerCase(),
     src,
   ]),
 );

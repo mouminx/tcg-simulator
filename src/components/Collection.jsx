@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { RARITIES, TIERS, TAGS, CARD_AFFIXES, fmtStr } from '../game/cards';
 import Gold from './Gold';
 import CardFace from './CardFace';
+import { CARD_SOURCE_MIME } from './CardPocket';
+import { audioEngine } from '../game/audio/audioEngine';
+import { SOUND_IDS } from '../game/audio/audioLibrary';
 import HoverCardPreview, { buildHoverCardPreview } from './HoverCardPreview';
 import commonGem from '../assets/rarity-gems/common.svg';
 import uncommonGem from '../assets/rarity-gems/uncommon.svg';
@@ -393,7 +396,10 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
         onMouseEnter={e => setHoverPreview(buildHoverCardPreview(e.currentTarget, card))}
         onMouseLeave={() => setHoverPreview(current => (current?.card?.id === card.id ? null : current))}
         onDragStart={!selectMode && !isUnavailable ? e => {
+          audioEngine.play(SOUND_IDS.cardFlip);
           e.dataTransfer.setData('text/plain', String(card.id));
+          // Lets the pocket distinguish an incoming card from an internal reorder.
+          e.dataTransfer.setData(CARD_SOURCE_MIME, 'collection');
           e.dataTransfer.effectAllowed = 'move';
         } : undefined}
       >
@@ -401,10 +407,13 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
           card={card}
           className={classes}
           visualMode="compact"
-          onClick={isUnavailable ? undefined : (selectMode
-            ? (e) => toggleSelect(card.id, globalIdx, e)
-            : () => setViewingCard(card)
-          )}
+          onClick={isUnavailable ? undefined : (e => {
+            // A CardFace is a div, so the delegated click sound in App.jsx does not fire for
+            // it — cards need their own.
+            audioEngine.play(SOUND_IDS.cardFlip);
+            if (selectMode) toggleSelect(card.id, globalIdx, e);
+            else setViewingCard(card);
+          })}
         />
         {isUnavailable && (
           <div
@@ -467,6 +476,10 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
             </button>
           </div>
 
+          {/* Scroll region. The sell bar below sits outside it, so it stays visible no
+              matter how long the filter stack gets — previously it was the last child
+              of the sidebar and got pushed off-screen exactly when it was needed. */}
+          <div className="collection-sidebar__scroll">
           <div className="collection-filters">
             <div className="filters-top-row">
               <input
@@ -628,6 +641,8 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
             </div>
           )}
 
+          </div>
+
           {selectMode && selectedIds.size > 0 && (
             <div className="mass-sell-bar">
               <span>{selectedIds.size} card{selectedIds.size !== 1 ? 's' : ''} selected · <Gold amount={selectedTotal} /></span>
@@ -763,7 +778,7 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
           <div className="card-viewer-modal" onClick={e => e.stopPropagation()}>
             <button className="card-viewer-close" onClick={() => setViewingCard(null)} aria-label="Close">✕</button>
             <div className="card-viewer-card-wrap">
-              <CardFace card={viewingCard} className="viewer-card" holo />
+              <CardFace card={viewingCard} className="viewer-card" holo artDetail="full" />
             </div>
             <div className="card-viewer-panel">
               <h3 className="card-viewer-name">{viewingCard.name}</h3>

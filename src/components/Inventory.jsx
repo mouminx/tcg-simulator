@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { ORE_TYPES, INGOT_RESOURCES } from '../game/foundry';
-import { ALL_GATHERING_RESOURCES, PROCESSED_RESOURCES } from '../game/wilderness';
+import { GATHERED_ONLY_RESOURCES, PROCESSED_RESOURCES } from '../game/wilderness';
 import {
   CHARMS,
   CATALYSTS,
@@ -16,27 +16,57 @@ import ResourceQuantityPopover from './ResourceQuantityPopover';
 const makeArtMap = (files) => {
   const map = {};
   for (const [path, src] of Object.entries(files)) {
-    map[path.split('/').pop().replace(/\.png$/i, '').toLowerCase()] = src;
+    map[path.split('/').pop().replace(/\.webp$/i, '').toLowerCase()] = src;
   }
   return map;
 };
 
 // Separate maps so silver/gold/platinum ore art isn't overwritten by same-named ingot art
-const ORE_ART = makeArtMap(import.meta.glob('../assets/ores/*.png', { eager: true, import: 'default' }));
-const INGOT_ART = makeArtMap(import.meta.glob('../assets/ingots/*.png', { eager: true, import: 'default' }));
-const RESOURCE_ART = makeArtMap(import.meta.glob('../assets/resources/*.png', { eager: true, import: 'default' }));
-const CHARM_ART = makeArtMap(import.meta.glob('../assets/cards/charms/*.png', { eager: true, import: 'default' }));
+const ORE_ART = makeArtMap(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' }));
+const INGOT_ART = makeArtMap(import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' }));
+const RESOURCE_ART = makeArtMap(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }));
+const CHARM_ART = makeArtMap(import.meta.glob('../assets/cards/charms/*.webp', { eager: true, import: 'default' }));
 const ELEMENT_ART = makeArtMap({
-  ...import.meta.glob('../assets/elements/essences/*.png', { eager: true, import: 'default' }),
-  ...import.meta.glob('../assets/elements/motes/*.png', { eager: true, import: 'default' }),
-  ...import.meta.glob('../assets/elements/wisps/*.png', { eager: true, import: 'default' }),
-  ...import.meta.glob('../assets/elements/quintessences/*.png', { eager: true, import: 'default' }),
+  ...import.meta.glob('../assets/elements/essences/*.webp', { eager: true, import: 'default' }),
+  ...import.meta.glob('../assets/elements/motes/*.webp', { eager: true, import: 'default' }),
+  ...import.meta.glob('../assets/elements/wisps/*.webp', { eager: true, import: 'default' }),
+  ...import.meta.glob('../assets/elements/quintessences/*.webp', { eager: true, import: 'default' }),
 });
 
 function getResourceArt(key) {
   if (!key) return null;
   const k = key.toLowerCase();
   return RESOURCE_ART[k] ?? CHARM_ART[k] ?? null;
+}
+
+/**
+ * Drawstring sack — the tab's identity marker. Inline rather than an asset so it
+ * inherits `currentColor` from the tab's hover/active states.
+ */
+function SackIcon({ className = '' }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {/* Cinched neck, gathered by the drawstring */}
+      <path
+        d="M10.1 2.4c1.2.7 2.6.7 3.8 0l.7 3.5H9.4z"
+        fill="currentColor"
+        opacity="0.72"
+      />
+      {/* Drawstring band */}
+      <rect x="8.3" y="5.5" width="7.4" height="2" rx="1" fill="currentColor" />
+      {/* Body — narrow at the tie, bulging toward the base */}
+      <path
+        d="M9.7 7.7C6.5 9.7 3.5 12.8 3.5 16.1c0 3.7 3.9 5.8 8.5 5.8s8.5-2.1 8.5-5.8c0-3.3-3-6.4-6.2-8.4z"
+        fill="currentColor"
+        opacity="0.9"
+      />
+    </svg>
+  );
 }
 
 function getArcanaResourceArt(resourceId) {
@@ -221,7 +251,15 @@ export default function Inventory({
 
   const ores = ORE_TYPES.filter(ore => (oreInventory[ore.id] ?? 0) > 0);
   const ingots = ORE_TYPES.filter(ore => (ingotInventory[ore.ingotId] ?? 0) > 0);
-  const gathered = ALL_GATHERING_RESOURCES.filter(r => (gatheredInventory[r.id] ?? 0) > 0);
+  /**
+   * `GATHERED_ONLY_RESOURCES`, not `ALL_GATHERING_RESOURCES`. The gathering pools duplicate every ore
+   * and ingot under their own ids, so the full list made this section a catch-all that showed Steel
+   * Ingots and Iron Ore under "Gathered" while dedicated Ingots and Ores sections sat right above it.
+   * Production now folds those into the canonical inventories (see GATHERED_CANONICAL_TARGET), and
+   * filtering here keeps a stale save from re-displaying them in the wrong place before its migration
+   * has been written back.
+   */
+  const gathered = GATHERED_ONLY_RESOURCES.filter(r => (gatheredInventory[r.id] ?? 0) > 0);
   const processed = PROCESSED_RESOURCES.filter(r => (processedInventory[r.id] ?? 0) > 0);
   const arcanaResources = Object.entries(resources)
     .filter(([, count]) => (count ?? 0) > 0)
@@ -241,7 +279,7 @@ export default function Inventory({
 
   const oreTotal = ORE_TYPES.reduce((sum, ore) => sum + (oreInventory[ore.id] ?? 0), 0);
   const ingotTotal = ORE_TYPES.reduce((sum, ore) => sum + (ingotInventory[ore.ingotId] ?? 0), 0);
-  const gatheredTotal = ALL_GATHERING_RESOURCES.reduce((sum, r) => sum + (gatheredInventory[r.id] ?? 0), 0);
+  const gatheredTotal = GATHERED_ONLY_RESOURCES.reduce((sum, r) => sum + (gatheredInventory[r.id] ?? 0), 0);
   const processedTotal = PROCESSED_RESOURCES.reduce((sum, r) => sum + (processedInventory[r.id] ?? 0), 0);
   const arcanaResourceTotal = arcanaResources.reduce((sum, resource) => sum + (resource.count ?? 0), 0);
   const grandTotal = oreTotal + ingotTotal + gatheredTotal + processedTotal + arcanaResourceTotal + (arcanaInventory?.length ?? 0);
@@ -258,12 +296,19 @@ export default function Inventory({
     <>
       <div className={`inventory-panel${open ? ' inventory-panel--open' : ''}`}>
         <button
-          className="inventory-toggle"
+          className="drawer-tab inventory-toggle"
           onClick={onToggle}
-          title={open ? 'Close inventory' : 'Open inventory'}
-          aria-label={open ? 'Close inventory' : 'Open inventory'}
+          title={open ? 'Close bag' : 'Open bag'}
+          aria-label={open ? 'Close bag' : 'Open bag'}
+          aria-expanded={open}
         >
-          {open ? '›' : '‹'}
+          <span className="drawer-tab__row">
+            <span className="drawer-tab__chevron" aria-hidden="true">{open ? '›' : '‹'}</span>
+            <SackIcon className="drawer-tab__icon" />
+          </span>
+          <span className="drawer-tab__name">
+            Bag{grandTotal > 0 ? ` ${grandTotal}` : ''}
+          </span>
         </button>
 
         <div className="inventory-panel__body">
@@ -272,6 +317,11 @@ export default function Inventory({
             <span className="inventory-panel__total">{grandTotal}</span>
           </div>
 
+          {/* Only mounted while open. The panel holds ~80 resource icons; leaving
+              them mounted behind a collapsed panel kept every one of those images
+              decoded in memory for nothing. Section totals in the header above are
+              plain numbers and stay visible either way. */}
+          {open && (
           <div className="inventory-panel__scroll">
             <InventorySection title="Ores" total={oreTotal}>
               {ores.length > 0 ? ores.map(ore => (
@@ -429,6 +479,7 @@ export default function Inventory({
               {arcanaResources.length === 0 && arcanaItems.length === 0 ? <p className="inventory-empty">No Arcana resources or crafted items</p> : null}
             </InventorySection>
           </div>
+          )}
         </div>
       </div>
 

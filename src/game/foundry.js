@@ -1,4 +1,5 @@
-import { getCardAffixBonuses } from './cards';
+import { getCardAffixBonuses, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './cards';
+import { DEFAULT_RESOURCES } from './arcana';
 
 export const ORE_TYPES = [
   { id: 'stone',   name: 'Stone',       ingotId: null,        ingot: null,             family: 'Mineral',   color: '#7a7a7a', glow: 'rgba(122,122,122,0.30)', description: 'Solid bedrock chipped from cave walls, the most fundamental of all building materials.' },
@@ -178,15 +179,20 @@ export function startMiningSlots(slots = [], now = Date.now()) {
 
 export function resolveCompletedMiningSlots(slots = [], now = Date.now()) {
   const completedQueue = { ...DEFAULT_ORE_INVENTORY };
+  const elementalDrops = { ...DEFAULT_RESOURCES };
   let completedCount = 0;
   let goldEarned = 0;
 
   const nextSlots = slots.map(slot => {
     if (!slot?.card || !slot.endsAt || slot.endsAt > now || !slot.oreType) return slot;
-    completedQueue[slot.oreType] += 1;
+    const attunementBonus = rollAttunementBonus(slot.card, 'miningAttunement');
+    completedQueue[slot.oreType] += 1 + attunementBonus;
+    const moteDrops = rollElementalAttunementDrops(slot.card);
+    Object.entries(moteDrops).forEach(([resourceId, amount]) => {
+      elementalDrops[resourceId] = (elementalDrops[resourceId] ?? 0) + amount;
+    });
     completedCount += 1;
-    const coinBonus = getCardAffixBonuses(slot.card).coinGeneration ?? 0;
-    goldEarned += BASE_GOLD_PER_PRODUCTION * (1 + coinBonus / 100);
+    goldEarned += rollCoinGenerationReward(slot.card);
     return startMiningSlot({
       ...slot,
       startedAt: null,
@@ -195,7 +201,7 @@ export function resolveCompletedMiningSlots(slots = [], now = Date.now()) {
     }, now);
   });
 
-  return { nextSlots, completedQueue, completedCount, goldEarned };
+  return { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops };
 }
 
 export function addOreCounts(left = DEFAULT_ORE_INVENTORY, right = DEFAULT_ORE_INVENTORY) {
@@ -299,6 +305,20 @@ export function createForgeFuelSlots(count = FORGE_SLOT_COUNT) {
   }));
 }
 
+/**
+ * Normalize one row's fuel state.
+ *
+ * **`slotId` is carried through when the input has one**, and that is load-bearing rather than
+ * tidiness. `startForgeCycle` and `consumeForgeFuelCharge` both rebuild their result from this
+ * function and write it straight back into `forgeFuelSlots` — so if it dropped `slotId`, the first
+ * smelt a row ever started would erase that row's identity. `normalizeForgeFuelSlots` matches saved
+ * slots *by* `slotId`, so on the next load the slot matched nothing, came back empty, and the
+ * player's loaded coal was silently destroyed while still sitting in the save file.
+ *
+ * The key is omitted entirely rather than set to `undefined` when absent, because callers compose
+ * it as `{ slotId, ...normalizeForgeFuelState(saved) }` — an explicit `undefined` in the spread
+ * would clobber the id they just supplied.
+ */
 export function normalizeForgeFuelState(savedState) {
   if (!savedState || typeof savedState !== 'object') return createForgeFuelState();
   const loadedCoal = Math.max(0, Math.floor(Number(savedState.loadedCoal) || 0));
@@ -306,7 +326,9 @@ export function normalizeForgeFuelState(savedState) {
     0,
     Math.min(FORGE_SMELTS_PER_COAL, Math.floor(Number(savedState.currentCoalCharges) || 0)),
   );
+  const slotId = Number(savedState.slotId);
   return {
+    ...(Number.isFinite(slotId) && slotId > 0 ? { slotId } : null),
     loadedCoal,
     currentCoalCharges: loadedCoal > 0 ? (currentCoalCharges || FORGE_SMELTS_PER_COAL) : 0,
     startedAt: typeof savedState.startedAt === 'number' ? savedState.startedAt : null,
@@ -318,12 +340,20 @@ export function normalizeForgeFuelState(savedState) {
 export function normalizeForgeFuelSlots(savedSlots = [], count = FORGE_SLOT_COUNT, legacyFuelState = null) {
   const normalizedFromSlots = Array.from({ length: count }, (_, index) => {
     const slotId = index + 1;
-    const savedSlot = Array.isArray(savedSlots)
+    // Match by id first. Falling back to POSITION recovers saves written while the bug above was
+    // live: those rows are intact apart from a missing `slotId`, so an id-only lookup threw away
+    // real coal. The array has always been dense and index-ordered (`createForgeFuelSlots` and
+    // every updater map over it in place), so position is a sound identity when the id is gone.
+    const byId = Array.isArray(savedSlots)
       ? savedSlots.find(slot => Number(slot?.slotId) === slotId)
+      : null;
+    const positional = !byId && Array.isArray(savedSlots) && savedSlots[index]
+      && savedSlots[index].slotId == null
+      ? savedSlots[index]
       : null;
     return {
       slotId,
-      ...normalizeForgeFuelState(savedSlot),
+      ...normalizeForgeFuelState(byId ?? positional),
     };
   });
 

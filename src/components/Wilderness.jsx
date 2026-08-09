@@ -1,14 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { audioEngine } from '../game/audio/audioEngine';
+import { SOUND_IDS } from '../game/audio/audioLibrary';
 import { createPortal } from 'react-dom';
 
 import CardFace from './CardFace';
+import { socketedCardDragProps } from './CardPocket';
+import StationMerge from './StationMerge';
 import HoverCardPreview, { buildHoverCardPreview } from './HoverCardPreview';
+import PackCard from './PackCard';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
+import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
+import { getPackTypeById } from '../game/cards';
 import {
   ALL_GATHERING_RESOURCES,
   PROCESSING_SLOT_COUNT,
   PROCESSING_RECIPES,
   PROCESSED_RESOURCES_BY_ID,
+  TREASURE_PACK_RESOURCE,
   getGatheringAffixBonusPercent,
   getGatheringDurationSeconds,
   getProcessingAffixBonusPercent,
@@ -26,16 +34,23 @@ const RESOURCE_ART = (() => {
   const map = {};
   const add = (files, stripSuffix = '') => {
     for (const [path, src] of Object.entries(files)) {
-      const name = path.split('/').pop().replace(/\.png$/i, '').toLowerCase();
+      const name = path.split('/').pop().replace(/\.webp$/i, '').toLowerCase();
       const key = stripSuffix ? name.replace(new RegExp(`\\s+${stripSuffix}$`, 'i'), '') : name;
       map[key] = src;
     }
   };
-  add(import.meta.glob('../assets/resources/*.png', { eager: true, import: 'default' }));
-  add(import.meta.glob('../assets/ores/*.png', { eager: true, import: 'default' }), 'ore');
-  add(import.meta.glob('../assets/ingots/*.png', { eager: true, import: 'default' }));
+  add(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }));
+  add(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' }), 'ore');
+  add(import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' }));
+  add(import.meta.glob('../assets/elements/**/*.webp', { eager: true, import: 'default' }));
   return map;
 })();
+
+const BONUS_COIN_REWARD = {
+  threshold: 50,
+  fewArtKey: 'few coins',
+  lotsArtKey: 'lots of coins',
+};
 
 function getResourceArt(resource) {
   if (!resource) return null;
@@ -54,6 +69,42 @@ function formatCountdown(remainingSeconds) {
   const seconds = clamped % 60;
   if (minutes <= 0) return `${seconds}s`;
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+function hasQueuedBonusRewards(queue = {}) {
+  return Object.entries(queue).some(([key, count]) => key !== 'coins' ? (count ?? 0) > 0 : (count ?? 0) > 0);
+}
+
+function buildBonusRewardEntries(queue = {}) {
+  const entries = [];
+  if ((queue.coins ?? 0) > 0) {
+    const many = (queue.coins ?? 0) >= BONUS_COIN_REWARD.threshold;
+    entries.push({
+      id: 'coins',
+      name: many ? 'Lots of Coins' : 'Few Coins',
+      artKey: many ? BONUS_COIN_REWARD.lotsArtKey : BONUS_COIN_REWARD.fewArtKey,
+      description: 'Claimable coins earned from Coin Generation affixes during wilderness work.',
+      count: queue.coins ?? 0,
+      gainNoun: 'coins',
+    });
+  }
+
+  Object.entries(queue).forEach(([resourceId, count]) => {
+    if (resourceId === 'coins' || !(count > 0)) return;
+    const { elementId, tier } = parseElementResourceId(resourceId);
+    const baseName = ESSENCES_BY_ID[elementId]?.name?.replace(/\s+Essence$/i, '') ?? elementId;
+    const labelTier = tier.charAt(0).toUpperCase() + tier.slice(1);
+    entries.push({
+      id: resourceId,
+      name: `${baseName} ${labelTier}`,
+      artKey: `${elementId} ${tier}`,
+      description: getElementResourceDescription(resourceId),
+      count,
+      gainNoun: labelTier.toLowerCase(),
+    });
+  });
+
+  return entries;
 }
 
 function SquareResourceCard({ resource, count = 0, className = '', tileRef = null, gainLabel = null, onContextMenu = null, onClick = null, dataDropTarget = null }) {
@@ -120,6 +171,55 @@ function SquareResourceCard({ resource, count = 0, className = '', tileRef = nul
   );
 }
 
+function QueuePackCard({ packTypeId, count = 0, description = '', gainLabel = null, tileRef = null }) {
+  const packType = getPackTypeById(packTypeId);
+  const [tipPos, setTipPos] = useState(null);
+  const [clampedPos, setClampedPos] = useState(null);
+  const tipRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!tipPos || !tipRef.current) { setClampedPos(null); return; }
+    const { width, height } = tipRef.current.getBoundingClientRect();
+    const OFFSET = 14;
+    let x = tipPos.x + OFFSET;
+    let y = tipPos.y + OFFSET;
+    if (x + width > window.innerWidth - 8) x = tipPos.x - width - OFFSET;
+    if (y + height > window.innerHeight - 8) y = tipPos.y - height - OFFSET;
+    setClampedPos({ x, y });
+  }, [tipPos]);
+
+  function handleMouseMove(e) {
+    setTipPos({ x: e.clientX, y: e.clientY });
+  }
+
+  return (
+    <>
+      <div
+        ref={tileRef}
+        className="foundry-queue-pack"
+        onMouseEnter={handleMouseMove}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setTipPos(null)}
+      >
+        {gainLabel ? <span className="foundry-square-resource__gain">{gainLabel}</span> : null}
+        <span className="foundry-queue-pack__count">{fmtCount(count)}</span>
+        <PackCard size="sm" packType={packType} />
+      </div>
+      {tipPos && createPortal(
+        <div
+          ref={tipRef}
+          className="resource-tooltip"
+          style={{ left: (clampedPos ?? tipPos).x, top: (clampedPos ?? tipPos).y }}
+        >
+          <span className="resource-tooltip__name">{packType.name}</span>
+          {description && <span className="resource-tooltip__desc">{description}</span>}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function GatheringSlot({
   slot,
   isDragOver,
@@ -168,8 +268,10 @@ function GatheringSlot({
         <>
           <div
             className="foundry-mine-slot__card"
+            {...socketedCardDragProps(slot.card)}
             onMouseEnter={e => onPreviewEnter?.(e.currentTarget, slot.card)}
             onMouseLeave={() => onPreviewLeave?.(slot.card)}
+            title={`${slot.card.name} — drag to your Hand, or press x to release it`}
           >
             <CardFace card={slot.card} visualMode="compact" className="foundry-mine-slot__card-face no-twirl" />
           </div>
@@ -234,8 +336,10 @@ function ProcessingCardSlot({
           </button>
           <div
             className="foundry-card-slot__card-hover"
+            {...socketedCardDragProps(slot.card)}
             onMouseEnter={e => onPreviewEnter?.(e.currentTarget, slot.card)}
             onMouseLeave={() => onPreviewLeave?.(slot.card)}
+            title={`${slot.card.name} — drag to your Hand, or press x to release it`}
           >
             <CardFace card={slot.card} visualMode="compact" className="foundry-card-slot__card-face no-twirl" />
           </div>
@@ -377,9 +481,20 @@ function ProcessingRow({
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
 
+  /**
+   * Which inputs are actually feeding this cycle, keyed by position for the shared connector.
+   * Processing takes ONE material, so the middle stem is the only live one — the two aux slots are
+   * placeholders for a feature that does not exist yet and stay dark.
+   */
+  const stemStates = {
+    left: 'off',
+    middle: !recipe ? 'idle' : (ready ? 'live' : 'idle'),
+    right: 'off',
+  };
+
   return (
     <div className={`foundry-forge-row wilderness-processing-row${running ? ' foundry-forge-row--running' : ''}${ready ? ' foundry-forge-row--ready' : ''}`}>
-      <div className="foundry-forge-row__cell foundry-forge-row__cell--card">
+      <div className="foundry-forge-row__panel foundry-forge-row__panel--card">
         <ProcessingCardSlot
           slot={slot}
           isDragOver={dragOverCardSlotId === slot.slotId}
@@ -395,57 +510,75 @@ function ProcessingRow({
         />
       </div>
 
-      <div className="foundry-forge-row__cell foundry-forge-row__cell--materials">
-        <div className="foundry-forge-row__materials-stack">
-          <div className="foundry-forge-row__aux">
-            <div className="foundry-forge-row__aux-slot">
-              <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᚲ</span>
+      {/* Input and Output as centred bands on the shared three-column rail, ruled apart — the same
+          layout as a forge row. There is no Fuel band: processing burns nothing. */}
+      <div className="foundry-forge-row__panel foundry-forge-row__panel--process">
+        <div className="foundry-forge-row__cell foundry-forge-row__cell--materials wilderness-processing-row__input">
+          <div className="foundry-forge-row__rail foundry-forge-row__smelt-slots">
+            <div className={`foundry-forge-row__stem-host foundry-forge-row__stem-host--${stemStates.left}`}>
+              <div className="foundry-forge-row__aux-slot">
+                <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᚲ</span>
+              </div>
             </div>
-            <div className="foundry-forge-row__aux-slot">
-              <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᛚ</span>
+            {/* The real slot takes the MIDDLE column, matching the forge putting ore there — the
+                primary input belongs on the trunk's own axis. */}
+            <div className={`foundry-forge-row__stem-host foundry-forge-row__stem-host--${stemStates.middle}`}>
+              <ProcessingInputSlot
+                slot={slot}
+                isDragOver={dragOverInputSlotId === slot.slotId}
+                onDragOver={event => {
+                  event.preventDefault();
+                  setDragOverInputSlotId(slot.slotId);
+                }}
+                onDragLeave={() => setDragOverInputSlotId(current => (current === slot.slotId ? null : current))}
+                onDrop={event => handleInputSlotDrop(slot.slotId, event)}
+                onClear={() => onUnsocketInput?.(slot.slotId)}
+                onLoadFromCarry={() => onLoadInput?.(slot.slotId)}
+                onPickUp={amount => onPickUpInput?.(slot.slotId, amount)}
+                carriedResource={carriedResource}
+              />
+            </div>
+            <div className={`foundry-forge-row__stem-host foundry-forge-row__stem-host--${stemStates.right}`}>
+              <div className="foundry-forge-row__aux-slot">
+                <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᛚ</span>
+              </div>
             </div>
           </div>
-          <ProcessingInputSlot
-            slot={slot}
-            isDragOver={dragOverInputSlotId === slot.slotId}
-            onDragOver={event => {
-              event.preventDefault();
-              setDragOverInputSlotId(slot.slotId);
-            }}
-            onDragLeave={() => setDragOverInputSlotId(current => (current === slot.slotId ? null : current))}
-            onDrop={event => handleInputSlotDrop(slot.slotId, event)}
-            onClear={() => onUnsocketInput?.(slot.slotId)}
-            onLoadFromCarry={() => onLoadInput?.(slot.slotId)}
-            onPickUp={amount => onPickUpInput?.(slot.slotId, amount)}
-            carriedResource={carriedResource}
-          />
-        </div>
-      </div>
 
-      <div className="foundry-forge-row__cell foundry-forge-row__cell--progress">
-        <div
-          className={`foundry-forge-row__arrow${running ? ' foundry-forge-row__arrow--running' : ''}${ready ? ' foundry-forge-row__arrow--ready' : ''}`}
-          style={{ '--forge-progress': progress }}
-          title={running && durationSeconds ? `${formatCountdown(remainingSeconds)} remaining` : ready ? 'Ready to process' : 'Load card and material'}
-        >
-          <span className="foundry-forge-row__arrow-core" />
-        </div>
-      </div>
+          <StationMerge progress={progress} running={running} ready={ready} stems={stemStates} />
 
-      <div className="foundry-forge-row__cell foundry-forge-row__cell--output">
-        <ProcessingOutputSlot
-          slot={slot}
-          processedClaimQueue={processedClaimQueue}
-          queueGainByProcessed={queueGainByProcessed}
-          tileRef={outputTileRef}
-        />
-        <button
-          className="foundry-collect-btn foundry-collect-btn--row"
-          disabled={!hasOutput}
-          onClick={onCollect}
-        >
-          Collect
-        </button>
+          {/* The forge shows remaining time on its fuel ring. Processing has no fuel box, so the
+              countdown would otherwise only exist in a tooltip. */}
+          <p className="wilderness-processing-row__status">
+            {running && durationSeconds
+              ? `${formatCountdown(remainingSeconds)} remaining`
+              : ready
+                ? 'Ready to process'
+                : slot.card
+                  ? 'Load a material'
+                  : 'Socket a card'}
+          </p>
+        </div>
+
+        <div className="foundry-forge-row__rule" aria-hidden="true" />
+
+        <div className="foundry-forge-row__cell foundry-forge-row__cell--output">
+          <div className="foundry-forge-row__rail foundry-forge-row__rail--single">
+            <ProcessingOutputSlot
+              slot={slot}
+              processedClaimQueue={processedClaimQueue}
+              queueGainByProcessed={queueGainByProcessed}
+              tileRef={outputTileRef}
+            />
+            <button
+              className="foundry-collect-btn foundry-collect-btn--row"
+              disabled={!hasOutput}
+              onClick={onCollect}
+            >
+              Collect
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -456,11 +589,14 @@ export default function Wilderness({
   processedInventory = {},
   gatheringSlots = [],
   gatheringClaimQueue = {},
+  gatheringRewardQueue = {},
   processingSlots = [],
   processedClaimQueue = {},
+  processingRewardQueue = {},
   returnsGatheringCardsToPocket = true,
   returnsProcessingCardsToPocket = true,
   collectTargetRef = null,
+  summonTargetRef = null,
   onSocketGatheringCard,
   onUnsocketGatheringCard,
   onCollectGatheredResources,
@@ -479,11 +615,18 @@ export default function Wilderness({
   const [dragOverProcessingInputSlotId, setDragOverProcessingInputSlotId] = useState(null);
   const [queueGainByResource, setQueueGainByResource] = useState({});
   const [queueGainByProcessed, setQueueGainByProcessed] = useState({});
+  const [queueGainByGatheringReward, setQueueGainByGatheringReward] = useState({});
+  const [queueGainByProcessingReward, setQueueGainByProcessingReward] = useState({});
   const [hoverPreview, setHoverPreview] = useState(null);
   const previousQueueRef = useRef(gatheringClaimQueue);
   const previousProcessedQueueRef = useRef(processedClaimQueue);
+  const previousGatheringRewardQueueRef = useRef(gatheringRewardQueue);
+  const previousProcessingRewardQueueRef = useRef(processingRewardQueue);
   const queueTileRefs = useRef({});
   const processedOutputRefs = useRef({});
+  const gatheringRewardRefs = useRef({});
+  const processingRewardRefs = useRef({});
+  const treasurePackRefs = useRef({});
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 100);
@@ -516,6 +659,31 @@ export default function Wilderness({
   }, [gatheringClaimQueue]);
 
   useEffect(() => {
+    const previousQueue = previousGatheringRewardQueueRef.current ?? {};
+    const nextGains = {};
+
+    for (const entry of buildBonusRewardEntries(gatheringRewardQueue)) {
+      const currentCount = gatheringRewardQueue[entry.id] ?? 0;
+      const previousCount = previousQueue[entry.id] ?? 0;
+      if (currentCount > previousCount) nextGains[entry.id] = currentCount - previousCount;
+    }
+
+    previousGatheringRewardQueueRef.current = gatheringRewardQueue;
+    if (Object.keys(nextGains).length === 0) return;
+
+    setQueueGainByGatheringReward(prev => ({ ...prev, ...nextGains }));
+    const timeout = window.setTimeout(() => {
+      setQueueGainByGatheringReward(prev => {
+        const next = { ...prev };
+        for (const resourceId of Object.keys(nextGains)) delete next[resourceId];
+        return next;
+      });
+    }, 1400);
+
+    return () => window.clearTimeout(timeout);
+  }, [gatheringRewardQueue]);
+
+  useEffect(() => {
     const previousQueue = previousProcessedQueueRef.current ?? {};
     const nextGains = {};
 
@@ -540,20 +708,48 @@ export default function Wilderness({
     return () => window.clearTimeout(timeout);
   }, [processedClaimQueue]);
 
+  useEffect(() => {
+    const previousQueue = previousProcessingRewardQueueRef.current ?? {};
+    const nextGains = {};
+
+    for (const entry of buildBonusRewardEntries(processingRewardQueue)) {
+      const currentCount = processingRewardQueue[entry.id] ?? 0;
+      const previousCount = previousQueue[entry.id] ?? 0;
+      if (currentCount > previousCount) nextGains[entry.id] = currentCount - previousCount;
+    }
+
+    previousProcessingRewardQueueRef.current = processingRewardQueue;
+    if (Object.keys(nextGains).length === 0) return;
+
+    setQueueGainByProcessingReward(prev => ({ ...prev, ...nextGains }));
+    const timeout = window.setTimeout(() => {
+      setQueueGainByProcessingReward(prev => {
+        const next = { ...prev };
+        for (const resourceId of Object.keys(nextGains)) delete next[resourceId];
+        return next;
+      });
+    }, 1400);
+
+    return () => window.clearTimeout(timeout);
+  }, [processingRewardQueue]);
+
   const dividerGlyphs = useMemo(
     () => Array.from({ length: DIVIDER_RUNES.length * DIVIDER_REPEAT }, (_, i) => DIVIDER_RUNES[i % DIVIDER_RUNES.length]),
     [],
   );
+  const gatheringRewardEntries = useMemo(() => buildBonusRewardEntries(gatheringRewardQueue), [gatheringRewardQueue]);
+  const processingRewardEntries = useMemo(() => buildBonusRewardEntries(processingRewardQueue), [processingRewardQueue]);
 
   // Resources to show in the queue section: only items with a non-zero queued count.
   const queueResources = useMemo(() => {
-    return ALL_GATHERING_RESOURCES.filter(r => (gatheringClaimQueue[r.id] ?? 0) > 0);
+    return ALL_GATHERING_RESOURCES.filter(r => r.id !== TREASURE_PACK_RESOURCE.id && (gatheringClaimQueue[r.id] ?? 0) > 0);
   }, [gatheringClaimQueue]);
+  const queuedTreasurePacks = gatheringClaimQueue[TREASURE_PACK_RESOURCE.id] ?? 0;
 
   const gatheringRunningCount = gatheringSlots.filter(slot => slot.card && slot.startedAt).length;
-  const queueHasResources = hasQueuedGatheredResources(gatheringClaimQueue);
+  const queueHasResources = hasQueuedGatheredResources(gatheringClaimQueue) || hasQueuedBonusRewards(gatheringRewardQueue);
   const processingRunningCount = processingSlots.filter(slot => slot.card && slot.startedAt).length;
-  const queueHasProcessed = hasQueuedProcessedResources(processedClaimQueue);
+  const queueHasProcessed = hasQueuedProcessedResources(processedClaimQueue) || hasQueuedBonusRewards(processingRewardQueue);
 
   function handleGatheringSlotDrop(slotId, event) {
     event.preventDefault();
@@ -565,13 +761,20 @@ export default function Wilderness({
 
   function handleCollectGathered() {
     if (typeof onCollectGatheredResources !== 'function' || !queueHasResources) return;
-    const targetEl = collectTargetRef?.current ?? null;
-    if (targetEl) {
+    // Played on the press, not in the App callback that runs when the fly animation lands.
+    // That callback is behind a 600ms timer here (and 750ms + 70ms per item in Wilderness),
+    // which is exactly the 1-2 second lag this was reported as: the sound was correct, it was
+    // just waiting for an animation.
+    audioEngine.play(SOUND_IDS.rewardClaim);
+    const inventoryTarget = collectTargetRef?.current ?? null;
+    const summonTarget = summonTargetRef?.current ?? null;
+    const animateGroup = (elements, targetEl, startIndex = 0) => {
+      if (!targetEl) return startIndex;
       const targetRect = targetEl.getBoundingClientRect();
       const tx = targetRect.left + targetRect.width / 2;
       const ty = targetRect.top + targetRect.height / 2;
-      let i = 0;
-      Object.values(queueTileRefs.current).forEach(el => {
+      let index = startIndex;
+      elements.forEach(el => {
         if (!el) return;
         el.style.animation = 'none';
         const rect = el.getBoundingClientRect();
@@ -585,12 +788,22 @@ export default function Wilderness({
         el.getBoundingClientRect();
         const dx = tx - (rect.left + rect.width / 2);
         const dy = ty - (rect.top + rect.height / 2);
-        el.style.transition = `transform 0.5s ease ${i * 0.07}s, opacity 0.4s ease ${i * 0.07 + 0.1}s`;
+        el.style.transition = `transform 0.5s ease ${index * 0.07}s, opacity 0.4s ease ${index * 0.07 + 0.1}s`;
         el.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
         el.style.opacity = '0';
-        i++;
+        index++;
       });
-      const count = Object.values(queueTileRefs.current).filter(Boolean).length;
+      return index;
+    };
+
+    if (inventoryTarget || summonTarget) {
+      const inventoryElements = [
+        ...Object.values(queueTileRefs.current),
+        ...Object.values(gatheringRewardRefs.current),
+      ].filter(Boolean);
+      const treasureElements = Object.values(treasurePackRefs.current).filter(Boolean);
+      let count = animateGroup(inventoryElements, inventoryTarget, 0);
+      count = animateGroup(treasureElements, summonTarget, count);
       window.setTimeout(onCollectGatheredResources, 750 + count * 70);
     } else {
       onCollectGatheredResources();
@@ -614,13 +827,17 @@ export default function Wilderness({
 
   function handleCollectProcessed() {
     if (typeof onCollectProcessedResources !== 'function' || !queueHasProcessed) return;
+    audioEngine.play(SOUND_IDS.rewardClaim);
     const targetEl = collectTargetRef?.current ?? null;
     if (targetEl) {
       const targetRect = targetEl.getBoundingClientRect();
       const tx = targetRect.left + targetRect.width / 2;
       const ty = targetRect.top + targetRect.height / 2;
       let i = 0;
-      Object.values(processedOutputRefs.current).forEach(el => {
+      [
+        ...Object.values(processedOutputRefs.current),
+        ...Object.values(processingRewardRefs.current),
+      ].forEach(el => {
         if (!el) return;
         el.style.animation = 'none';
         const rect = el.getBoundingClientRect();
@@ -639,7 +856,10 @@ export default function Wilderness({
         el.style.opacity = '0';
         i++;
       });
-      const count = Object.values(processedOutputRefs.current).filter(Boolean).length;
+      const count = [
+        ...Object.values(processedOutputRefs.current),
+        ...Object.values(processingRewardRefs.current),
+      ].filter(Boolean).length;
       window.setTimeout(onCollectProcessedResources, 750 + count * 70);
     } else {
       onCollectProcessedResources();
@@ -710,6 +930,15 @@ export default function Wilderness({
                   </button>
                 </div>
                 <div className="foundry-queue-slots wilderness-queue-slots">
+                  {queuedTreasurePacks > 0 ? (
+                    <QueuePackCard
+                      packTypeId="treasure"
+                      count={queuedTreasurePacks}
+                      description={TREASURE_PACK_RESOURCE.description}
+                      gainLabel={queueGainByResource[TREASURE_PACK_RESOURCE.id] ? `+ ${queueGainByResource[TREASURE_PACK_RESOURCE.id]} pack` : null}
+                      tileRef={el => { treasurePackRefs.current[TREASURE_PACK_RESOURCE.id] = el; }}
+                    />
+                  ) : null}
                   {queueResources.length > 0 ? queueResources.map(resource => (
                     <SquareResourceCard
                       key={`queued-${resource.id}`}
@@ -719,11 +948,22 @@ export default function Wilderness({
                       tileRef={el => { queueTileRefs.current[resource.id] = el; }}
                       className="foundry-queue-slot wilderness-queue-slot"
                     />
-                  )) : (
+                  )) : null}
+                  {gatheringRewardEntries.map(entry => (
+                    <SquareResourceCard
+                      key={`queued-bonus-${entry.id}`}
+                      resource={{ name: entry.name, artKey: entry.artKey, description: entry.description }}
+                      count={entry.count}
+                      gainLabel={queueGainByGatheringReward[entry.id] ? `+ ${queueGainByGatheringReward[entry.id]} ${entry.gainNoun}` : null}
+                      tileRef={el => { gatheringRewardRefs.current[entry.id] = el; }}
+                      className="foundry-queue-slot wilderness-queue-slot"
+                    />
+                  ))}
+                  {queueResources.length === 0 && gatheringRewardEntries.length === 0 ? (
                     <p className="foundry-action-hint wilderness-action-hint" style={{ fontSize: '0.78rem', opacity: 0.5 }}>
                       Socket a card to see its drop pool here
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -783,6 +1023,33 @@ export default function Wilderness({
                       : 'Pocket a card first, then load gathered materials to begin'}
                 </p>
               </div>
+
+              {processingRewardEntries.length > 0 ? (
+                <div className="foundry-queue wilderness-queue wilderness-queue--processing-bonus">
+                  <div className="foundry-inventory__head">
+                    <p className="foundry-inventory__label">Bonus Queue</p>
+                    <button
+                      className="foundry-collect-btn wilderness-collect-btn"
+                      disabled={!queueHasProcessed}
+                      onClick={handleCollectProcessed}
+                    >
+                      Collect
+                    </button>
+                  </div>
+                  <div className="foundry-queue-slots wilderness-queue-slots">
+                    {processingRewardEntries.map(entry => (
+                      <SquareResourceCard
+                        key={`processing-bonus-${entry.id}`}
+                        resource={{ name: entry.name, artKey: entry.artKey, description: entry.description }}
+                        count={entry.count}
+                        gainLabel={queueGainByProcessingReward[entry.id] ? `+ ${queueGainByProcessingReward[entry.id]} ${entry.gainNoun}` : null}
+                        tileRef={el => { processingRewardRefs.current[entry.id] = el; }}
+                        className="foundry-queue-slot wilderness-queue-slot"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
             </section>
           </div>

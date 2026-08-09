@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import PackCard from './PackCard';
-import { PACK_TYPES } from '../game/cards';
+import { getPackTypeById } from '../game/cards';
 
 const PACK_PAGE = 10;
 
@@ -38,7 +38,7 @@ export default function Packs({ packs, onOpenPack }) {
       <h2>Your Packs <span className="card-count">({packs.length} unopened)</span></h2>
       <div className="packs-grid">
         {visible.map(pack => {
-          const packType = PACK_TYPES[pack.packTypeId] ?? PACK_TYPES.iron;
+          const packType = getPackTypeById(pack.packTypeId);
           return (
             <div key={pack.id} className="pack-grid-item">
               <PackCard size="sm" packType={packType} />

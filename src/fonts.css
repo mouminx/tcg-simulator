@@ -1,0 +1,73 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TYPOGRAPHY
+   ═══════════════════════════════════════════════════════════════════════════
+   Fonts are self-hosted via @fontsource rather than loaded from the Google Fonts
+   CDN. Three reasons this matters:
+
+     1. Managed / school Chrome installs frequently block or throttle
+        fonts.googleapis.com. With the CDN link and `display=swap`, those machines
+        fell back to generic serif — i.e. the whole game rendered in Times New Roman.
+     2. The packaged Electron/Steam build has no network at all.
+     3. It removes two external preconnects from the critical path.
+
+   Each family ships per-subset @font-face rules carrying `unicode-range`, so a
+   browser rendering English only downloads the latin files — about 176 KB total.
+
+   THREE FAMILIES, and no others: Uncial Antiqua for the wordmark, Metamorphous for
+   navigation and menu chrome, Quattrocento for everything else — card titles, card
+   information, prose, numbers, buttons. Inter, Fraunces, Cinzel and Crimson Pro were
+   all removed; the point is that the UI reads as one typographic system rather than
+   four competing ones.
+
+   The one exception is Noto Sans Runic, and it is not a design choice: the runic
+   glyphs the game draws (ᚱ ᛟ ᛜ ᛞ ᛠ) exist in almost no other font, so dropping it
+   would render them as empty boxes on any machine without a runic fallback. It is
+   only ever applied to spans that contain nothing but those glyphs.
+
+   Quattrocento is loaded at 400 and 700 — it is not a variable font, and 700 is the
+   only other weight the UI uses. Metamorphous ships 400 only.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import '@fontsource/uncial-antiqua/latin-400.css';
+@import '@fontsource/metamorphous/latin-400.css';
+@import '@fontsource/quattrocento/latin-400.css';
+@import '@fontsource/quattrocento/latin-700.css';
+@import '@fontsource/noto-sans-runic/runic-400.css';
+
+:root {
+  /* ── The everything layer ──
+     Card titles, card information, counts, prices, affix lines, timers, buttons,
+     tooltips, prose, empty-state hints. Quattrocento is a humanist serif with a tall
+     x-height and real oldstyle proportions, which is why it survives being asked to do
+     both a 0.65rem nameplate and a paragraph of flavour text.
+     This is also the app-wide base, so anything without an explicit override lands here. */
+  --font-ui: 'Quattrocento', Georgia, 'Times New Roman', serif;
+
+  /* The game's own name — the splash title and the masthead, nothing else.
+     Uncial Antiqua is an insular/uncial display face: gorgeous at 3rem+, unreadable
+     as UI. Keep it to the wordmark. */
+  --font-title: 'Uncial Antiqua', 'Metamorphous', Georgia, serif;
+
+  /* Display layer — page and panel titles, card names, pack names. Same family as the
+     functional layer on purpose: the hierarchy comes from size and weight, not from a
+     second typeface. */
+  --font-display: 'Quattrocento', Georgia, 'Times New Roman', serif;
+
+  /* Navigation and menu chrome — tab labels, section heads, shelf tags, buttons that
+     read as menu items. Metamorphous is the one blackletter-inflected face here, and it
+     is what makes the navigation read as part of the game rather than as browser UI. */
+  --font-caps: 'Metamorphous', 'Uncial Antiqua', Georgia, serif;
+
+  /* Prose layer. Flavour text, descriptions, italic empty-state hints. */
+  --font-body: 'Quattrocento', Georgia, 'Times New Roman', serif;
+
+  /* Runic glyphs (ᚱ ᛟ ᛜ ᛞ ᛠ). NOT a fourth UI typeface — see the note at the top of this
+     file. Applied only to spans holding nothing but runes, because almost no other font
+     carries these codepoints and the alternative is empty boxes. */
+  --font-runic: 'Noto Sans Runic', 'Segoe UI Historic', 'Segoe UI Symbol', sans-serif;
+
+  /* One remaining reference. Kept as a variable so the call site does not need editing, but
+     pointed at the same family — none of those monospace faces were ever loaded, so this
+     was resolving to whatever the OS substituted. */
+  --font-mono: 'Quattrocento', ui-monospace, monospace;
+}

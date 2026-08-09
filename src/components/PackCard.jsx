@@ -1,8 +1,8 @@
 import { useRef, useEffect } from 'react';
-import { PACK_TYPES } from '../game/cards';
+import { PACK_TYPES, WELCOME_PACK_TYPE } from '../game/cards';
 
 export default function PackCard({ size = 'md', packType }) {
-  const pt         = packType ?? PACK_TYPES.iron;
+  const pt         = packType ?? WELCOME_PACK_TYPE ?? PACK_TYPES.iron;
   const elRef      = useRef(null);
   const rafRef     = useRef(null);
   const touchState = useRef({ active: false, timer: null, scrolling: false });

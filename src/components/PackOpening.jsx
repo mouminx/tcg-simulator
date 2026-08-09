@@ -3,27 +3,34 @@ import { createPortal } from 'react-dom';
 import CardFace from './CardFace';
 import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
 import { PACK_TYPES } from '../game/cards';
+import { audioEngine } from '../game/audio/audioEngine';
+import { SOUND_IDS } from '../game/audio/audioLibrary';
 
 const PHASES = { INTRO: 'intro', SPLITTING: 'splitting', REVEALING: 'revealing', ESSENCE: 'essence', DONE: 'done' };
 
 const MOTE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/motes/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+mote\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/motes/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+mote\.webp$/i, '').toLowerCase(), src]),
 );
 
 const WISP_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/wisps/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+wisp\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/wisps/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+wisp\.webp$/i, '').toLowerCase(), src]),
 );
 
 const ESSENCE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/essences/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+essence\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/essences/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+essence\.webp$/i, '').toLowerCase(), src]),
 );
 
 const QUINTESSENCE_ART = Object.fromEntries(
-  Object.entries(import.meta.glob('../assets/elements/quintessences/*.png', { eager: true, import: 'default' }))
-    .map(([path, src]) => [path.split('/').pop().replace(/\s+quin?tessence\.png$/i, '').toLowerCase(), src]),
+  Object.entries(import.meta.glob('../assets/elements/quintessences/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\s+quin?tessence\.webp$/i, '').toLowerCase(), src]),
+);
+
+const RESOURCE_ART = Object.fromEntries(
+  Object.entries(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }))
+    .map(([path, src]) => [path.split('/').pop().replace(/\.webp$/i, '').toLowerCase(), src]),
 );
 
 const TIER_ART = {
@@ -51,12 +58,7 @@ function formatArcanaDropName(essence, tier, amount) {
   return `${baseName} ${plural}`;
 }
 
-function OpeningResourceCard({ essence, amount, tier }) {
-  const artSrc = TIER_ART[tier]?.[essence.id] ?? null;
-  const name = formatArcanaDropName(essence, tier, amount);
-  const description = getElementResourceDescription(
-    tier === 'essence' ? essence.id : `${essence.id}_${tier}`
-  );
+function TooltipResourceCard({ artSrc, name, description, amount, className = '' }) {
   const [tipPos, setTipPos] = useState(null);
   const [clampedPos, setClampedPos] = useState(null);
   const tipRef = useRef(null);
@@ -82,7 +84,7 @@ function OpeningResourceCard({ essence, amount, tier }) {
   return (
     <>
       <div
-        className="card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned inventory-tile opening-resource-card"
+        className={`card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned inventory-tile ${className}`.trim()}
         onMouseEnter={handleMouseMove}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setTipPos(null)}
@@ -90,7 +92,6 @@ function OpeningResourceCard({ essence, amount, tier }) {
         <div className="card-face-inner">
           <div
             className="card-face-front foundry-square-resource__front opening-resource-card__front"
-            style={{ '--glow-color': essence.color }}
           >
             <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
               <span className="foundry-square-resource__count">{fmtCount(amount)}</span>
@@ -113,6 +114,36 @@ function OpeningResourceCard({ essence, amount, tier }) {
         document.body,
       )}
     </>
+  );
+}
+
+function OpeningArcanaResourceCard({ essence, amount, tier, className = '' }) {
+  const artSrc = TIER_ART[tier]?.[essence.id] ?? null;
+  const name = formatArcanaDropName(essence, tier, amount);
+  const description = getElementResourceDescription(
+    tier === 'essence' ? essence.id : `${essence.id}_${tier}`
+  );
+
+  return (
+    <TooltipResourceCard
+      artSrc={artSrc}
+      name={name}
+      description={description}
+      amount={amount}
+      className={className}
+    />
+  );
+}
+
+function OpeningCurrencyCard({ reward, className = '' }) {
+  return (
+    <TooltipResourceCard
+      artSrc={RESOURCE_ART[(reward.artKey ?? '').toLowerCase()] ?? null}
+      name={reward.name}
+      description={reward.description}
+      amount={reward.amount}
+      className={className}
+    />
   );
 }
 
@@ -189,7 +220,10 @@ function SplitPack({ phase, onClick, packType, flyAngle }) {
   );
 }
 
-const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], onDone, collectionBtnRef, inventoryTargetRef, packType }, ref) {
+/** A single coin card worth at least this much gets the bigger in-place burst. */
+const COIN_POP_LARGE_THRESHOLD = 25;
+
+const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [], essenceDrops = [], onDone, onCoinPop, collectionBtnRef, inventoryTargetRef, packType }, ref) {
   const [phase, setPhase] = useState(PHASES.INTRO);
   const [flyAngle, setFlyAngle] = useState(0);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -198,10 +232,13 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
   const [visibleEssenceCards, setVisibleEssenceCards] = useState(0);
   const [visibleEssenceText, setVisibleEssenceText] = useState(0);
   const queueRefs = useRef([]);
+  const queueStripRef = useRef(null);
   const essenceRefs = useRef([]);
+  const revealCards = cards.length > 0 ? cards : resourceCards;
+  const isResourceReveal = cards.length === 0 && resourceCards.length > 0;
 
   function startEssenceRewardSequence() {
-    if (essenceDrops.length === 0) {
+    if (isResourceReveal || essenceDrops.length === 0) {
       setPhase(PHASES.DONE);
       return;
     }
@@ -220,21 +257,74 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
   }
 
   function handleQueueCurrent() {
-    const card = cards[currentIdx];
+    // The signature moment of the game. Pitch jitter on this sound is what stops five
+    // sequential reveals sounding like one machine — see detuneJitter in audioLibrary.
+    audioEngine.play(SOUND_IDS.cardFlip);
+    const card = revealCards[currentIdx];
     const nextIdx = currentIdx + 1;
     setQueuedCards(prev => [...prev, card]);
     setCurrentIdx(nextIdx);
-    if (nextIdx >= cards.length) startEssenceRewardSequence();
+    if (nextIdx >= revealCards.length) startEssenceRewardSequence();
   }
 
-  function handleSkip() {
-    setQueuedCards(cards);
-    setCurrentIdx(cards.length);
+  /**
+   * Quick Draw — reveal everything at once instead of tapping through card by card.
+   *
+   * Works from the unopened pack too, not just mid-reveal, so a player sitting on a stack
+   * can clear one in two clicks. The rapid-cards pool is the right sound here by the same
+   * rule as claiming a summon: many cards moving at once, rather than a single flip.
+   */
+  function handleQuickDraw() {
+    if (currentIdx >= revealCards.length) return;
+    audioEngine.play(SOUND_IDS.packCollect);
+    setQueuedCards(revealCards);
+    setCurrentIdx(revealCards.length);
     startEssenceRewardSequence();
+    // The strip sits below the opening stage and a full row of five falls past the fold on a
+    // short window — which would defeat the point of a button whose job is to show you
+    // everything at once. Deferred a frame so the cards exist before we scroll to them.
+    requestAnimationFrame(() => {
+      queueStripRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
   }
 
   function handleCollect() {
+    // On the press. App's onDone runs after the cards finish flying to the Collection tab.
+    audioEngine.play(SOUND_IDS.packCollect);
     setCollecting(true);
+    /**
+     * Treasure-pack coin cards **burst where they sit** rather than flying somewhere.
+     *
+     * They used to fly to the Bag like resource cards do, which was wrong twice over: the coins do
+     * not go into the Bag, they go onto your balance, and watching five identical gold cards travel
+     * to an inventory they never enter reads as a bug. Popping in place says "this is money, it is
+     * yours now" without implying a destination. The card itself just fades on the spot.
+     */
+    if (isResourceReveal) {
+      queueRefs.current.forEach((el, i) => {
+        if (!el) return;
+        const reward = resourceCards[i];
+        const rect = el.getBoundingClientRect();
+        const amount = reward?.type === 'coins' ? (reward.amount ?? 0) : 0;
+        window.setTimeout(() => {
+          onCoinPop?.({
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            // Two sizes, so a big find looks like one.
+            size: amount >= COIN_POP_LARGE_THRESHOLD ? 'large' : 'small',
+          });
+        }, i * 110);
+        el.style.animation = 'none';
+        el.getBoundingClientRect();
+        el.style.transition = `transform 0.34s ease ${i * 0.11}s, opacity 0.3s ease ${i * 0.11 + 0.04}s`;
+        el.style.transform = 'scale(1.14)';
+        el.style.opacity = '0';
+      });
+      const popFlight = 420 + queueRefs.current.length * 110;
+      setTimeout(onDone, popFlight);
+      return;
+    }
+
     const cardTarget = collectionBtnRef?.current;
     if (cardTarget) {
       const targetRect = cardTarget.getBoundingClientRect();
@@ -304,8 +394,8 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
       if (phase === PHASES.INTRO) {
         handleSplit();
       } else if (phase === PHASES.REVEALING) {
-        setQueuedCards(prev => [...prev, ...cards.slice(currentIdx)]);
-        setCurrentIdx(cards.length);
+        setQueuedCards(prev => [...prev, ...revealCards.slice(currentIdx)]);
+        setCurrentIdx(revealCards.length);
         startEssenceRewardSequence();
       } else if (phase === PHASES.ESSENCE) {
         setVisibleEssenceCards(essenceDrops.length);
@@ -315,9 +405,9 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
         handleCollect();
       }
     },
-  }), [phase, currentIdx, collecting, cards, essenceDrops]);
+  }), [phase, currentIdx, collecting, revealCards, essenceDrops, isResourceReveal]);
 
-  const cardsLeft = cards.length - currentIdx;
+  const cardsLeft = revealCards.length - currentIdx;
   const showEssenceRewards = essenceDrops.length > 0 && (phase === PHASES.ESSENCE || phase === PHASES.DONE);
 
   return (
@@ -325,7 +415,7 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
       <p className="hint">
         {phase === PHASES.INTRO && 'Click the pack to open it'}
         {phase === PHASES.SPLITTING && '\u00a0'}
-        {phase === PHASES.REVEALING && 'Tap card to open next'}
+        {phase === PHASES.REVEALING && (isResourceReveal ? 'Tap reward card to open next' : 'Tap card to open next')}
         {phase === PHASES.ESSENCE && 'Motes distilled'}
         {phase === PHASES.DONE && 'Rewards ready'}
       </p>
@@ -336,13 +426,23 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
             <SplitPack phase={phase} onClick={handleSplit} packType={packType} flyAngle={flyAngle} />
           )}
           {phase === PHASES.REVEALING && (
-            <CardFace
-              key={currentIdx}
-              card={cards[currentIdx]}
-              onClick={handleQueueCurrent}
-              className="center-card"
-              holo
-            />
+            isResourceReveal ? (
+              <div key={currentIdx} className="opening-resource-card-slot" onClick={handleQueueCurrent}>
+                <OpeningCurrencyCard
+                  reward={revealCards[currentIdx]}
+                  className="center-card opening-resource-card opening-resource-card--reveal"
+                />
+              </div>
+            ) : (
+              <CardFace
+                key={currentIdx}
+                card={revealCards[currentIdx]}
+                onClick={handleQueueCurrent}
+                className="center-card"
+                holo
+                artDetail="full"
+              />
+            )
           )}
           {phase === PHASES.DONE && !collecting && (
             <button className="collect-btn summon-btn summon-btn--primary" onClick={handleCollect}>
@@ -368,7 +468,12 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
                     ref={el => { essenceRefs.current[index] = el; }}
                     className={`opening-reward-tile${index < visibleEssenceCards ? ' opening-reward-tile--visible' : ''}`}
                   >
-                    <OpeningResourceCard essence={essence} amount={drop.amount} tier={tier} />
+                    <OpeningArcanaResourceCard
+                      essence={essence}
+                      amount={drop.amount}
+                      tier={tier}
+                      className="opening-resource-card"
+                    />
                   </div>
                 );
               })}
@@ -394,15 +499,25 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
       </div>
 
       {queuedCards.length > 0 && (
-        <div className="cards-queue">
+        <div className="cards-queue" ref={queueStripRef}>
           {queuedCards.map((card, i) => (
-            <CardFace
-              key={card.id}
-              ref={el => { queueRefs.current[i] = el; }}
-              card={card}
-              className="queued-card"
-              holo
-            />
+            isResourceReveal ? (
+              <div
+                key={card.id}
+                ref={el => { queueRefs.current[i] = el; }}
+                className="queued-card queued-card--resource"
+              >
+                <OpeningCurrencyCard reward={card} className="opening-resource-card opening-resource-card--queue" />
+              </div>
+            ) : (
+              <CardFace
+                key={card.id}
+                ref={el => { queueRefs.current[i] = el; }}
+                card={card}
+                className="queued-card"
+                holo
+              />
+            )
           ))}
         </div>
       )}
@@ -411,9 +526,13 @@ const PackOpening = forwardRef(function PackOpening({ cards, essenceDrops = [], 
         <p className="cards-remaining">{cardsLeft} remaining</p>
       )}
 
-      {phase !== PHASES.DONE && (
-        <button className="skip-anim-btn" onClick={handleSkip}>
-          Skip
+      {(phase === PHASES.INTRO || phase === PHASES.REVEALING) && revealCards.length > 1 && (
+        <button
+          className="quick-draw-btn"
+          onClick={handleQuickDraw}
+          title={`Reveal all ${revealCards.length} at once`}
+        >
+          Quick Draw
         </button>
       )}
     </div>

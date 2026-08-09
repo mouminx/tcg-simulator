@@ -1,7 +1,8 @@
-import { forwardRef, useRef, useEffect } from 'react';
+import { forwardRef, memo, useRef, useEffect } from 'react';
 import { RARITIES, TIERS, TAGS, formatAffixText } from '../game/cards';
 import Gold from './Gold';
-import { CLASS_ART } from '../game/cardArt';
+import { useGraphicsFeatures } from '../game/graphics';
+import { getClassArt } from '../game/cardArt';
 import { CARD_COLORS } from '../game/cardColors';
 import commonGem from '../assets/rarity-gems/common.svg';
 import uncommonGem from '../assets/rarity-gems/uncommon.svg';
@@ -35,11 +36,25 @@ const TIER_STAR_ASSETS = {
   5: tier5Stars,
 };
 
-const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell, holo, visualMode = 'full' }, ref) {
+// `artDetail` selects which encode of the class art to load. Default 'thumb'
+// (320x480, 0.59 MiB decoded) covers every 110-160px render, which is nearly all
+// of them. Only pass 'full' where the card renders large enough that a thumb
+// would look soft on a 2x DPR display: the 330px viewer modal / hover preview
+// and the 200px pack-reveal center card.
+const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell, holo, visualMode = 'full', artDetail = 'thumb' }, ref) {
+  const features = useGraphicsFeatures();
   const rarity = RARITIES[card.rarity];
   const tier = card.tier ?? 1;
   const tag  = card.tag ? TAGS[card.tag] : null;
   const compactVisuals = visualMode === 'compact';
+  // Kept separate from `compactVisuals` on purpose: compact also shrinks the affix
+  // text (`.card-affix-list--compact`), and a graphics setting has no business
+  // changing type size. This flag only swaps the seven-gradient background for a
+  // flat fill.
+  const flatBackground = compactVisuals || !features.gradientCardBg;
+  // Gate the 3D tilt at the source: no listeners attached means no per-pointer-move
+  // rAF and no CSS custom property writes, which is the expensive part.
+  const tiltEnabled = holo && features.holoTilt;
 
   // Internal ref for mouse tracking; merged with the forwarded ref below
   const wrapRef    = useRef(null);
@@ -117,7 +132,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   // Must use addEventListener (not React synthetic) to pass { passive: false }
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el) return;
+    if (!el || !tiltEnabled) return;
     function onTouchMove(e) {
       const t = e.touches[0];
       if (!touchState.current.active) {
@@ -136,14 +151,11 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     }
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     return () => el.removeEventListener('touchmove', onTouchMove);
-  }, []);
+  }, [tiltEnabled]);
 
-  const hasFoil    = holo && FOIL_RARITIES.has(card.rarity);
-  const hasSparkle = holo && SPARKLE_RARITIES.has(card.rarity);
-  const classVariants = CLASS_ART[card.classType];
-  const artSrc = classVariants
-    ? (classVariants[card.artVariant ?? 0] ?? classVariants[0] ?? null)
-    : null;
+  const hasFoil    = holo && features.holoLayers && FOIL_RARITIES.has(card.rarity);
+  const hasSparkle = holo && features.holoLayers && SPARKLE_RARITIES.has(card.rarity);
+  const artSrc = getClassArt(card.classType, card.artVariant ?? 0, artDetail);
   const artPosition = 'center 10%';
   const rarityGemSrc = RARITY_GEMS[card.rarity];
   const tierStarsSrc = TIER_STAR_ASSETS[tier] ?? tier1Stars;
@@ -159,7 +171,7 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
 
   const cardBg = (() => {
     if (!Array.isArray(palette)) return palette ?? rarity.color;
-    if (compactVisuals) {
+    if (flatBackground) {
       const [r0, g0, b0] = palette[0];
       return `rgb(${r0},${g0},${b0})`;
     }
@@ -182,16 +194,16 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
       className={`card-face-wrapper tier-${tier} ${compactVisuals ? 'card-face-wrapper--compact' : ''} ${className || ''} ${holo ? `holo-active holo--${card.rarity}` : ''} ${card.tag ? `has-tag-${card.tag}` : ''}`}
       style={{ '--glow-color': glowColor }}
       onClick={onClick}
-      onMouseMove={holo ? handleMouseMove : undefined}
-      onMouseLeave={holo ? handleMouseLeave : undefined}
-      onMouseEnter={holo ? handleMouseEnter : undefined}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onMouseMove={tiltEnabled ? handleMouseMove : undefined}
+      onMouseLeave={tiltEnabled ? handleMouseLeave : undefined}
+      onMouseEnter={tiltEnabled ? handleMouseEnter : undefined}
+      onTouchStart={tiltEnabled ? handleTouchStart : undefined}
+      onTouchEnd={tiltEnabled ? handleTouchEnd : undefined}
     >
       <div className="card-face-inner">
         <div className="card-face-front" style={{ background: cardBg }}>
-          {!compactVisuals && <div className="card-tier-overlay" />}
-          {!compactVisuals && tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
+          {!compactVisuals && features.tierOverlay && <div className="card-tier-overlay" />}
+          {!compactVisuals && features.tagVfx && tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
 
           {/* Header row: name left, tier stars right */}
           <div className="card-header-row">
@@ -221,14 +233,10 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
             </div>
           </div>
 
-          {/* Tag pills: special finish only */}
-          {tag && (
-            <div className="card-tags-row">
-              <span className={`card-tag-pill card-tag-pill--tag card-tag-pill--tag-${card.tag}`}>
-                <span className="card-tag-pill__label">{tag.name}</span>
-              </span>
-            </div>
-          )}
+          {/* No tag pill. A holo/foil/first-edition finish announces itself through the
+              card's own treatment — the `has-tag-*` wrapper class and `tag-vfx` layer below —
+              so naming it in text was redundant, and the row it needed was the main reason
+              small cards ran out of vertical space and clipped their affixes. */}
 
           {affixes.length > 0 && (
             <div className={`card-affix-list${compactVisuals ? ' card-affix-list--compact' : ''}`}>
@@ -299,4 +307,9 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   );
 });
 
-export default CardFace;
+// Memoized because App.jsx re-renders the whole tree every time a production
+// timer ticks. The cards socketed into Foundry / Wilderness / Expedition / Arcana
+// slots pass only `card` + `visualMode` + `className` — no callbacks — so they
+// hit the memo and stop re-rendering entirely between actual state changes.
+// Rebuilding `cardBg` (seven radial-gradients) per card per tick was pure waste.
+export default memo(CardFace);

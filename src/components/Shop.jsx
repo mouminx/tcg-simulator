@@ -34,46 +34,11 @@ const SECTIONS = [
     packIds: ['vault1', 'vault2', 'vault3'],
   },
   {
-    id: 'holo-editions',
-    label: 'Holo Editions',
-    tagline: '15 cards · 1.2× Holo rate',
-    detail: 'Prismatic shimmer on every pull. Your commons will never look the same.',
-    packIds: ['holoEd'],
-  },
-  {
-    id: 'foil-editions',
-    label: 'Foil Editions',
-    tagline: '15 cards · 1.2× Foil rate',
-    detail: 'Chrome-touched and collector-grade. Metallic finishes at a premium.',
-    packIds: ['foilEd'],
-  },
-  {
-    id: 'reverse-editions',
-    label: 'Reverse Editions',
-    tagline: '15 cards · 1.2× Reverse rate',
-    detail: 'The world flipped. Familiar cards in a striking new light.',
-    packIds: ['reverseEd'],
-  },
-  {
-    id: 'shadow-editions',
-    label: 'Shadow Editions',
-    tagline: '15 cards · 1.2× Shadow rate',
-    detail: 'Darkness amplified. Rare silhouettes forged in rarity-glow.',
-    packIds: ['shadowEd'],
-  },
-  {
-    id: 'nexus-editions',
-    label: 'Nexus Editions',
-    tagline: '15 cards · 1.2× Nexus rate',
-    detail: 'Void energy seeps through every card. The most coveted tag, boosted.',
-    packIds: ['nexusEd'],
-  },
-  {
-    id: 'prismatic-editions',
-    label: 'Prismatic Editions',
-    tagline: '15 cards · 1.2× Prismatic rate',
-    detail: 'A spectrum in your hands. Every card cycling through the full colour wheel.',
-    packIds: ['prismaticEd'],
+    id: 'editions',
+    label: 'Tag Editions',
+    tagline: '15 cards · 1.2× tag rate',
+    detail: 'Each edition boosts one finish. Six shelves worth of packs, one shelf.',
+    packIds: ['holoEd', 'foilEd', 'reverseEd', 'shadowEd', 'nexusEd', 'prismaticEd'],
   },
 ];
 
@@ -104,12 +69,17 @@ function FlyingPack({ startX, startY, endX, endY, packType, onDone }) {
   );
 }
 
-export default function Shop({ balance, onBuyPack, packsNavRef }) {
+export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, maxPacks = Infinity }) {
   const buyBtnRefs = useRef({});
   const [flyingPacks, setFlyingPacks] = useState([]);
+  // One shelf at a time. Ten stacked sections was ~3600px of scroll; five categories
+  // with one visible shelf fits any viewport and reads as a shop counter.
+  const [activeSection, setActiveSection] = useState(SECTIONS[1].id);
+
+  const packsFull = packsHeld >= maxPacks;
 
   function handleBuy(pt) {
-    if (balance < pt.cost) return;
+    if (balance < pt.cost || packsFull) return;
     const btn = buyBtnRefs.current[pt.id];
     if (btn && packsNavRef?.current) {
       const start = btn.getBoundingClientRect();
@@ -128,13 +98,35 @@ export default function Shop({ balance, onBuyPack, packsNavRef }) {
 
   return (
     <>
-      <div className="shop">
+      <div className={`shop${packsFull ? ' shop--packs-full' : ''}`}>
         <div className="shop-header">
           <h2>Shop</h2>
-          <p className="shop-subtitle">Choose your pack. Shape your collection.</p>
+          {/* No standing subtitle. Explanatory prose under a heading reads as a web page
+              rather than a game; the shelf itself says what this screen is for. The one line
+              that stays is functional — it tells the player why buying stopped working. */}
+          {packsFull && (
+            <p className="shop-subtitle">
+              {`Pack limit reached — open some of your ${packsHeld} unopened packs to buy more.`}
+            </p>
+          )}
         </div>
 
-        {SECTIONS.map(section => {
+        <div className="shop-categories" role="tablist" aria-label="Pack categories">
+          {SECTIONS.map(section => (
+            <button
+              key={section.id}
+              role="tab"
+              aria-selected={activeSection === section.id}
+              className={`shop-category${activeSection === section.id ? ' shop-category--active' : ''}`}
+              onClick={() => setActiveSection(section.id)}
+            >
+              <span className="shop-category__label">{section.label}</span>
+              <span className="shop-category__count">{section.packIds.length}</span>
+            </button>
+          ))}
+        </div>
+
+        {SECTIONS.filter(section => section.id === activeSection).map(section => {
           const packs = section.packIds.map(id => PACK_TYPES[id]).filter(Boolean);
           return (
             <div key={section.id} className={`shop-section shop-section--${section.id}`}>
@@ -145,30 +137,53 @@ export default function Shop({ balance, onBuyPack, packsNavRef }) {
                 </div>
                 <p className="shop-section-detail">{section.detail}</p>
               </div>
-              <div className="shop-pack-list">
-                {packs.map(pt => {
-                  const canAfford = balance >= pt.cost;
-                  return (
-                    <div key={pt.id} className={`shop-pack-card shop-pack-card--${pt.id}`}>
-                      <div className="shop-pack-preview">
-                        <PackCard size="sm" packType={pt} />
-                      </div>
-                      <div className="pack-info">
-                        <h3>{pt.name} Pack</h3>
-                        <p>{pt.description}</p>
-                        <p className="pack-cost"><Gold amount={pt.cost} /></p>
-                      </div>
-                      <button
-                        ref={el => { buyBtnRefs.current[pt.id] = el; }}
-                        className={`buy-btn ${!canAfford ? 'disabled' : ''}`}
-                        onClick={() => handleBuy(pt)}
-                        disabled={!canAfford}
+
+              {/* Shelf: packs stand on a plank, price tags hang off its front edge.
+                  The `shop-pack-card--{id}` modifier is kept on each pack so the
+                  existing per-pack glow and hover-colour rules still apply. */}
+              <div className="shop-shelf">
+                <div className="shop-shelf__plank" aria-hidden="true" />
+                <div className="shop-shelf__packs">
+                  {packs.map(pt => {
+                    const canAfford = balance >= pt.cost;
+                    const blocked = !canAfford || packsFull;
+                    return (
+                      <div
+                        key={pt.id}
+                        className={`shelf-pack${blocked ? ' shelf-pack--unaffordable' : ''}`}
                       >
-                        {canAfford ? 'Buy' : 'Not enough'}
-                      </button>
-                    </div>
-                  );
-                })}
+                        <button
+                          ref={el => { buyBtnRefs.current[pt.id] = el; }}
+                          className={`shelf-pack__grab shop-pack-card--${pt.id}`}
+                          onClick={() => handleBuy(pt)}
+                          disabled={blocked}
+                          title={
+                            packsFull
+                              ? `Open some packs first — ${maxPacks} unopened is the limit`
+                              : canAfford
+                                ? `Buy ${pt.name} Pack — ${pt.description}`
+                                : `Not enough gold for ${pt.name} Pack`
+                          }
+                          aria-label={`Buy ${pt.name} Pack for ${pt.cost}. ${pt.description}`}
+                        >
+                          <span className="shop-pack-preview">
+                            <PackCard size="shelf" packType={pt} />
+                          </span>
+                          <span className="shelf-pack__contact" aria-hidden="true" />
+                        </button>
+
+                        <div className="shelf-pack__tag">
+                          <span className="shelf-pack__tag-name">{pt.name}</span>
+                          <span className="shelf-pack__tag-price">
+                            {blocked ? <span className="shelf-pack__tag-short"><Gold amount={pt.cost} /></span> : <Gold amount={pt.cost} />}
+                          </span>
+                        </div>
+
+                        <p className="shelf-pack__desc">{pt.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           );

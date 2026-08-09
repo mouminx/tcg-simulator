@@ -1,4 +1,5 @@
-import { getCardAffixBonuses } from './cards';
+import { getCardAffixBonuses, rollAffixProcChance, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './cards';
+import { DEFAULT_RESOURCES } from './arcana';
 
 // ─── Class-specific gathering pools ──────────────────────────────────────────
 // Each pool is ordered common → rarest. The `weight` drives base drop chance;
@@ -6,7 +7,7 @@ import { getCardAffixBonuses } from './cards';
 // `minRarity` hard-caps which materials are accessible: lower-rarity cards
 // cannot roll materials above their tier regardless of luck.
 // Only affix VALUE RANGES scale with card rarity — not which items can drop.
-// `artKey` is the filename key used for art lookup (without .png extension).
+// `artKey` is the filename key used for art lookup (without .webp extension).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const GATHERING_POOLS = {
@@ -57,6 +58,17 @@ export const GATHERING_POOLS = {
   ],
 };
 
+export const TREASURE_PACK_RESOURCE = Object.freeze({
+  id: 'treasurePack',
+  name: 'Treasure Pack',
+  artKey: 'treasure pack',
+  weight: 0,
+  minRarity: 'common',
+  color: '#d9ab2b',
+  glow: 'rgba(217,171,43,0.34)',
+  description: 'A hidden cache uncovered by Treasure Sense. Claim it to add a Treasure Pack to Summon.',
+});
+
 // Fallback pool for classes without a specific gathering pool
 const FALLBACK_POOL = GATHERING_POOLS.forager;
 
@@ -69,6 +81,16 @@ const CLASS_LUCK_STAT = {
   forager:    'foragingLuck',
 };
 
+const CLASS_ATTUNEMENT_STAT = {
+  lumberjack: 'loggingAttunement',
+  hunter: 'huntingAttunement',
+  forager: 'foragingAttunement',
+  blacksmith: 'smeltingAttunement',
+  miner: 'miningAttunement',
+};
+
+const TREASURE_SENSE_CLASSES = new Set(['lumberjack', 'hunter', 'forager']);
+
 // Flat list of all unique resources across all pools (deduplicated by id)
 const _seenIds = new Set();
 export const ALL_GATHERING_RESOURCES = Object.values(GATHERING_POOLS)
@@ -77,10 +99,65 @@ export const ALL_GATHERING_RESOURCES = Object.values(GATHERING_POOLS)
     if (_seenIds.has(r.id)) return false;
     _seenIds.add(r.id);
     return true;
-  });
+  })
+  .concat(TREASURE_PACK_RESOURCE);
 
 // Backwards-compat alias — code that imports GATHERING_RESOURCES still works
 export const GATHERING_RESOURCES = ALL_GATHERING_RESOURCES;
+
+/**
+ * Where a gathered resource actually belongs, for the resources that are **the same real item as
+ * something the Foundry already tracks**.
+ *
+ * The gathering pools duplicate every ore and every ingot under their own ids — a miner card in a
+ * gathering slot rolls `ironOre`, a blacksmith rolls `steelIngot` — while the Foundry's mine and
+ * forge use `iron` and `steel` in separate `oreInventory` / `ingotInventory` maps. Left alone, the
+ * two id spaces mean a Steel Ingot you gathered and a Steel Ingot you smelted are different objects
+ * in different inventories, and the Bag files the gathered one under "Gathered" rather than
+ * "Ingots". `stone` and `coal` are worse still: identical ids in two different maps, so the same
+ * name appears in two sections with two counts.
+ *
+ * So gathering output is folded into the canonical inventory at collection time, and there is one
+ * Coal and one Steel Ingot in the game. Anything absent from this table has no Foundry equivalent
+ * (`starstoneChunk` included — `ORE_TYPES` has no starstone) and stays a gathered resource.
+ */
+export const GATHERED_CANONICAL_TARGET = Object.freeze({
+  stone:         { inventory: 'ore',   id: 'stone' },
+  coal:          { inventory: 'ore',   id: 'coal' },
+  ironOre:       { inventory: 'ore',   id: 'iron' },
+  silverOre:     { inventory: 'ore',   id: 'silver' },
+  goldOre:       { inventory: 'ore',   id: 'gold' },
+  platinumOre:   { inventory: 'ore',   id: 'platinum' },
+  starlitOre:    { inventory: 'ore',   id: 'starlit' },
+  steelIngot:    { inventory: 'ingot', id: 'steel' },
+  silverIngot:   { inventory: 'ingot', id: 'silver' },
+  goldIngot:     { inventory: 'ingot', id: 'gold' },
+  platinumIngot: { inventory: 'ingot', id: 'platinum' },
+  starlitIngot:  { inventory: 'ingot', id: 'starsteel' },
+});
+
+/** Gathered resources that stay gathered — everything the Foundry has no equivalent for. */
+export const GATHERED_ONLY_RESOURCES = ALL_GATHERING_RESOURCES
+  .filter(r => !GATHERED_CANONICAL_TARGET[r.id]);
+
+/**
+ * Splits a gathering claim queue into the three inventories it should land in.
+ * Returns `{ gathered, ore, ingot }`, each a plain id -> count map of only the non-zero entries.
+ */
+export function splitGatheredByInventory(queue = {}) {
+  const out = { gathered: {}, ore: {}, ingot: {} };
+  Object.entries(queue).forEach(([id, count]) => {
+    const amount = Math.max(0, Math.floor(Number(count) || 0));
+    if (!amount) return;
+    const target = GATHERED_CANONICAL_TARGET[id];
+    if (!target) {
+      out.gathered[id] = (out.gathered[id] ?? 0) + amount;
+      return;
+    }
+    out[target.inventory][target.id] = (out[target.inventory][target.id] ?? 0) + amount;
+  });
+  return out;
+}
 
 export const PROCESSED_RESOURCES = [
   { id: 'timber',          name: 'Timber',          family: 'Lumber',   color: '#a57745', glow: 'rgba(165,119,69,0.32)',  description: 'Rough-cut planks milled from harvested wood, ready for use in construction and carpentry.' },
@@ -209,24 +286,36 @@ export function startGatheringSlots(slots = [], now = Date.now()) {
 
 export function resolveCompletedGatheringSlots(slots = [], now = Date.now()) {
   const completedQueue = { ...DEFAULT_GATHERING_INVENTORY };
+  const elementalDrops = { ...DEFAULT_RESOURCES };
   let completedCount = 0;
   let goldEarned = 0;
 
   const nextSlots = slots.map(slot => {
     if (!slot?.card || !slot.endsAt || slot.endsAt > now || !slot.resourceId) return slot;
     if (completedQueue[slot.resourceId] !== undefined) {
-      completedQueue[slot.resourceId] += 1;
+      const attunementStat = CLASS_ATTUNEMENT_STAT[slot.card.classType];
+      const attunementBonus = attunementStat ? rollAttunementBonus(slot.card, attunementStat) : 0;
+      completedQueue[slot.resourceId] += 1 + attunementBonus;
     }
+    if (TREASURE_SENSE_CLASSES.has(slot.card.classType)) {
+      const treasureSense = getCardAffixBonuses(slot.card)?.treasureSense ?? 0;
+      if (rollAffixProcChance(treasureSense)) {
+        completedQueue[TREASURE_PACK_RESOURCE.id] += 1;
+      }
+    }
+    const moteDrops = rollElementalAttunementDrops(slot.card);
+    Object.entries(moteDrops).forEach(([resourceId, amount]) => {
+      elementalDrops[resourceId] = (elementalDrops[resourceId] ?? 0) + amount;
+    });
     completedCount += 1;
-    const coinBonus = getCardAffixBonuses(slot.card).coinGeneration ?? 0;
-    goldEarned += BASE_GOLD_PER_PRODUCTION * (1 + coinBonus / 100);
+    goldEarned += rollCoinGenerationReward(slot.card);
     return startGatheringSlot(
       { ...slot, startedAt: null, endsAt: null, resourceId: null },
       now,
     );
   });
 
-  return { nextSlots, completedQueue, completedCount, goldEarned };
+  return { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops };
 }
 
 export function addGatheredCounts(left = {}, right = {}) {
@@ -304,6 +393,7 @@ export function startProcessingSlot(slot, now = Date.now()) {
 
 export function resolveCompletedProcessingSlots(slots = [], now = Date.now()) {
   const completedQueue = { ...DEFAULT_PROCESSED_INVENTORY };
+  const elementalDrops = { ...DEFAULT_RESOURCES };
   let completedCount = 0;
   let goldEarned = 0;
 
@@ -313,10 +403,14 @@ export function resolveCompletedProcessingSlots(slots = [], now = Date.now()) {
       return slot;
     }
 
-    completedQueue[recipe.outputId] += 1;
+    const attunementBonus = rollAttunementBonus(slot.card, 'smeltingAttunement');
+    completedQueue[recipe.outputId] += 1 + attunementBonus;
+    const moteDrops = rollElementalAttunementDrops(slot.card);
+    Object.entries(moteDrops).forEach(([resourceId, amount]) => {
+      elementalDrops[resourceId] = (elementalDrops[resourceId] ?? 0) + amount;
+    });
     completedCount += 1;
-    const coinBonus = getCardAffixBonuses(slot.card).coinGeneration ?? 0;
-    goldEarned += BASE_GOLD_PER_PRODUCTION * (1 + coinBonus / 100);
+    goldEarned += rollCoinGenerationReward(slot.card);
 
     const remainingInputCount = Math.max(0, (slot.inputCount ?? 0) - recipe.inputCount);
     return startProcessingSlot(
@@ -332,7 +426,7 @@ export function resolveCompletedProcessingSlots(slots = [], now = Date.now()) {
     );
   });
 
-  return { nextSlots, completedQueue, completedCount, goldEarned };
+  return { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops };
 }
 
 export function addProcessedCounts(left = {}, right = {}) {
