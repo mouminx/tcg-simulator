@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Pre-optimization source art. Kept locally so scripts/optimize-assets.mjs can
+# re-encode at different sizes without a git checkout. Not shipped.
+src/assets-original
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +26,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Timestamp stamp written by scripts/optimize-assets.mjs so it can tell what it has
+# already processed. Generated state, not source.
+src/assets/.optimized
