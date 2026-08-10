@@ -363,6 +363,36 @@ export const TAGS = {
 // Base probability that any card receives a tag at all
 const TAG_CHANCE = 0.14;
 
+/**
+ * The permanently-stocked packs — a clean cheap-to-expensive ladder. Everything else is a rotation deal.
+ *
+ * The shop carried 21 purchasable packs across five shelves, which is more choices than a player can hold
+ * in mind and left most of them permanently ignored. The Horizon Set (dawn / steel / mystic / abyss /
+ * eternal) was deleted outright: it was five 10-card near-duplicates of this ladder at overlapping prices.
+ */
+export const PERMANENT_PACK_IDS = ['dusk', 'iron', 'arcane', 'void', 'primordial'];
+
+/** Stocked a few at a time by the rotation. See `src/game/shop.js`. */
+export const ROTATION_PACK_IDS = [
+  'vault1', 'vault2', 'vault3',
+  'holoEd', 'foilEd', 'reverseEd', 'shadowEd', 'nexusEd', 'prismaticEd',
+];
+
+/**
+ * Where a HELD pack of a deleted type goes when an old save is loaded.
+ *
+ * `PACK_TYPES[id] ?? PACK_TYPES.iron` already keeps such a save from crashing, but silently — a 10-card
+ * Mystic (18g) would open as a 5-card Iron (5g), which is a real loss for something the player paid for.
+ * These map to the nearest survivor by price instead, so the value roughly holds.
+ */
+export const RETIRED_PACK_REPLACEMENTS = {
+  dawn: 'iron',        // 5.50 -> 5.00
+  steel: 'arcane',     // 9.00 -> 10.00
+  mystic: 'void',      // 18.00 -> 18.00
+  abyss: 'primordial', // 33.00 -> 30.00
+  eternal: 'primordial', // 55.00 -> 30.00, the closest that still exists
+};
+
 export const PACK_TYPES = {
   // ── Set 1: Classic (5 cards) ────────────────────────────────────────
   dusk: {
@@ -416,43 +446,7 @@ export const PACK_TYPES = {
   },
 
   // ── Set 2: Expanded (10 cards) ───────────────────────────────────────
-  dawn: {
-    id: 'dawn', name: 'Dawn', subtitle: 'Pack', cardCount: 10,
-    cost: 5.50, stars: '✦ ✦',
-    description: '10 cards · Beginner friendly',
-    rarityWeights: { common: 70, uncommon: 22, rare: 6,  epic: 1.75, legendary: 0.25, mythic: 0   },
-    tierWeights:   { 1: 68,  2: 22, 3: 8,  4: 2,  5: 0  },
-  },
-  steel: {
-    id: 'steel', name: 'Steel', subtitle: 'Pack', cardCount: 10,
-    cost: 9.00, stars: '✦ ✦ ✦ ✦',
-    description: '10 cards · Balanced draws',
-    rarityWeights: { common: 57, uncommon: 26, rare: 13, epic: 3,   legendary: 0.75, mythic: 0.25 },
-    tierWeights:   { 1: 45,  2: 28, 3: 16, 4: 8,  5: 3  },
-  },
-  mystic: {
-    id: 'mystic', name: 'Mystic', subtitle: 'Pack', cardCount: 10,
-    cost: 18.00, stars: '✦ ✦ ✦ ✦ ✦ ✦',
-    description: '10 cards · Rare+ focused',
-    rarityWeights: { common: 37, uncommon: 30, rare: 24, epic: 7,   legendary: 1.5,  mythic: 0.5  },
-    tierWeights:   { 1: 28,  2: 30, 3: 25, 4: 13, 5: 4  },
-  },
-  abyss: {
-    id: 'abyss', name: 'Abyss', subtitle: 'Pack', cardCount: 10,
-    cost: 33.00, stars: '✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦',
-    description: '10 cards · Epic & Legendary surge',
-    rarityWeights: { common: 15, uncommon: 23, rare: 33, epic: 22,  legendary: 2.5,  mythic: 1    },
-    tierWeights:   { 1: 12,  2: 20, 3: 30, 4: 25, 5: 13 },
-  },
-  eternal: {
-    id: 'eternal', name: 'Eternal', subtitle: 'Pack', cardCount: 10,
-    cost: 55.00, stars: '✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦ ✦',
-    description: '10 cards · Near-mythic odds',
-    rarityWeights: { common: 7,  uncommon: 14, rare: 30, epic: 34,  legendary: 5.5,  mythic: 2    },
-    tierWeights:   { 1: 5,   2: 12, 3: 25, 4: 33, 5: 25 },
-  },
-
-  // ── Set 3: Vault (20 cards) ──────────────────────────────────────────
+// ── Set 3: Vault (20 cards) ──────────────────────────────────────────
   vault1: {
     id: 'vault1', name: 'Bastion', subtitle: 'Vault', cardCount: 20,
     cost: 120.00, stars: '◆ ◆ ◆',

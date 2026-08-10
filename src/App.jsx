@@ -70,7 +70,7 @@ import {
   startProcessingSlot,
   startGatheringSlots,
 } from './game/wilderness';
-import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
+import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, RETIRED_PACK_REPLACEMENTS, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
 import {
   EXPEDITION_STATES,
   EXPEDITION_DIFFICULTIES,
@@ -87,6 +87,7 @@ import {
   resolveExpeditionRun,
 } from './game/expedition';
 import { getStorage, setStorage } from './game/storage';
+import { discountedCost, getRotationOffers } from './game/shop';
 import { getClient, getProfile, getSession, isOnlineConfigured, signOut } from './game/account';
 import { SLOT_MODES, adapterForSlot, deleteSlot, listSlots } from './game/slots';
 import LoginPage from './components/LoginPage';
@@ -129,7 +130,16 @@ const COMING_SOON_VIEWS = new Set([VIEWS.EXPEDITION, VIEWS.LAB, VIEWS.MARKET]);
  *
  * The point is that a completion sound alone does not say *where* the loot landed.
  */
-const LOOT_TAB_VIEWS = [VIEWS.FOUNDRY, VIEWS.WILDERNESS];
+/**
+ * Views whose tab carries a loot diamond.
+ *
+ * Collection's diamond means something different from the other two. Foundry and Wilderness have a
+ * *pending queue*, so their diamond persists until the loot is collected. Nothing is pending in the
+ * Collection — a new card is simply there — so its diamond means "cards arrived since you last looked"
+ * and clears on the visit itself. `collectionSeen` is what makes that difference, not a special case in
+ * the indicator code.
+ */
+const LOOT_TAB_VIEWS = [VIEWS.FOUNDRY, VIEWS.WILDERNESS, VIEWS.COLLECTION, VIEWS.UNPACK];
 
 /**
  * Ceiling on packs a player can *buy* while already holding a stack.
@@ -464,6 +474,19 @@ function parseSave(raw) {
         if ((parsed.version ?? 0) < 23) {
           migrateCardIdsToUuid(parsed);
         }
+        /**
+         * Held packs of a retired type become the nearest survivor by price.
+         *
+         * Not version-gated: the retirement happened without a save bump, and a player can be holding one
+         * of these at any version. `PACK_TYPES[id] ?? PACK_TYPES.iron` already stops such a save crashing,
+         * but silently — a 10-card Mystic (18g) would open as a 5-card Iron (5g), losing what was paid for.
+         */
+        if (Array.isArray(parsed.packs)) {
+          parsed.packs = parsed.packs.map(pack => {
+            const replacement = RETIRED_PACK_REPLACEMENTS[pack?.packTypeId];
+            return replacement ? { ...pack, packTypeId: replacement } : pack;
+          });
+        }
         if ((parsed.version ?? 0) < 18) {
           return withDefaults(collapseLegacyExpeditionSupportSlots(parsed));
         }
@@ -529,6 +552,7 @@ function freshSave() {
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     graphicsSettings: DEFAULT_GRAPHICS_SETTINGS,
 
+    collectionSeen: 0,
     pocketCapacity: DEFAULT_POCKET_CAPACITY,
     pocketExpanded: true,
     pocketSystemVersion: POCKET_SYSTEM_VERSION,
@@ -637,6 +661,16 @@ function GameApp({ savedState, account }) {
   const [processedClaimQueue, setProcessedClaimQueue] = useState(() => ({ ...DEFAULT_PROCESSED_INVENTORY, ...(savedState.processedClaimQueue ?? {}) }));
   const [processingRewardQueue, setProcessingRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.processingRewardQueue ?? {}) }));
   const [lootSeen, setLootSeen] = useState(() => ({ ...DEFAULT_LOOT_SEEN, ...(savedState.lootSeen ?? {}) }));
+  /**
+   * Collection size as of the last visit to the Collection.
+   *
+   * Absent on an older save means "everything you own has been seen", which is the same graceful default
+   * `lootSeen` uses — a player loading an existing save should not be told their whole collection is new.
+   * Needs no migration for exactly that reason.
+   */
+  const [collectionSeen, setCollectionSeen] = useState(
+    () => savedState.collectionSeen ?? savedState.collection?.length ?? 0,
+  );
   const [expeditionDifficultyId, setExpeditionDifficultyId] = useState(() => savedState.expeditionDifficultyId ?? EXPEDITION_DIFFICULTIES[0].id);
   const [expeditionUnitSlots, setExpeditionUnitSlots] = useState(() => normalizeExpeditionUnitSlots(savedState.expeditionUnitSlots, savedState.expeditionUnitSlots?.length ?? EXPEDITION_SLOT_LIMITS.unit.initial));
   const [expeditionSupplySlots, setExpeditionSupplySlots] = useState(() => normalizeExpeditionSupplySlots(savedState.expeditionSupplySlots, savedState.expeditionSupplySlots?.length ?? EXPEDITION_SLOT_LIMITS.supply.initial));
@@ -888,6 +922,7 @@ function GameApp({ savedState, account }) {
       pocketCapacity,
       pocketExpanded,
       lootSeen,
+      collectionSeen,
     };
     if (saveTimerRef.current !== null) return; // a write is already scheduled
     saveTimerRef.current = window.setTimeout(() => {
@@ -896,7 +931,7 @@ function GameApp({ savedState, account }) {
       saveState(pendingSaveRef.current);
       pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
-  }, [balance, collection, packs, market, resources, arcanaInventory, oreInventory, ingotInventory, mineSlots, mineSlotCapacity, mineClaimQueue, mineRewardQueue, forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots, ingotClaimQueue, forgeRewardQueue, gatheredInventory, processedInventory, gatheringSlots, gatheringClaimQueue, gatheringRewardQueue, processingSlots, processedClaimQueue, processingRewardQueue, expeditionDifficultyId, expeditionUnitSlots, expeditionSupplySlots, expeditionArcanaSlots, expeditionRun, packsOpened, audioSettings, graphicsSettings, pocket, pocketCapacity, pocketExpanded, lootSeen]);
+  }, [balance, collection, packs, market, resources, arcanaInventory, oreInventory, ingotInventory, mineSlots, mineSlotCapacity, mineClaimQueue, mineRewardQueue, forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots, ingotClaimQueue, forgeRewardQueue, gatheredInventory, processedInventory, gatheringSlots, gatheringClaimQueue, gatheringRewardQueue, processingSlots, processedClaimQueue, processingRewardQueue, expeditionDifficultyId, expeditionUnitSlots, expeditionSupplySlots, expeditionArcanaSlots, expeditionRun, packsOpened, audioSettings, graphicsSettings, pocket, pocketCapacity, pocketExpanded, lootSeen, collectionSeen]);
 
   // Drives every CSS quality override in App.css. Set on <html> rather than a
   // wrapper div so fixed/portaled elements (tooltips, hover previews, the carried
@@ -1072,9 +1107,19 @@ function GameApp({ savedState, account }) {
    * Both signals belong together, which is why this exists rather than two calls at each site —
    * a future placement path gets the effect for free by using this.
    */
-  function signalCardPlaced(card = null) {
+  function signalCardPlaced(card = null, { echo = true } = {}) {
     // The sound is immediate. Only the ring waits, and only for one paint.
     audioEngine.play(SOUND_IDS.cardPlace);
+    /**
+     * `echo: false` for drops into the HAND.
+     *
+     * The ring is meant to mark a card being committed to a station — a mine slot, a forge row, an
+     * expedition wagon. The hand is a carrier, not a destination, so firing the shockwave there made
+     * picking a card up look as consequential as socketing one, and it fought the rune arc that is
+     * already lighting up behind the fan for exactly the same event. The sound still plays: that is
+     * feedback the card moved, which is true either way.
+     */
+    if (!echo) return;
     // Gated on the same flag as the nav runes and the title-screen stream: `runeParticles` is
     // high-only, so Low and Medium get the sound alone. Verified rendering at high — 8 runes and 2
     // rings on a common card.
@@ -1223,9 +1268,16 @@ function GameApp({ savedState, account }) {
     [VIEWS.WILDERNESS]: queueTotal(
       gatheringClaimQueue, gatheringRewardQueue, processedClaimQueue, processingRewardQueue,
     ),
+    // Cards gained since the Collection was last opened. Clamped at zero so selling cards — which
+    // shrinks the collection below the seen count — cannot produce a negative "pending".
+    [VIEWS.COLLECTION]: Math.max(0, collection.length - collectionSeen),
+    // Unopened packs. The same semantics as Foundry and Wilderness — pending until consumed — so the
+    // diamond persists while packs are held and disappears when the last one is opened.
+    [VIEWS.UNPACK]: packs.length,
   }), [
     mineClaimQueue, mineRewardQueue, ingotClaimQueue, forgeRewardQueue,
     gatheringClaimQueue, gatheringRewardQueue, processedClaimQueue, processingRewardQueue,
+    collection.length, collectionSeen, packs.length,
   ]);
 
   // Seeded from the first render so loot already in the queues does not register as newly
@@ -1246,11 +1298,23 @@ function GameApp({ savedState, account }) {
     });
   }, [lootPending, view]);
 
-  // Visiting a view clears its glow. The diamond stays until the loot is actually collected.
+  // Visiting a view clears its glow. For Foundry and Wilderness the diamond stays until the loot is
+  // actually collected; for the Collection there is nothing to collect, so marking the cards seen below
+  // takes its pending to zero and the diamond goes away entirely.
   useEffect(() => {
     if (!LOOT_TAB_VIEWS.includes(view)) return;
     setLootSeen(prev => (prev[view] ? prev : { ...prev, [view]: true }));
   }, [view]);
+
+  /**
+   * Being on the Collection marks its cards seen — and keeps doing so while you stay, which is why
+   * `collection.length` is a dependency. Without it, a card arriving while the binder is open would
+   * light the tab you are already looking at.
+   */
+  useEffect(() => {
+    if (view !== VIEWS.COLLECTION) return;
+    setCollectionSeen(prev => (prev === collection.length ? prev : collection.length));
+  }, [view, collection.length]);
 
   // A held-back view must never end up active, whatever set it.
   useEffect(() => {
@@ -1642,9 +1706,22 @@ function GameApp({ savedState, account }) {
 
   function handleBuyPack(packTypeId) {
     const pt = PACK_TYPES[packTypeId];
-    if (!pt || balance < pt.cost) return;
+    if (!pt) return;
+    /**
+     * The price is computed HERE, not passed in from the shelf.
+     *
+     * A rotation deal can be discounted, and the discount has to be applied where the gold is actually
+     * taken — otherwise the shelf shows one number and the balance moves by another. Recomputing it from
+     * the same pure function the shelf uses means the two cannot disagree, and it keeps the client from
+     * being able to name its own price, which is the shape the server phase needs anyway.
+     */
+    const { offers } = getRotationOffers(Date.now());
+    const discountPct = offers.find(o => o.packId === packTypeId)?.discountPct ?? 0;
+    const price = discountedCost(pt.cost, discountPct);
+
+    if (balance < price) return;
     if (packs.length >= MAX_HELD_PACKS) return;
-    applyGoldDelta('pack:buy', -pt.cost);
+    applyGoldDelta('pack:buy', -price);
     // A UUID for the same reason cards get one: `Date.now() + Math.random()` is a float keyed to the
     // wall clock, so it is neither stable across clients nor safe to round-trip. Held packs persist,
     // and a later phase has the server minting them.
@@ -1814,7 +1891,7 @@ function GameApp({ savedState, account }) {
     clearProcessingCards(cardId);
     clearExpeditionCards(cardId);
     setPocket(prev => [...prev, { ...card }]);
-    signalCardPlaced(card);
+    signalCardPlaced(card, { echo: false });   // into the hand — sound only
     return true;
   }
 
@@ -1829,7 +1906,7 @@ function GameApp({ savedState, account }) {
     // position right — the whole fan shifted under the pointer each time you added one. Appending
     // puts a drawn card at the near end and leaves the rest where they were.
     setPocket(prev => [...prev, { ...card }]);
-    signalCardPlaced(card);
+    signalCardPlaced(card, { echo: false });   // into the hand — sound only
   }
 
   function handleUnlockPocketSlot() {
@@ -2925,13 +3002,12 @@ function GameApp({ savedState, account }) {
         the Bag's bottom inset. The Hand is the one floating surface that reserves space rather
         than overlaying: it spans the bottom of every view, so content running under it would be
         permanently unreachable, not just covered while a drawer happens to be open.
-        A constant now — the fan has no hidden state. It used to shrink to 3rem when the hand was
-        tucked away, but a carrier that feeds every station should not be something you open first,
-        and a control that can hide it is one more state where a drag has nowhere to land. */}
-    <div
-      className={`app${backdropScene ? ' app--scene' : ''}`}
-      style={{ '--dock-gutter': '14rem' }}
-    >
+        It is DERIVED IN CSS from `--station-card-h` rather than set here as a constant. A fixed 14rem
+        cost the same 232px on a 1366x768 laptop as on a 4K display — 30% of the screen — which clipped
+        the Collection binder and both production pages. Deriving it means one knob (the card size, itself
+        viewport-height-driven) moves the card and the band it needs together, and a window resize is
+        handled by CSS with no re-render. See `--dock-gutter` in App.css. */}
+    <div className={`app${backdropScene ? ' app--scene' : ''}`}>
       {/* Full-viewport scenery behind the entire page, not just the panel. The
           `app--scene` class above makes that view's panels translucent so the
           landscape actually reads through — without it the backdrop is hidden behind
@@ -3002,8 +3078,13 @@ function GameApp({ savedState, account }) {
         {VIEW_ORDER.map((v, i) => {
           let label;
           if (v === VIEWS.SHOP) label = 'Cards';
-          else if (v === VIEWS.UNPACK) label = packs.length > 0 ? `Summon (${packs.length})` : 'Summon';
-          else if (v === VIEWS.COLLECTION) label = `Collection (${collection.length})`;
+          // No count here either. It was kept as "a pack count is a to-do, not a total", but a number in a
+          // tab title is a number in a tab title — and treasure packs made one appear unprompted. The
+          // diamond carries it now, with exactly the right semantics: pending until opened.
+          else if (v === VIEWS.UNPACK) label = 'Summon';
+          // No count. The diamond says "something new is in here", which is the part a player acts on;
+          // a running total is noise on a bar with ~6px of slack at 1024px (see CLAUDE.md).
+          else if (v === VIEWS.COLLECTION) label = 'Collection';
           else if (v === VIEWS.ARCANA) label = 'Arcana';
           else if (v === VIEWS.MARKET) label = 'Market';
           else if (v === VIEWS.FOUNDRY) label = 'Foundry';

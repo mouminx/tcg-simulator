@@ -147,48 +147,68 @@ Expedition are all in that category.
 
 ### The dock gutter
 
-`--dock-gutter` is set on `.app` from `App.jsx` and is the Hand fan's visible height —
-**`7rem` expanded, `2.6rem` collapsed**, tracking `pocketExpanded`, which is persisted. Two
-things consume it: `.main`'s bottom padding, and `.inventory-panel`'s `bottom` inset.
+`--dock-gutter` is the Hand fan's visible height. Two things consume it: `.main`'s bottom padding, and
+`.inventory-panel`'s `bottom` inset.
 
-**The Hand is the one floating surface that reserves space instead of overlaying**, and that
-asymmetry is deliberate. A right-edge drawer covers content only while it happens to be open,
-and only at one edge; the fan spans the bottom of *every* view permanently, so anything running
-under it would be unreachable rather than momentarily hidden. Collapsing the fan is how a player
-buys the height back.
+**It is DERIVED IN CSS, not a constant — and that is a bug fix.** It was a hard `14rem` (232px), which cost
+the same on a 1366×768 laptop as on a 4K display. Measured there: header + nav + that band left **436px of
+usable content height, 57% of the screen**, and the Collection binder overflowed its pane by 201px, the
+Foundry's mine slots by 67px and its queue by 186px. That is the reported "large horizontal rect spanning
+the bottom that cuts off half the screen-space".
 
-The gutter is the **resting** height only. A hovered card lifts well past it, which is fine —
-that is a transient overlay, the same as a hover preview.
+It is now `calc(var(--station-card-h) * 0.82 + 2.2rem)` — the portion of a card resting above the screen
+edge, plus room for the rune arc's crown and label. `--station-card-w` is itself `clamp(112px, 13.5vh,
+170px)`, so **one knob moves the card and the band it needs together**, and a window resize is handled by
+CSS with no re-render. `vh` rather than `vmin` because the pressure is vertical; width was never the problem.
 
-### Per-view notes
+Measured after: usable height 57% → 64% at 1366×768, 66% → 69% at 1512×982, and Summon's pane scroll
+196px → 140px.
 
-- **Shop** — was ten stacked shelf sections, roughly 3600px of scroll. The six single-pack
-  Edition sections are merged into one `Tag Editions` shelf, leaving five categories behind
-  a tab rail with **one shelf visible at a time**. Fits any viewport.
-  Centred rather than left-aligned, with no standing subtitle — explanatory prose under a
-  heading reads as a web page rather than a game, and the one line that remains is functional
-  (why buying stopped working at the pack cap).
-  Pack width is `clamp(126px, 12.4vw, 202px)` and the shelf furniture scales with it. It has
-  to be responsive: five packs at a fixed size plus furniture is wide enough that the
-  right-edge drawers, which **overlay** the pane without reserving space, hid the last pack.
-  The shop does **not** shift when a drawer opens. An earlier version translated it by half the
-  drawer width to keep it centred in the visible area, but the Hand drawer does not do that and
-  the inconsistency reads as a bug — a screen that jumps sideways when you open your bag. The
-  width bound above is what keeps the shelf clear instead; below ~1100px the floor wins and the
-  last pack can tuck under an open drawer, the same trade every view makes at that width.
-- **Collection** — the sidebar is a fixed-height flex column: title fixed,
-  `.collection-sidebar__scroll` takes the filters, and `.mass-sell-bar` sits *outside* that
-  scroll region as a pinned footer. It used to be the sidebar's last child, so a long
-  filter stack pushed the Sell button off-screen exactly when it was needed. The binder is
-  32 cards per spread and intrinsically taller than a short viewport, so
-  `.collection-main` scrolls on its own.
-- **Foundry / Wilderness** — `.foundry-half` (which Wilderness reuses via
-  `class="foundry-half wilderness-half"`) scrolls internally, so accumulating loot no
-  longer lengthens the page. Both `-split` rules carried `min-height: 560px`, which
-  *guaranteed* overflow on any window shorter than that.
-- **Inventory sidebar** keeps its own scroll, by design.
+**The Hand is the one floating surface that reserves space instead of overlaying**, and that asymmetry is
+deliberate. A right-edge drawer covers content only while it happens to be open, and only at one edge; the
+fan spans the bottom of *every* view permanently, so anything running under it would be unreachable rather
+than momentarily hidden.
 
----
+### Short viewports
+
+Measured at real MacBook resolutions, because a 768px-tall laptop is where every fixed pixel cost lands.
+Three views now fit with **no scrolling at all**; the fourth cannot, and the reason is arithmetic rather than
+neglect.
+
+| View | 1366x768 | 1280x800 | 1440x900 |
+|---|---|---|---|
+| Collection | **no scrolling** | **no scrolling** | **no scrolling** |
+| Foundry — mine half | **fits** | **fits** | **fits** |
+| Wilderness — gathering half | **fits** | **fits** | **fits** |
+| Summon | 140px | 108px | 19px |
+| Foundry — forge half | 1449px | 1288px | 1380px |
+| Wilderness — processing half | 1066px | 948px | 980px |
+
+**The binder adapts its row count**, not its cell size — see `useBinderLayout` in Collection.jsx. Forcing
+4 rows into 492px gives 71x103 cells, which is less readable than scrolling; 3 rows at ~120px is not.
+`.collection-card-slot` also had to stop being a fixed 110x160 and fill its cell, or a shrunken cell left the
+card overflowing it — that was the last ~25px of residual scroll.
+
+**The mine and gathering slots go to a single row of four below 940px.** A 2x2 grid of 270px slots needs
+551px and the half only gets 395px, so no amount of card-shrinking would have fitted it; the halves have
+width to spare at every size the game supports. The breakpoint is 940px because that is where the
+measurement says it stops fitting — at 1440x900 the 2x2 grid still overflowed by 304px.
+
+### The forge and processing rows cannot fit a short viewport
+
+This is a genuine limit, not a missing tweak. A `.foundry-half` gets **395px** at 1366x768. A forge row is
+**558px** and there are three, so the half needs 1844px — 4.7x what it has. Fitting three rows would mean
+131px per row, which is less than one 112px rail tile.
+
+No page-level change fixes that: stacking the halves does not give either one more vertical space, and the
+card is already at its floor. It needs the ROW to get shorter, which is a design decision:
+
+- lay a row out horizontally (fuel / smelt / output side by side) instead of as three stacked bands, or
+- show one row at a time behind a selector, the way the Shop already does with its shelves, or
+- accept the inner scroll on this half alone, which is where it is now.
+
+Summon's remaining 140px is a smaller version of the same thing — the reveal area is sized for a taller
+window — and is the next cheapest one to fix.
 
 ## Navigation
 
@@ -316,6 +336,28 @@ you are already on that page counts as seen.
 
 `lootSeen` is persisted, so the distinction survives a reload. `LOOT_TAB_VIEWS` is the list
 to extend if Summon or Arcana should ever get one.
+
+### Collection's diamond means something different
+
+Foundry and Wilderness have a **pending queue**, so their diamond persists until the loot is collected.
+Nothing is pending in the Collection — a new card is simply there — so its diamond means "cards arrived
+since you last looked" and clears on the visit itself.
+
+That difference lives entirely in `collectionSeen` (the collection size as of the last visit), not in a
+special case in the indicator code: `lootPending[COLLECTION]` is `collection.length - collectionSeen`, so
+visiting takes it to zero and the diamond disappears through the same path the others use.
+
+- **Clamped at zero.** Selling cards drops the collection below the seen count, which would otherwise be
+  a negative "pending".
+- **The visit effect depends on `collection.length`, not just `view`.** Without that, a card arriving
+  while the binder is open would light the tab the player is already looking at.
+- **Absent on an older save means "all seen"** — the same graceful default `lootSeen` uses, and the reason
+  this needed no migration. A player loading an existing save should not be told their whole collection
+  is new.
+
+**The Collection tab label no longer carries a count.** The diamond says "something new is in here",
+which is the part a player acts on; a running total is noise on a bar with ~6px of slack at 1024px. Summon
+keeps its `(N)` — an unopened pack count is a to-do, not a total.
 
 Both differences between `new` and `seen` (brightness/size and the halo) are **static** as
 well as animated, because `animation` is switched off at low and medium quality. The glow is
@@ -1286,6 +1328,54 @@ Notable pack types:
 - `blankSlate`
 - `treasure`
 
+### The roster: 5 permanent, 9 on rotation
+
+`PERMANENT_PACK_IDS` in cards.js is the always-stocked ladder — dusk 3, iron 5, arcane 10, void 18,
+primordial 30 — plus Blank Slate on its own shelf. `ROTATION_PACK_IDS` (the 3 Vault and 6 Tag Edition
+packs) is stocked a few at a time.
+
+**The Horizon Set was deleted outright** (dawn, steel, mystic, abyss, eternal): five 10-card
+near-duplicates of the Core ladder at overlapping prices. The shop had 21 purchasable packs across five
+shelves, most of them permanently ignored.
+
+`RETIRED_PACK_REPLACEMENTS` remaps a HELD pack of a deleted type on load, and it is **not version-gated** —
+the retirement happened without a save bump, so a player can be holding one at any version.
+`PACK_TYPES[id] ?? PACK_TYPES.iron` already stopped such a save crashing, but silently: a 10-card Mystic
+(18g) would have opened as a 5-card Iron (5g).
+
+Note when deleting a pack: **`steel` is also an ingot id** in foundry.js, with 9 references. A blind
+string removal would have taken those with it.
+
+### Rotation deals persist nothing
+
+`src/game/shop.js`. The window index is `floor(now / ROTATION_PERIOD_MS)` (4 hours), so the offers are a
+**pure function of the clock** — reloading cannot reroll them, there is no expiry to keep in the save, and
+no migration was needed. A stored seed would have required both and could drift out of step with the clock
+it described.
+
+Packs are picked by walking the pool with a hash-derived **stride coprime with the pool size**, so a pack
+cannot appear twice in one window without a duplicate check. Discounts are 0–25% in 5% steps.
+
+**The price is computed where the gold is taken.** `handleBuyPack` recomputes the discount from the same
+pure function the shelf uses, rather than accepting a price from the UI — otherwise the tag shows one
+number and the balance moves by another, and the client gets to name its own price. Verified: tag 29,
+charged 29.00.
+
+### The gold sink
+
+Only three sinks were reachable before this: buying packs, and unlocking a hand or mine slot. Everything
+else (Lab grading/fusing/imprinting, Market slots, Expedition slots) sits behind `COMING_SOON_VIEWS`, so a
+producing player just accumulated.
+
+`SHOP_MATERIALS` is the repeatable half — coal above all, since the forge burns it continuously and a
+player who runs dry has no option but to go back to the mine. Prices sit well **above** what the same
+material sells for, so buying is convenience and not arbitrage.
+
+`findUnsellableMaterials()` exists because a mistyped id fails in the worst way: the player pays and the
+goods land under a key nothing reads. It caught exactly that — the mote ids were written `smolderingMote`
+when the real format is `smoldering_mote`, so those are now built with `getElementResourceId` rather than
+typed.
+
 ### Welcome Pack
 
 - starts the game in `packs`
@@ -1554,6 +1644,62 @@ floating panel on top of an already-revealed card is redundant.
 the reveal scale is applied). Hanging off the corner at `-7px` it was a small target floating in
 empty space beside fanned, rotated artwork — easy to miss and easy to slide off. Inside the corner
 the pointer is already on the hover target when it arrives.
+
+### The rune arc
+
+A persistent half-ring of runes across the bottom of the screen, behind the cards. It is the standing
+answer to "where do cards go?" — before it, the only hint was the catch band, which appeared *only once a
+drag had already started*, so a player who did not know cards were draggable had nothing to discover, and
+the band's full-width tinted slab read as a layout glitch when it flashed in. **The band now draws nothing
+and is a pure hit area.**
+
+**Parameterised by APEX and RADIUS, not by centre.** The first attempt set centre and radius directly and
+produced a 1520px circle whose top half filled the screen, with one of seven runes visible. Apex (how far
+above the screen edge the crown sits) and radius (how flat the curve is) are the two things that matter;
+the centre is derived as `radius - apex` below the edge, in CSS, so the ring and the runes cannot decouple.
+
+**The numbers are constrained, not chosen.** A rune at angle θ sags `radius × (1 - cos θ)` below the crown,
+so the outermost rune sits `apex - sag` above the screen edge and goes *off screen* if that is negative. At
+the ±38° spread: radius 980 puts it 8px below the edge; radius 860 with a 250px apex puts it 68px above,
+and lands the centre at 610px. Currently **radius 602, apex 175** (30% smaller than that first pass), which
+keeps the outermost rune 47px above the edge and gives a 741px-wide arc.
+
+**Each rune is two elements.** The outer is a zero-size point on the crown that rotates about the circle's
+centre; the inner carries the glyph. One element cannot do both, because `transform-origin` is measured
+against the element's own box, so a sized element's origin drifts from the true centre by half its height.
+
+| State | Appearance |
+|---|---|
+| empty hand | dim, **no animation at all** — inert by design |
+| holding | brighter ring and runes, glow, pulse, and **the ring rotates** — see below. Runes 7 → 15 visible with `filled / capacity` |
+| drag in flight, room to spare | `--inviting`: ring border 0.26 → 0.6 alpha, runes near-white |
+| drag in flight, hand full | `--refusing`: red, and the label becomes `Hand full — N/M` |
+
+**The spin is seamless with ~17 runes, not 72.** Runes are spaced by a fixed angular *step* rather than
+spread to fit a count, so the ring looks identical after rotating by exactly one step — the animation
+travels one step and loops. That is why the whole circle does not have to be populated to keep runes
+entering the visible crown; one step of overscan at each end is enough (9 rendered at an empty hand,
+17 at a full one, for 7 and 15 visible).
+
+Speed scales with fill and is **zero when empty** — an idle hand does not move at all. `ARC_SPIN_MAX_DEG_PER_SEC`
+is 5, reached at a full hand; measured 0.83°/s at one card and 4.98°/s at six.
+
+**A full hand is not a warning.** Red was initially the resting appearance of a full hand, which made the
+state the player was working towards look like an error. It is now only shown while a drag is actually
+being refused.
+
+**The brightness change is static as well as animated**, because `animation` is switched off at low and
+medium quality — the same rule the loot diamond follows. Verified at low: ring border and rune colour both
+still change, and the glow is a `box-shadow`, not a keyframe. The pulse is the bonus; the glow is the signal.
+
+**The label sits above the fan** (`z-index: 3`, anchored to the apex). It was inside the fan's band at
+`--dock-gutter`, which put it behind the cards — so "Hand full" was hidden by the very cards that made the
+hand full. It also replaced the old `.hand__empty` line, which said the same thing a few pixels lower.
+
+**No placement echo for a drop into the hand.** `signalCardPlaced(card, { echo: false })` — the sound still
+plays, since the card did move, but the shockwave is reserved for committing a card to a station. Firing it
+here made picking a card up look as consequential as socketing one, and it fought the arc, which is already
+lighting up for the same event.
 
 ### The catch band
 

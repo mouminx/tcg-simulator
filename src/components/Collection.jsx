@@ -17,8 +17,74 @@ const RARITY_ORDER   = Object.keys(RARITIES);
 const TIER_ORDER     = Object.keys(TIERS).map(Number);
 const TAG_ORDER      = Object.keys(TAGS);
 const AFFIX_ORDER    = Object.keys(CARD_AFFIXES);
-const CARDS_PER_PAGE = 16;   // 4×4
-const SPREAD_SIZE    = 32;   // two pages per spread
+/**
+ * ── The binder adapts its ROW COUNT to the viewport, and that is a bug fix ──
+ *
+ * It was a fixed 4x4 (16 per page, 32 per spread) at a fixed 132x192 cell, which needs **847px of usable
+ * height**. A 1366x768 laptop has 492px after the header, nav and Hand band — so 416px of the binder sat
+ * behind an inner scroll, which is what "had to scroll around to see the entire collection book" was.
+ *
+ * Shrinking the cells to fit 4 rows there gives 71x103 — small enough that the art and nameplate stop being
+ * readable, which is worse than scrolling. So the ROWS give way instead: 4 rows where there is room, 3 or 2
+ * where there is not, with the cell kept at a legible size and capped at the original 132x192 so a tall
+ * display does not inflate it.
+ *
+ * The trade is fewer cards per spread on a small screen — more page turns, but every card legible and
+ * nothing hidden. Columns stay at 4: the pressure is vertical, and the binder already has width to spare.
+ */
+const BINDER_COLUMNS   = 4;
+const BINDER_CELL_H_MAX = 192;
+const BINDER_CELL_H_MIN = 112;   // matches the station-card floor; below this the nameplate stops being readable
+const BINDER_GAP        = 7;
+/**
+ * Everything in the binder's height that is not grid: the page's own padding and gap, its page number, and
+ * the spread's frame and shadow. Measured empirically — a first estimate of 58 left a consistent ~40px of
+ * residual scroll at every viewport. Part of that was this constant and part was `.collection-card-slot`
+ * carrying a fixed 160px height that outgrew a shrunken cell; with the slot filling its cell the honest
+ * figure is 98, arrived at by measuring the residual rather than estimating the parts. At 1366x768 that
+ * lands three rows within a pixel or two of the cell floor, which is why the floor is 112 (the same as the
+ * station card's) and not 120 — a rounder number there would have cost a whole row.
+ */
+const BINDER_CHROME     = 98;
+
+/**
+ * Picks the largest row count whose cell still clears `BINDER_CELL_H_MIN`, from the height actually
+ * available — measured, not inferred from a breakpoint, because the Hand band and the header both move.
+ *
+ * Observing the container is safe from a feedback loop: `.collection-shell` sizes its row with
+ * `minmax(0, 1fr)`, so `.collection-main`'s height comes from the pane rather than from this content. The
+ * equality guard makes that structural rather than a hope.
+ */
+function useBinderLayout(ref) {
+  const [layout, setLayout] = useState({ rows: 4, cellH: BINDER_CELL_H_MAX });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => {
+      const available = el.clientHeight - BINDER_CHROME;
+      let next = null;
+      for (const rows of [4, 3, 2]) {
+        const cellH = (available - BINDER_GAP * (rows - 1)) / rows;
+        if (cellH >= BINDER_CELL_H_MIN) {
+          next = { rows, cellH: Math.min(BINDER_CELL_H_MAX, Math.floor(cellH)) };
+          break;
+        }
+      }
+      // Nothing clears the minimum — a very short window. Two rows at whatever is left beats hiding cards.
+      if (!next) {
+        next = { rows: 2, cellH: Math.max(84, Math.floor((available - BINDER_GAP) / 2)) };
+      }
+      setLayout(prev => (prev.rows === next.rows && prev.cellH === next.cellH ? prev : next));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return layout;
+}
 
 const RARITY_GEMS = {
   common: commonGem,
@@ -48,6 +114,8 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
   const [dragRect, setDragRect] = useState(null);
   const [viewingCard, setViewingCard] = useState(null);
   const [hoverPreview, setHoverPreview] = useState(null);
+  // Measured to decide how many binder rows fit. See useBinderLayout.
+  const binderAreaRef = useRef(null);
   const [spreadIndex,   setSpreadIndex]   = useState(0);
   const [leftDisplay,   setLeftDisplay]   = useState(0); // index driving the left page render
   const [rightDisplay,  setRightDisplay]  = useState(0); // index driving the right page render
@@ -99,16 +167,27 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
       }
     });
 
-  const totalSpreads   = Math.max(1, Math.ceil(filtered.length / SPREAD_SIZE));
+  /**
+   * Page and spread sizes follow the measured row count, so they change with the window. `spreadIndex` is
+   * an index into a list whose page size just moved, which is why the effect below resets to the first
+   * spread when `cardsPerPage` changes — keeping the number would land the player on a different set of
+   * cards than they were looking at, or past the end entirely.
+   */
+  const binderLayout   = useBinderLayout(binderAreaRef);
+  const cardsPerPage   = binderLayout.rows * BINDER_COLUMNS;
+  const spreadSize     = cardsPerPage * 2;
+
+  const totalSpreads   = Math.max(1, Math.ceil(filtered.length / spreadSize));
   const safeLeft       = Math.min(leftDisplay,  totalSpreads - 1);
   const safeRight      = Math.min(rightDisplay, totalSpreads - 1);
-  const leftPageCards  = filtered.slice(safeLeft  * SPREAD_SIZE, safeLeft  * SPREAD_SIZE + CARDS_PER_PAGE);
-  const rightPageCards = filtered.slice(safeRight * SPREAD_SIZE + CARDS_PER_PAGE, (safeRight + 1) * SPREAD_SIZE);
+  const leftPageCards  = filtered.slice(safeLeft  * spreadSize, safeLeft  * spreadSize + cardsPerPage);
+  const rightPageCards = filtered.slice(safeRight * spreadSize + cardsPerPage, (safeRight + 1) * spreadSize);
   // Combined for select-all / invert operations
   const spreadCards    = [...leftPageCards, ...rightPageCards];
 
-  // Reset to page 1 when filters change
-  const filterKey = `${search}|${filterRarity}|${filterTier}|${filterTag}|${filterAffix}|${sortBy}`;
+  // Reset to page 1 when filters change — or when the page size does, since a spread index means something
+  // different once the number of cards per spread has moved.
+  const filterKey = `${search}|${filterRarity}|${filterTier}|${filterTag}|${filterAffix}|${sortBy}|${cardsPerPage}`;
   useEffect(() => {
     setSpreadIndex(0);
     setLeftDisplay(0);
@@ -133,8 +212,8 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
     // Capture current right page (front face of flipping page)
     const front = rightPageCards;
     // Capture new spread's left page (back face — revealed as page lands)
-    const nextSlice = filtered.slice(next * SPREAD_SIZE, (next + 1) * SPREAD_SIZE);
-    const back = nextSlice.slice(0, CARDS_PER_PAGE);
+    const nextSlice = filtered.slice(next * spreadSize, (next + 1) * spreadSize);
+    const back = nextSlice.slice(0, cardsPerPage);
     setSpreadIndex(next);
     setFlipState({ dir: 'next', frontCards: front, backCards: back });
     // Right slot (departing): overlay lifts off it immediately, so reveal new content early
@@ -151,8 +230,8 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
     // Capture current left page (front face of flipping page)
     const front = leftPageCards;
     // Capture prev spread's right page (back face — revealed as page lands)
-    const prevSlice = filtered.slice(prev * SPREAD_SIZE, (prev + 1) * SPREAD_SIZE);
-    const back = prevSlice.slice(CARDS_PER_PAGE);
+    const prevSlice = filtered.slice(prev * spreadSize, (prev + 1) * spreadSize);
+    const back = prevSlice.slice(cardsPerPage);
     setSpreadIndex(prev);
     setFlipState({ dir: 'prev', frontCards: front, backCards: back });
     // Left slot (departing): reveal new content early
@@ -653,7 +732,16 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
           )}
         </aside>
 
-        <div className="collection-main">
+        {/* `binderAreaRef` is measured to pick the binder's row count — see useBinderLayout. The CSS vars
+            carry the result down to the grid, so the geometry lives in one place. */}
+        <div
+          className="collection-main"
+          ref={binderAreaRef}
+          style={{
+            '--binder-rows': binderLayout.rows,
+            '--binder-cell-h': `${binderLayout.cellH}px`,
+          }}
+        >
           {filtered.length === 0 ? (
             <p className="empty-msg">No cards match your filter.</p>
           ) : (
@@ -679,9 +767,9 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
               <div className="binder-page binder-page--left">
                 <div className="binder-page-grid">
                   {leftPageCards.map((card, i) =>
-                    renderCardSlot(card, safeLeft * SPREAD_SIZE + i)
+                    renderCardSlot(card, safeLeft * spreadSize + i)
                   )}
-                  {Array.from({ length: CARDS_PER_PAGE - leftPageCards.length }).map((_, i) => (
+                  {Array.from({ length: cardsPerPage - leftPageCards.length }).map((_, i) => (
                     <div key={`empty-l-${i}`} className="binder-empty-slot" />
                   ))}
                 </div>
@@ -694,7 +782,7 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
                   <div className="binder-flip-face binder-flip-face--front binder-page--left">
                     <div className="binder-page-grid">
                       {flipState.frontCards.map(renderFlipCard)}
-                      {Array.from({ length: CARDS_PER_PAGE - flipState.frontCards.length }).map((_, i) => (
+                      {Array.from({ length: cardsPerPage - flipState.frontCards.length }).map((_, i) => (
                         <div key={`empty-fl-${i}`} className="binder-empty-slot" />
                       ))}
                     </div>
@@ -702,7 +790,7 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
                   <div className="binder-flip-face binder-flip-face--back binder-page--right">
                     <div className="binder-page-grid">
                       {flipState.backCards.map(renderFlipCard)}
-                      {Array.from({ length: CARDS_PER_PAGE - flipState.backCards.length }).map((_, i) => (
+                      {Array.from({ length: cardsPerPage - flipState.backCards.length }).map((_, i) => (
                         <div key={`empty-bl-${i}`} className="binder-empty-slot" />
                       ))}
                     </div>
@@ -719,9 +807,9 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
               <div className="binder-page binder-page--right">
                 <div className="binder-page-grid">
                   {rightPageCards.map((card, i) =>
-                    renderCardSlot(card, safeRight * SPREAD_SIZE + CARDS_PER_PAGE + i)
+                    renderCardSlot(card, safeRight * spreadSize + cardsPerPage + i)
                   )}
-                  {Array.from({ length: CARDS_PER_PAGE - rightPageCards.length }).map((_, i) => (
+                  {Array.from({ length: cardsPerPage - rightPageCards.length }).map((_, i) => (
                     <div key={`empty-r-${i}`} className="binder-empty-slot" />
                   ))}
                 </div>
@@ -734,7 +822,7 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
                   <div className="binder-flip-face binder-flip-face--front binder-page--right">
                     <div className="binder-page-grid">
                       {flipState.frontCards.map(renderFlipCard)}
-                      {Array.from({ length: CARDS_PER_PAGE - flipState.frontCards.length }).map((_, i) => (
+                      {Array.from({ length: cardsPerPage - flipState.frontCards.length }).map((_, i) => (
                         <div key={`empty-fr-${i}`} className="binder-empty-slot" />
                       ))}
                     </div>
@@ -742,7 +830,7 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
                   <div className="binder-flip-face binder-flip-face--back binder-page--left">
                     <div className="binder-page-grid">
                       {flipState.backCards.map(renderFlipCard)}
-                      {Array.from({ length: CARDS_PER_PAGE - flipState.backCards.length }).map((_, i) => (
+                      {Array.from({ length: cardsPerPage - flipState.backCards.length }).map((_, i) => (
                         <div key={`empty-br-${i}`} className="binder-empty-slot" />
                       ))}
                     </div>
@@ -766,7 +854,7 @@ export default function Collection({ cards, onSell, pocket = [], lockedCardIds =
 
           {filtered.length > 0 && (
             <div className="binder-spread-counter">
-              {safeLeft * SPREAD_SIZE + 1}–{Math.min((safeLeft + 1) * SPREAD_SIZE, filtered.length)} of {filtered.length}
+              {safeLeft * spreadSize + 1}–{Math.min((safeLeft + 1) * spreadSize, filtered.length)} of {filtered.length}
             </div>
           )}
         </div>

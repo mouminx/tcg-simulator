@@ -3,42 +3,31 @@ import { createPortal } from 'react-dom';
 import PackCard from './PackCard';
 import { PACK_TYPES } from '../game/cards';
 import Gold from './Gold';
+import { PERMANENT_PACK_IDS } from '../game/cards';
+import { getRotationOffers, discountedCost } from '../game/shop';
 
-const SECTIONS = [
+/**
+ * The permanently-stocked shelves. Two, not five.
+ *
+ * The shop carried 21 purchasable packs across five shelves, of which most were permanently ignored — the
+ * Horizon Set in particular was five 10-card near-duplicates of the Core ladder at overlapping prices, and
+ * has been deleted. The Vault and Tag Edition packs still exist but are stocked a few at a time by the
+ * rotation, so what is on sale changes instead of being a wall.
+ */
+const PERMANENT_SECTIONS = [
+  {
+    id: 'core',
+    label: 'Core Set',
+    tagline: '5 cards per pack',
+    detail: 'The essentials. Standard drop rates across all rarities.',
+    packIds: PERMANENT_PACK_IDS,
+  },
   {
     id: 'arcana',
     label: 'Arcana Packs',
     tagline: '5 cards · Attunement-ready',
     detail: 'Blank Slate packs can be routed through the Arcana Station before opening.',
     packIds: ['blankSlate'],
-  },
-  {
-    id: 'core',
-    label: 'Core Set',
-    tagline: '5 cards per pack',
-    detail: 'The essentials. Standard drop rates across all rarities.',
-    packIds: ['dusk', 'iron', 'arcane', 'void', 'primordial'],
-  },
-  {
-    id: 'horizon',
-    label: 'Horizon Set',
-    tagline: '10 cards per pack',
-    detail: 'Double the cards, elevated odds. A new era of packs.',
-    packIds: ['dawn', 'steel', 'mystic', 'abyss', 'eternal'],
-  },
-  {
-    id: 'vault',
-    label: 'Vault Collection',
-    tagline: '20 cards per pack',
-    detail: 'Premium packs engineered for rare and above. Every pull counts.',
-    packIds: ['vault1', 'vault2', 'vault3'],
-  },
-  {
-    id: 'editions',
-    label: 'Tag Editions',
-    tagline: '15 cards · 1.2× tag rate',
-    detail: 'Each edition boosts one finish. Six shelves worth of packs, one shelf.',
-    packIds: ['holoEd', 'foilEd', 'reverseEd', 'shadowEd', 'nexusEd', 'prismaticEd'],
   },
 ];
 
@@ -72,14 +61,44 @@ function FlyingPack({ startX, startY, endX, endY, packType, onDone }) {
 export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, maxPacks = Infinity }) {
   const buyBtnRefs = useRef({});
   const [flyingPacks, setFlyingPacks] = useState([]);
-  // One shelf at a time. Ten stacked sections was ~3600px of scroll; five categories
+  // One shelf at a time. Ten stacked sections was ~3600px of scroll; a few categories
   // with one visible shelf fits any viewport and reads as a shop counter.
-  const [activeSection, setActiveSection] = useState(SECTIONS[1].id);
+  const [activeSection, setActiveSection] = useState(PERMANENT_SECTIONS[0].id);
+
+  /**
+   * The rotation shelf, rebuilt as the window turns.
+   *
+   * `now` ticks once a minute rather than once a second: the only thing it drives is a countdown shown to
+   * the minute, so a per-second interval would re-render the whole shop sixty times for no visible change.
+   * The offers themselves are a pure function of the clock (see `getRotationOffers`), so nothing is stored
+   * and a reload cannot reroll them.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const rotation = getRotationOffers(now);
+  const discountById = Object.fromEntries(rotation.offers.map(o => [o.packId, o.discountPct]));
+  const hoursLeft = Math.floor(rotation.msRemaining / 3_600_000);
+  const minsLeft = Math.max(0, Math.round((rotation.msRemaining % 3_600_000) / 60_000));
+
+  const SECTIONS = [
+    ...PERMANENT_SECTIONS,
+    {
+      id: 'rotation',
+      label: 'Rotation Deals',
+      tagline: hoursLeft > 0 ? `New stock in ${hoursLeft}h ${minsLeft}m` : `New stock in ${minsLeft}m`,
+      detail: 'Vault and Edition packs, a few at a time. Rotates on its own — what is here now will not be.',
+      packIds: rotation.offers.map(o => o.packId),
+    },
+  ];
 
   const packsFull = packsHeld >= maxPacks;
 
   function handleBuy(pt) {
-    if (balance < pt.cost || packsFull) return;
+    if (balance < discountedCost(pt.cost, discountById[pt.id] ?? 0) || packsFull) return;
     const btn = buyBtnRefs.current[pt.id];
     if (btn && packsNavRef?.current) {
       const start = btn.getBoundingClientRect();
@@ -145,7 +164,10 @@ export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, m
                 <div className="shop-shelf__plank" aria-hidden="true" />
                 <div className="shop-shelf__packs">
                   {packs.map(pt => {
-                    const canAfford = balance >= pt.cost;
+                    // Same pure function App uses to charge, so the tag cannot show a price that is not
+                    // the one taken. See handleBuyPack.
+                    const price = discountedCost(pt.cost, discountById[pt.id] ?? 0);
+                    const canAfford = balance >= price;
                     const blocked = !canAfford || packsFull;
                     return (
                       <div
@@ -164,7 +186,7 @@ export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, m
                                 ? `Buy ${pt.name} Pack — ${pt.description}`
                                 : `Not enough gold for ${pt.name} Pack`
                           }
-                          aria-label={`Buy ${pt.name} Pack for ${pt.cost}. ${pt.description}`}
+                          aria-label={`Buy ${pt.name} Pack for ${price}. ${pt.description}`}
                         >
                           <span className="shop-pack-preview">
                             <PackCard size="shelf" packType={pt} />
@@ -175,7 +197,12 @@ export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, m
                         <div className="shelf-pack__tag">
                           <span className="shelf-pack__tag-name">{pt.name}</span>
                           <span className="shelf-pack__tag-price">
-                            {blocked ? <span className="shelf-pack__tag-short"><Gold amount={pt.cost} /></span> : <Gold amount={pt.cost} />}
+                            {blocked
+                              ? <span className="shelf-pack__tag-short"><Gold amount={price} /></span>
+                              : <Gold amount={price} />}
+                            {discountById[pt.id] > 0 && (
+                              <span className="shelf-pack__discount">−{discountById[pt.id]}%</span>
+                            )}
                           </span>
                         </div>
 

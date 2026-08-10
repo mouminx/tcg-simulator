@@ -33,6 +33,12 @@ optgroup {
    internal panes. Views not yet converted keep `overflow-y: auto` here, so what used to
    be a page scroll becomes a pane scroll — same behaviour, no regression. */
 .app {
+  /* The Hand's visible band, derived from the card it has to show rather than typed in.
+     `0.82 x card height` is the portion of a card that rests above the screen edge; the remainder is room
+     for the rune arc's crown and its label. Because the card is itself viewport-height-driven, this shrinks
+     on a short display instead of eating a third of it — which is what was clipping every page. */
+  --dock-gutter: calc(var(--station-card-h) * 0.82 + 2.2rem);
+
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
@@ -3359,10 +3365,15 @@ optgroup {
 }
 
 /* Card slot (relative container for money popup) */
+/* Fills its grid cell rather than carrying its own size. It was a fixed 110x160, which is fine while the
+   cell is a fixed 132x192 and wrong the moment the cell became viewport-driven: a cell shorter than 160px
+   left the card overflowing it, which was the last few tens of pixels of residual binder scroll.
+   The cell's own width is derived from its height at the card aspect, so filling it keeps the card in
+   proportion — there is no second number to keep in step. */
 .collection-card-slot {
   position: relative;
-  width: 110px;
-  height: 160px;
+  width: 100%;
+  height: 100%;
 }
 
 /* ── Binder ──────────────────────────────────────────────────────────────── */
@@ -3405,10 +3416,14 @@ optgroup {
 .binder-page--left  { border-radius: 2px 0 0 2px; }
 .binder-page--right { border-radius: 0 2px 2px 0; }
 
+/* Rows and cell size come from `--binder-rows` / `--binder-cell-h`, set by Collection.jsx from the height
+   actually available. The cell WIDTH is derived from its height at the card-art aspect (94/136), so a cell
+   cannot end up stretched — and so there is one number to change, not two. See useBinderLayout for why the
+   rows give way on a short viewport rather than the cell size. */
 .binder-page-grid {
   display: grid;
-  grid-template-columns: repeat(4, 132px);
-  grid-template-rows: repeat(4, 192px);
+  grid-template-columns: repeat(4, calc(var(--binder-cell-h, 192px) * 94 / 136));
+  grid-template-rows: repeat(var(--binder-rows, 4), var(--binder-cell-h, 192px));
   gap: 7px;
 }
 
@@ -9112,11 +9127,25 @@ optgroup {
 }
 
 /* ── Mine slots ── */
+/* Two columns by default; FOUR on a short viewport, which is a height fix rather than a width preference.
+   Measured at 1366x768: each `.foundry-half` gets 395px, and a 2x2 grid of 270px slots needs 551px before
+   the collection queue is counted — so the mine section could not fit however small the cards got. One row
+   of four is 270px + queue = ~341px and does fit, and the halves have width to spare at every size the
+   game supports. The breakpoint is on HEIGHT for the same reason. */
 .foundry-mine-slots {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
   align-items: stretch;
+}
+
+/* 940px, not 860: at 1440x900 the 2x2 grid still overflowed the mine half by 304px. The breakpoint is
+   set from where the measurement says the layout stops fitting, not from a round number. */
+@media (max-height: 940px) {
+  .foundry-mine-slots {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
 }
 
 /* NO `min-height` here, and `align-content: start`.
@@ -12225,6 +12254,15 @@ optgroup {
 /* ── The catch band ──
    Full width so "drag to the bottom of the screen" needs no aim. `pointer-events` is off until a
    card is actually being dragged; see the note on `.hand` above. */
+/* The catch band is now a pure HIT AREA and draws nothing.
+   It used to be a full-width dashed slab with a gradient that faded in the moment a drag started, and
+   that was the wrong shape of feedback twice over: it only existed *after* the player had already worked
+   out cards were draggable, and a tinted band snapping in across the bottom of the screen reads as a
+   layout glitch rather than as a target. The rune arc below is on screen permanently instead, so the
+   affordance is there before the drag rather than in response to it.
+
+   Still full width, still inert until a drag is in flight — a permanently live strip across every view
+   would swallow clicks meant for the page underneath. */
 .hand__band {
   position: absolute;
   left: 0;
@@ -12233,19 +12271,178 @@ optgroup {
   /* Taller than the visible fan, so the band is reachable before the pointer gets to the cards. */
   height: calc(var(--dock-gutter, 7rem) + 2.6rem);
   pointer-events: none;
-  opacity: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 0.55rem;
-  border-top: 1px dashed rgba(212, 168, 80, 0.5);
-  background: linear-gradient(0deg, rgba(212, 168, 80, 0.14), rgba(212, 168, 80, 0));
-  transition: opacity 0.16s ease;
 }
 
-.hand--drag-active .hand__band {
-  pointer-events: auto;
-  opacity: 0.75;
+.hand--drag-active .hand__band { pointer-events: auto; }
+
+/* ── The rune arc ─────────────────────────────────────────────────────────────
+   A half ring standing behind the hand, permanently. Centred on the same pivot the cards are fanned
+   about (`--hand-pivot`), at a larger radius, so the two curves are concentric and the cards read as
+   sitting inside the ring rather than near it. */
+.hand__arc {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  /* Below the cards. `.hand__fan`'s slots each establish a stacking context, so this cannot be ordered
+     against them from outside — being earlier in the DOM with a low z-index is what puts it behind. */
+  z-index: 0;
+  --arc-accent: 212, 168, 80;
+  /* The circle's centre sits `radius - apex` BELOW the screen edge. Derived rather than declared, so
+     moving the apex cannot silently decouple the ring from the runes — both read the same two values. */
+  --arc-centre: calc(var(--arc-radius) - var(--arc-apex));
+}
+
+/* The ring itself: a circle whose centre sits `--arc-radius` below the screen edge, so only its top
+   sliver is on screen. Drawing the whole circle and letting it overflow is far more robust than trying
+   to construct an arc from a border segment — the curvature is exact at any viewport width. */
+.hand__arc-ring {
+  position: absolute;
+  left: 50%;
+  /* Bottom edge = apex - 2r, i.e. far below the screen, so only the crown is on screen. */
+  bottom: calc(var(--arc-apex) - var(--arc-radius) * 2);
+  width: calc(var(--arc-radius) * 2);
+  height: calc(var(--arc-radius) * 2);
+  margin-left: calc(var(--arc-radius) * -1);
+  border: 1px solid rgba(var(--arc-accent), 0.26);
+  border-radius: 50%;
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+/* Each rune is placed by rotating it about the ring's centre — the same trick the cards use, so a rune
+   and a card at the same angle line up exactly. The glyph rotates with the arc rather than being
+   counter-rotated upright: an inscribed ring is the intent, and upright glyphs on a curve read as a
+   row that happens to be bent. */
+/* The spinning group. Shares the ring's centre, so rotating it sweeps every rune along the arc together.
+   Zero-size for the same reason the runes are — `transform-origin` is measured against the element's own
+   box, so any height would offset the rotation centre.
+
+   The animation travels exactly ONE rune step and loops. Evenly-spaced runes are identical after a
+   one-step rotation, so that loop is seamless and only ~17 runes need to exist rather than a full circle's
+   worth. `--arc-spin` (the duration) is supplied per render from the hand's fill; when the hand is empty
+   the variable is absent, the duration falls back to 0s and nothing moves. */
+.hand__arc-spin {
+  position: absolute;
+  left: 0;
+  bottom: var(--arc-apex);
+  width: 0;
+  height: 0;
+  transform-origin: 50% var(--arc-radius);
+  animation: hand-arc-spin var(--arc-spin, 0s) linear infinite;
+}
+
+@keyframes hand-arc-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(var(--arc-step, 0deg)); }
+}
+
+/* A zero-size point sitting on the circle's crown, rotated about the circle's CENTRE so it sweeps along
+   the arc. Zero-size is what makes `transform-origin` exact: the origin is measured against the element's
+   own box, so a sized element's origin drifts from the true centre by half its height. */
+.hand__arc-rune {
+  position: absolute;
+  left: 0;
+  /* `bottom: 0` — the spin wrapper is already at the crown, so the rune shares its origin. */
+  bottom: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 50% var(--arc-radius);
+  transform: rotate(var(--rune-angle));
+}
+
+/* The glyph, centred on that point. Rotates with the arc rather than being counter-rotated upright:
+   an inscribed ring is the intent, and upright glyphs on a curve read as a bent row. */
+.hand__arc-rune__glyph {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-runic);
+  font-size: 1.05rem;
+  line-height: 1;
+  color: rgba(var(--arc-accent), 0.46);
+  transition: color 0.35s ease, text-shadow 0.35s ease;
+}
+
+.hand__arc-label {
+  position: absolute;
+  /* Just clear of the arc's crown, and ABOVE the fan in the stack. It used to sit inside the fan's band
+     at `--dock-gutter`, which put it behind the cards — so "Hand full" was hidden by the very cards that
+     made the hand full. */
+  bottom: calc(var(--arc-apex) + 0.5rem);
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--font-caps);
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(var(--arc-accent), 0.52);
+  transition: color 0.3s ease, opacity 0.3s ease;
+}
+
+/* Dimmed once the player has cards in hand — they have evidently worked out how it works, and a standing
+   instruction that has already been followed is clutter. It brightens again while a drag is in flight. */
+.hand__arc--holding .hand__arc-label { opacity: 0.5; }
+.hand__arc--inviting .hand__arc-label { opacity: 1; }
+
+/* ── Holding cards: brighter and alive ──
+   The brightness change is a STATIC property as well as an animated one, because `animation` is switched
+   off at low and medium quality — the same reason the loot diamond's `new` state has a static difference.
+   The pulse is the bonus; the glow is the signal. */
+.hand__arc--holding .hand__arc-ring {
+  border-color: rgba(var(--arc-accent), 0.34);
+  box-shadow: 0 0 22px rgba(var(--arc-accent), 0.1), inset 0 0 30px rgba(var(--arc-accent), 0.05);
+  animation: hand-arc-pulse 3.6s ease-in-out infinite;
+}
+
+.hand__arc--holding .hand__arc-rune__glyph {
+  color: rgba(var(--arc-accent), 0.62);
+  text-shadow: 0 0 8px rgba(var(--arc-accent), 0.45);
+  animation: hand-arc-rune-pulse 3.6s ease-in-out infinite;
+  /* Staggered off the rune's index so the ring shimmers around its circumference instead of throbbing
+     as one lump. */
+  animation-delay: calc(var(--rune-index) * 0.14s);
+}
+
+/* An empty hand is explicitly inert — no animation at all, per the brief. Nothing needs to be written
+   here because the animations only exist on `--holding`; this comment marks that as intentional. */
+
+/* ── A drag is in flight: the ring invites ── */
+.hand__arc--inviting .hand__arc-ring {
+  border-color: rgba(var(--arc-accent), 0.6);
+  box-shadow: 0 0 34px rgba(var(--arc-accent), 0.22), inset 0 0 44px rgba(var(--arc-accent), 0.12);
+}
+
+.hand__arc--inviting .hand__arc-rune__glyph {
+  color: rgba(var(--arc-accent), 0.92);
+  text-shadow: 0 0 12px rgba(var(--arc-accent), 0.7);
+}
+
+.hand__arc--inviting .hand__arc-label { color: rgba(240, 214, 150, 0.92); }
+
+/* ── Refusing an incoming card: the ring says no ──
+   Only while a drag is in flight against a full hand. See the component for why this is not the resting
+   appearance of a full hand. */
+.hand__arc--refusing { --arc-accent: 198, 112, 88; }
+.hand__arc--refusing .hand__arc-ring {
+  border-color: rgba(var(--arc-accent), 0.66);
+  box-shadow: 0 0 30px rgba(var(--arc-accent), 0.2);
+}
+.hand__arc--refusing .hand__arc-rune__glyph { color: rgba(var(--arc-accent), 0.85); }
+.hand__arc--refusing .hand__arc-label { color: rgba(232, 164, 144, 0.92); }
+
+@keyframes hand-arc-pulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(var(--arc-accent), 0.08), inset 0 0 26px rgba(var(--arc-accent), 0.04); }
+  50%      { box-shadow: 0 0 30px rgba(var(--arc-accent), 0.18), inset 0 0 40px rgba(var(--arc-accent), 0.09); }
+}
+
+@keyframes hand-arc-rune-pulse {
+  0%, 100% { opacity: 0.72; }
+  50%      { opacity: 1; }
 }
 
 .hand--drag-active.hand--band-over .hand__band {
@@ -12421,24 +12618,6 @@ optgroup {
 }
 
 /* ── Empty-hand hint ── */
-.hand__empty {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 1.5rem;
-  margin: 0;
-  text-align: center;
-  font-family: var(--font-body);
-  font-size: 0.72rem;
-  font-style: italic;
-  color: rgba(180, 130, 40, 0.5);
-  pointer-events: none;
-}
-
-.hand--drag-active .hand__empty {
-  opacity: 0;
-}
-
 /* ── Bottom-left rail ──
    The toggle, the count and buying a slot. Kept off to the side because a hovered card rises
    straight up through the middle. */
@@ -14953,7 +15132,17 @@ html[data-quality="low"] .tab-rune-stream {
      processing) because each resolved `width: 100%` against a different container.
      The height is derived, not typed in: 94/136 is the card art's aspect and every slot rule that
      uses `aspect-ratio` already assumes it, so a hand-written height would eventually disagree. */
-  --station-card-w: 170px;
+  /* ── The card scales with VIEWPORT HEIGHT, and this is a bug fix, not polish ──
+     It was a hard 170px, and the Hand's reserved band was a hard 14rem (232px) with it. On a 1366x768
+     MacBook that band is 30% of the entire screen: measured, header + nav + band left only 436px of
+     usable content height — 57% — and the Collection binder overflowed by 201px, the Foundry's mine slots
+     by 67px and its queue by 186px, all of it CLIPPED rather than scrollable. That is the reported
+     "large horizontal rect spanning the bottom that cuts off half the screen".
+
+     `13.5vh` tracks the height the card is competing for, with a floor so cards stay legible and a ceiling
+     so a tall display does not inflate them past the size that was signed off. Deliberately vh and not
+     vmin: the pressure is vertical — width was never the problem. */
+  --station-card-w: clamp(112px, 13.5vh, 170px);
   --station-card-h: calc(var(--station-card-w) * 136 / 94);
 
   /* Height of a queued-loot tile. Named so `.foundry-queue-slots` can reserve exactly one tile's
@@ -15696,4 +15885,14 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
   animation:
     gold-burst-y var(--dur) cubic-bezier(0.16, 0.9, 0.3, 1) var(--delay) forwards,
     gold-burst-pop-fade var(--dur) ease-out var(--delay) forwards !important;
+}
+
+/* Discount badge on a rotation deal's price tag. Small and beside the price rather than replacing it —
+   the number a player acts on is what it costs now, not what it used to. */
+.shelf-pack__discount {
+  margin-left: 0.3rem;
+  font-family: var(--font-caps);
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
+  color: #8fc98a;
 }

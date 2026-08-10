@@ -105,6 +105,72 @@ const MAX_SPREAD_DEG = 34;
 const ARC_DEPTH_PX = 20;
 
 /**
+ * ── The rune arc behind the hand ──
+ *
+ * A persistent half-ring of runes across the bottom of the screen, sitting behind the cards. It is the
+ * standing answer to "where do cards go?": before it, the only hint was the catch band, which appeared
+ * *only once a drag had already started* — so a player who did not know cards were draggable had nothing
+ * to discover, and the band's full-width tinted slab read as a layout glitch when it flashed in.
+ *
+ * ── Parameterised by APEX and RADIUS, not by centre ──
+ * The first attempt set the circle's centre and radius directly, and the arc came out as a 1520px circle
+ * whose top half filled the screen with only one of seven runes visible. Apex and radius are the two
+ * things that actually matter — how far above the screen edge the crown sits, and how flat the curve is —
+ * and the centre falls out of them (`radius - apex` below the bottom edge).
+ *
+ * The numbers are constrained, not chosen freely. A rune at angle θ sags `radius × (1 - cos θ)` below the
+ * crown, so the outermost rune is `apex - sag` above the screen edge and goes *off screen* if that turns
+ * negative. At a ±38° spread: radius 980 puts it 8px below the edge, radius 860 puts it 68px above.
+ * Radius 860 with a 250px apex also lands the centre at 610px, close enough to the cards' `PIVOT_PX` of
+ * 660 that the two curves read as concentric.
+ */
+const ARC_RADIUS_PX = 602;
+const ARC_APEX_PX = 175;
+const ARC_SPREAD_DEG = 76;
+
+/**
+ * Peak angular speed of the spin, in degrees per second, reached at a full hand. Zero at an empty one —
+ * an idle hand does not move at all.
+ */
+const ARC_SPIN_MAX_DEG_PER_SEC = 5;
+
+/**
+ * How many runes are inscribed, from an empty hand to a full one.
+ *
+ * The count grows with the hand while the ring keeps its shape, so a filling hand *densifies* its circle
+ * instead of widening it — which reads as the hand gaining weight rather than the UI shifting.
+ */
+const ARC_RUNES_EMPTY = 7;
+const ARC_RUNES_FULL = 15;
+
+/** Runic block only, so `--font-runic` (Noto Sans Runic) covers every glyph — see Typography. */
+const ARC_GLYPHS = ['ᚱ', 'ᛟ', 'ᛜ', 'ᛞ', 'ᛠ', 'ᚨ', 'ᚲ', 'ᛗ', 'ᛉ', 'ᛊ', 'ᛏ', 'ᚹ', 'ᚷ', 'ᛒ', 'ᛖ'];
+
+/**
+ * The rune layout, and how the spin is made seamless.
+ *
+ * Runes are spaced by a FIXED angular step rather than spread to fit a fixed count, and that is what lets
+ * the ring rotate forever without gaps. Evenly-spaced runes look identical after rotating by exactly one
+ * step, so the animation only has to travel `step` degrees and loop — no need to populate the whole 360°
+ * circle to keep runes entering the visible crown.
+ *
+ * A margin of one step at each end is rendered beyond the visible arc, so a rune is always arriving as
+ * another leaves. That costs 9 spans at an empty hand and 17 at a full one.
+ *
+ * `visible` is the count a player actually sees; the step is derived from it, not the other way round.
+ */
+function runeLayout(fill) {
+  const visible = ARC_RUNES_EMPTY + Math.round((ARC_RUNES_FULL - ARC_RUNES_EMPTY) * fill);
+  const step = ARC_SPREAD_DEG / Math.max(1, visible - 1);
+  const half = ARC_SPREAD_DEG / 2 + step;              // one step of overscan at each end
+  const count = Math.floor((half * 2) / step) + 1;
+  const angles = Array.from({ length: count }, (_, i) => -half + i * step);
+  // Time to travel one step at the current fill. Undefined when idle, which leaves the CSS animation off.
+  const spinSeconds = fill > 0 ? step / (fill * ARC_SPIN_MAX_DEG_PER_SEC) : null;
+  return { angles, step, spinSeconds };
+}
+
+/**
  * A fanned trio of cards — the conventional symbol for a player's hand, and far more
  * legible at control size than a literal hand would be.
  */
@@ -262,6 +328,8 @@ export default function CardPocket({
    * fall out of step with itself.
    */
   const step = filled > 1 ? Math.min(MAX_STEP_DEG, MAX_SPREAD_DEG / (filled - 1)) : 0;
+  // The rune ring's layout and spin speed, both derived from how full the hand is.
+  const arc = runeLayout(capacity > 0 ? filled / capacity : 0);
   const mid = (filled - 1) / 2;
   /**
    * The drop that makes each card's total sag exactly `ARC_DEPTH_PX x (offset / maxOffset)²`.
@@ -307,10 +375,69 @@ export default function CardPocket({
           if (!e.currentTarget.contains(e.relatedTarget)) setBandOver(false);
         }}
         onDrop={handleBandDrop}
+      />
+
+      {/*
+        The rune arc. `aria-hidden` because it is an affordance drawn for the eye — the same information
+        is already carried by the rail's filled/capacity readout, and a screen reader announcing fifteen
+        runes would be noise.
+
+        Rendered BEFORE `.hand__fan` so it paints behind the cards without needing a z-index war with
+        `.hand__slot`, which establishes its own stacking context (it carries a transform) and so cannot
+        be ordered against from outside anyway.
+      */}
+      <div
+        className={[
+          'hand__arc',
+          filled > 0 ? 'hand__arc--holding' : '',
+          dragActive && !isFull ? 'hand__arc--inviting' : '',
+          /* Red only while a drag is being REFUSED, never at rest. A full hand is the state the player
+             was working towards — colouring it like a warning permanently made success look like an
+             error. It is only a problem at the moment something is trying to come in. */
+          dragActive && isFull ? 'hand__arc--refusing' : '',
+        ].filter(Boolean).join(' ')}
+        style={{
+          '--arc-radius': `${ARC_RADIUS_PX}px`,
+          '--arc-apex': `${ARC_APEX_PX}px`,
+          '--arc-fill': capacity > 0 ? filled / capacity : 0,
+        }}
+        aria-hidden="true"
       >
-        <span className="hand__band-label">
-          {isFull ? `Hand full — ${filled}/${capacity}` : 'Drop to add to your hand'}
+        <span className="hand__arc-ring" />
+
+        {/*
+          A zero-size wrapper sharing the ring's centre, so rotating it sweeps every rune along the arc at
+          once. The runes inside are still individually placed by angle; this only spins the set.
+          `--arc-spin` is the time to travel exactly one rune step, which is why the loop is seamless.
+        */}
+        <span
+          className="hand__arc-spin"
+          style={arc.spinSeconds
+            ? { '--arc-spin': `${arc.spinSeconds.toFixed(2)}s`, '--arc-step': `${arc.step.toFixed(3)}deg` }
+            : undefined}
+        >
+          {arc.angles.map((angle, i) => (
+            <span
+              key={`${angle.toFixed(2)}-${i}`}
+              className="hand__arc-rune"
+              style={{ '--rune-angle': `${angle.toFixed(2)}deg`, '--rune-index': i }}
+            >
+              {/* Two elements: the outer is a zero-size point ON the circle that rotates about its centre,
+                  the inner carries the glyph centred on that point. One element cannot do both, because
+                  `transform-origin` is measured against the element's own box — so a sized element's origin
+                  drifts from the true centre by half its height. */}
+              <span className="hand__arc-rune__glyph">{ARC_GLYPHS[i % ARC_GLYPHS.length]}</span>
+            </span>
+          ))}
         </span>
+
+        {(!isFull || dragActive) && (
+          <span className="hand__arc-label">
+            {dragActive && isFull
+              ? `Hand full — ${filled}/${capacity}`
+              : 'Drag cards here'}
+          </span>
+        )}
       </div>
 
       <div className="hand__fan" style={{ '--hand-count': filled }}>
@@ -355,10 +482,6 @@ export default function CardPocket({
           </div>
         ))}
       </div>
-
-      {filled === 0 && (
-        <p className="hand__empty">Drag cards from your Collection to the bottom of the screen</p>
-      )}
 
       {/* Bottom-left cluster: the count and buying another slot. Off to the side rather than centred
           above the fan, because a hovered card lifts straight through the middle and would pass
