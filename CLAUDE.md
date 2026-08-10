@@ -131,8 +131,9 @@ html/body/#root  overflow: hidden
 `FIT_VIEWS` in `App.jsx` lists the views laid out to fit exactly — Shop, Collection,
 Foundry, Wilderness. Those get `.main--fit` and manage their own internal scroll regions.
 **Any view not in that set keeps the pane's own scroll**, so what used to be a page scroll
-is now a pane scroll — same behaviour, no regression. Arcana, Summon, Lab, Market and
-Expedition are all in that category.
+is now a pane scroll — same behaviour, no regression. Arcana, Lab, Market and Expedition are
+all in that category. (Shop now covers what used to be the Summon page too, and being in
+`FIT_VIEWS` is why its columns each have to own their scrolling — the pane gives them none.)
 
 ### Three things that bite in this layout
 
@@ -161,8 +162,8 @@ edge, plus room for the rune arc's crown and label. `--station-card-w` is itself
 170px)`, so **one knob moves the card and the band it needs together**, and a window resize is handled by
 CSS with no re-render. `vh` rather than `vmin` because the pressure is vertical; width was never the problem.
 
-Measured after: usable height 57% → 64% at 1366×768, 66% → 69% at 1512×982, and Summon's pane scroll
-196px → 140px.
+Measured after: usable height 57% → 64% at 1366×768, 66% → 69% at 1512×982, and the Summon page's pane
+scroll 196px → 140px (that page has since been folded into Shop — see **The Cards page**).
 
 **The Hand is the one floating surface that reserves space instead of overlaying**, and that asymmetry is
 deliberate. A right-edge drawer covers content only while it happens to be open, and only at one edge; the
@@ -180,9 +181,13 @@ neglect.
 | Collection | **no scrolling** | **no scrolling** | **no scrolling** |
 | Foundry — mine half | **fits** | **fits** | **fits** |
 | Wilderness — gathering half | **fits** | **fits** | **fits** |
-| Summon | 140px | 108px | 19px |
-| Foundry — forge half | 1449px | 1288px | 1380px |
-| Wilderness — processing half | 1066px | 948px | 980px |
+| Cards (shop + altar) | **no page scroll** | **no page scroll** | **no page scroll** |
+| Foundry — forge half | 338px | 263px | 234px |
+| Wilderness — processing half | 206px | 145px | 96px |
+
+The last two were **1449 / 1288 / 1380** and **1066 / 948 / 980** before the row selector; see below for
+why they are not zero. The Cards row is the merged shop + summoning altar — its `.main` overflow is zero at
+every width from 1024 to 1920, though the altar rail owns up to 109px of its own scroll on a short window.
 
 **The binder adapts its row count**, not its cell size — see `useBinderLayout` in Collection.jsx. Forcing
 4 rows into 492px gives 71x103 cells, which is less readable than scrolling; 3 rows at ~120px is not.
@@ -194,29 +199,64 @@ card overflowing it — that was the last ~25px of residual scroll.
 width to spare at every size the game supports. The breakpoint is 940px because that is where the
 measurement says it stops fitting — at 1440x900 the 2x2 grid still overflowed by 304px.
 
-### The forge and processing rows cannot fit a short viewport
+### One forge row and one processing bench at a time
 
-This is a genuine limit, not a missing tweak. A `.foundry-half` gets **395px** at 1366x768. A forge row is
-**558px** and there are three, so the half needs 1844px — 4.7x what it has. Fitting three rows would mean
-131px per row, which is less than one 112px rail tile.
+`.forge-selector` in App.css, driven by `activeForgeRow` in Foundry.jsx and `activeProcessing` in
+Wilderness.jsx. Three stacked forge rows needed **1844px** in a `.foundry-half` that gets **395px** at
+1366x768 — 131px per row, less than one 112px rail tile — so no amount of card-shrinking could ever have
+fitted them. Wilderness's processing rows share the row implementation and shared the problem.
 
-No page-level change fixes that: stacking the halves does not give either one more vertical space, and the
-card is already at its floor. It needs the ROW to get shorter, which is a design decision:
+**The remaining scroll is arithmetic, not a missing tweak.** One row is 558px against a 395px half, so even
+a single row cannot fit. Closing it needs the ROW to get shorter, which is a design decision rather than a
+fit fix: lay the process panel out horizontally (fuel / smelt / output side by side) instead of as three
+stacked bands. That would also alter the **vertical merge connector**, which is the whole read of the
+station, and it would change Wilderness too — the processing rows reuse `.foundry-forge-row`.
 
-- lay a row out horizontally (fuel / smelt / output side by side) instead of as three stacked bands, or
-- show one row at a time behind a selector, the way the Shop already does with its shelves, or
-- accept the inner scroll on this half alone, which is where it is now.
+**The tabs carry each row's state, and that part is load-bearing.** Hiding two rows means a smelt that
+finished on row II, with the player on row I, has nowhere to announce itself. Each tab shows:
 
-Summon's remaining 140px is a smaller version of the same thing — the reveal area is sized for a taller
-window — and is the next cheapest one to fix.
+| State | On the tab |
+|---|---|
+| no card | `Empty` |
+| card, missing an input | `Needs coal` / `Needs ore` / `Needs ingredient` |
+| all inputs satisfied | `Ready` |
+| running | a percentage, plus a 2px progress fill along the bottom edge |
+| output waiting | a loot diamond in the corner |
+
+`needs` names ONE next action, ordered by what the player has to do first, rather than listing everything
+missing. The diamond is **static, not animated** — the same rule the nav's loot diamond follows, because
+`animation` is switched off entirely at low and medium quality and this is a gameplay signal.
+
+- **Nothing auto-follows the selection.** A row finishing lights its tab and the player decides; moving the
+  view under someone is worse than a tab they have to notice.
+- **The selection is not persisted.** It is where the player happens to be looking, and restoring it would
+  be indistinguishable from the game having switched rows by itself.
+- **`forgeRowStatus` derives a row's state in one place.** It was computed twice — in `ForgeSmeltingRow` and
+  again in the half's `forgeReadyCount` — with the `ingredientOk` / `oreRequired` chain written out both
+  times. The selector needed a third copy, and a third copy of a four-condition readiness test is one that
+  eventually disagrees with the ticker about whether a row is running.
+- **`.forge-selector` carries a 12px right inset.** The Bag's tab rail overlays this half's right edge:
+  measured a **constant 9px** of overhang from 1024px to 1440px, 3px at 1512px, clear above 1700px. Scoped
+  to the selector rather than fixed on `.main`'s padding — that was tried and reverted, because the rail is
+  viewport-anchored while `.main` is centred in a 1500px max-width, so a padding wide enough at one width
+  overshoots at another and narrows every view for nothing. The row keeps the same 9px overhang; that is the
+  pre-existing documented limit, and unlike a tab its right edge is panel padding rather than a click target.
+
+The `foundry-action-row` under each half is **gone**, its summary folded into the half's existing header. It
+cost 32px of a half with none to spare and said less than the selector now says per row.
 
 ## Navigation
 
 Current view order:
 
 ```text
-Cards → Summon → Collection → Arcana → Foundry → Wilderness → Expedition → Lab → Market
+Cards → Collection → Arcana → Foundry → Wilderness → Expedition → Lab → Market
 ```
+
+**Eight tabs, not nine — `VIEWS.UNPACK` is deliberately absent from `VIEW_ORDER`.** Buying a pack and
+opening it are one activity and they were two pages, so every purchase ended in a tab switch. See
+**The Cards page** below. The `VIEWS.UNPACK` constant itself stays: `TAB_ACCENTS` and older saves'
+`lootSeen` keys are written against it, so removing it would be a rename with a migration attached.
 
 Notes:
 
@@ -224,8 +264,7 @@ Notes:
   plank with packs standing on it and price tags hanging from its front edge. The pack
   itself is the buy button. Each pack keeps its `shop-pack-card--{id}` modifier class
   so the pre-existing per-pack glow and hover-colour rules still apply. `PackCard`
-  takes `size="shelf"` (134x195).
-- `Summon` is the pack opening page (`VIEWS.UNPACK`)
+  takes `size="shelf"` (134x195). It also carries the summoning altar in its right column.
 - `Expedition`, `Lab` and `Market` are **held back from players**. `COMING_SOON_VIEWS` in
   `App.jsx` greys their tabs, adds a `Soon` tag, sets `disabled` and carries a
   `Coming soon` tooltip. The components are fully implemented and still build — this gates
@@ -335,7 +374,10 @@ batch arriving while the first is still uncollected re-lights the glow. Loot arr
 you are already on that page counts as seen.
 
 `lootSeen` is persisted, so the distinction survives a reload. `LOOT_TAB_VIEWS` is the list
-to extend if Summon or Arcana should ever get one.
+to extend if Arcana should ever get one — it currently holds Foundry, Wilderness, Collection
+and **Shop**. Shop's diamond is the unopened-pack count, which moved there with the Summon
+page (see **The Cards page**); its semantics are unchanged — pending while packs are held,
+gone when the last one is opened.
 
 ### Collection's diamond means something different
 
@@ -355,9 +397,10 @@ visiting takes it to zero and the diamond disappears through the same path the o
   this needed no migration. A player loading an existing save should not be told their whole collection
   is new.
 
-**The Collection tab label no longer carries a count.** The diamond says "something new is in here",
-which is the part a player acts on; a running total is noise on a bar with ~6px of slack at 1024px. Summon
-keeps its `(N)` — an unopened pack count is a to-do, not a total.
+**No tab label carries a count any more.** The diamond says "something new is in here", which is the part a
+player acts on; a running total is noise on a bar with ~6px of slack at 1024px. Summon's `(N)` went with the
+Summon tab — an unopened pack count is a to-do rather than a total, and the Shop's diamond now carries it
+with exactly that meaning.
 
 Both differences between `new` and `seen` (brightness/size and the halo) are **static** as
 well as animated, because `animation` is switched off at low and medium quality. The glow is
@@ -1328,6 +1371,56 @@ Notable pack types:
 - `blankSlate`
 - `treasure`
 
+### The Cards page: shelves left, summoning altar right
+
+`.shop-summon` in App.css; composed in `App.jsx`'s `VIEWS.SHOP` branch from `<Shop>` and `<UnpackPage>`.
+Buying a pack and opening it are one activity and they were two pages, so every purchase ended in a tab
+switch.
+
+**The altar is a RAIL, not an equal half, and that came from measurement.** An even split at 1366x768 gave
+each column ~650px, which pinned the shelf packs at 76px with unreadable descriptions. The shelf needs
+~700px for five legible packs; the altar's fan and summoning field are comfortable much narrower.
+`clamp(300px, 27%, 420px)` gives the shelf 849–1010px and packs of 109–141px, against 145px before the merge.
+
+**A reveal takes the whole page** — `.shop-summon--opening` hides the shop column and drops the grid to one
+track. A card reveal squeezed into a rail is worse than briefly showing one thing, and every buy button is
+locked mid-reveal anyway. Driven by the `opening` flag App already derives for the tab lockout, **not** by
+CSS `:has()`, so there is one source of that truth rather than two that can disagree.
+
+**Both things that fly at "where packs go" were re-aimed, and they go to different places:**
+
+| Flight | Target | Why |
+|---|---|---|
+| shelf purchase | the altar's pack fan (`summonAltarRef`) | it is on screen at the moment of purchase |
+| treasure pack claimed in Wilderness | the **Cards tab** (`shopBtnRef`) | the altar is only mounted on the shop page, so on the Wilderness that ref is null — and `animateGroup` bails on a null target, which would have silently dropped the animation rather than failing loudly |
+
+**`--shelf-pack-w` is gone.** It was `clamp(100px, calc(20vw - 161px), 210px)`, a viewport formula already
+recalibrated by hand twice — once when the section rail moved left, and it would have needed it again here.
+Pack width is now `flex: 1 1 0` sharing of the shelf row, capped at 210px, which cannot leave the packs and
+their gaps summing past the row and needs no recalibration when the columns move.
+
+Four sizing traps this uncovered, all found by looking at the render rather than the CSS:
+
+1. **`.shop-shelf` was `width: fit-content`**, so a percentage pack width had no definite width to resolve
+   against. Every pack pinned at its clamp floor, the row total then exceeded 100%, and `flex-wrap` silently
+   broke five packs onto four rows — making the section 1196px tall inside a 424px box, which `.main--fit`
+   then **clipped** rather than scrolled. Now `width: 100%`, and `.shop-shelf__packs` is `nowrap` so a wrap
+   can no longer hide a sizing bug.
+2. **`.shelf-pack__grab` and `.shop-pack-preview` had no definite width** — a bare block and an inline box.
+   Once the pack asked them for `100%` the resolution was circular and both collapsed to **zero**, rendering
+   five invisible packs with only their price tags showing.
+3. **The summoning field's three columns stack below 620px.** At the rail's 345px they were ~110px each and
+   the ATTUNEMENT and EFFECT panels were clipped. This is a **container query**, not a media query: the rail
+   is a clamp, so its width and the window's are not proportional. It also **must sit below**
+   `.summon-field` — a container query adds no specificity, so placed above it `flex-direction: row` simply
+   won and the block did nothing. Same trap as the shop's category media query.
+4. **The fan's arc radius is solved from its container**, not a flat 600px, which put the outer pack 300px
+   off centre and straight out of the column: `(width − PACK_W) / (2·sin(spread/2))`, capped at 600 so a
+   wide window is unchanged. Fed by a `ResizeObserver` with an equality guard.
+
+At 1024px the packs reach 62px, smaller than the old 100px floor — that width previously put the last pack
+under the Bag drawer instead, so it is a trade rather than a regression.
+
 ### The roster: 5 permanent, 9 on rotation
 
 `PERMANENT_PACK_IDS` in cards.js is the always-stocked ladder — dusk 3, iron 5, arcane 10, void 18,
@@ -1386,6 +1479,27 @@ each (see `GATHERED_CANONICAL_TARGET` in wilderness.js), and the shop has to res
 up under Gathered — which is precisely the bug save 22 existed to fix. Verified: coal lands in Ores, +10,
 and the Gathered count does not move.
 
+### The Upgrades shelf is the one-off half
+
+Hand and Mine slot unlocks are also sold here. They already existed as a button in the Hand's rail and
+another inside the Mine — findable while standing on those pages, invisible to a player with gold looking
+for something to spend it on. **The originals stay**; buying a hand slot while looking at your hand is the
+right thing to be able to do.
+
+- **`onBuyUpgrade` takes an id**, and both targets are the *pre-existing* `handleUnlockPocketSlot` /
+  `handleUnlockMineSlot`, which already check affordability and the cap and move gold through
+  `applyGoldDelta`. A second route to a purchase adds no second place it can be paid for and no second copy
+  of the price. Same discipline as `handleBuyMaterial`.
+- **Rows show `current → next`, not a bare cost.** "45 gold" says nothing about what you get.
+- **Maxed rows stay visible**, greyed, reading `Maxed`. A shelf that silently loses rows as you buy them
+  reads as things going missing. The rail's count excludes them, so the number matches what is purchasable.
+- Only these two are listed. Gathering slots are a fixed `GATHERING_SLOT_COUNT` of 4 with no cost table, and
+  Expedition's and Market's slots sit behind `COMING_SOON_VIEWS`.
+
+**Known dead data:** `DEFAULT_MINE_SLOT_CAPACITY` and `MAX_MINE_SLOT_CAPACITY` are **both 4**, so a new game
+starts at the cap and the `MINE_SLOT_COSTS` ladder (45/110/240/420) is unreachable. The row honestly reads
+`Maxed` for everyone. Lowering the default is a **balance** decision, not a layout fix, so it was left alone.
+
 ### Welcome Pack
 
 - starts the game in `packs`
@@ -1432,7 +1546,8 @@ everything at once.
 
 - generated by `Treasure Sense`
 - first appears in Wilderness queue
-- when claimed, it flies to `Summon`
+- when claimed, it flies to the **Cards tab** — not to the altar, which is not mounted while you are
+  standing in the Wilderness. See the flight table under **The Cards page**
 - opening uses the normal reveal flow
 - instead of cards, it reveals 5 square gold-resource cards
 - no mote drop phase
@@ -2856,6 +2971,15 @@ Coin reward art:
 - `ResourcePocket.jsx` still exists but is not the active gameplay path.
 - `arcanaCrafting.js` is mostly legacy/secondary versus the current ring-craft UI.
 - audio architecture exists, but no sounds are mapped yet.
+- `UnpackPage.jsx` is no longer a page. It renders as the right column of Shop; there is
+  no `VIEWS.UNPACK` tab. Anything that drove the game by clicking a "Summon" tab needs
+  updating — the maintained `test-*.mjs` suites never did, but several older ad-hoc probes
+  in the scratchpad do and are stale.
+- **The forge and processing halves still scroll internally** (338px / 206px at 1366x768,
+  down from 1449px / 1066px). Closing the rest needs the ROW to get shorter, which is a
+  design change — see **One forge row and one processing bench at a time**.
+- `MINE_SLOT_COSTS` is unreachable dead data: the default mine capacity already equals the
+  max. See **The Upgrades shelf**.
 - build passes. The remaining chunk-size warning is the JS bundle (~497 kB), not
   images — the image payload is now 11 MB total.
 
