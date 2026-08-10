@@ -157,7 +157,7 @@ const LOOT_TAB_VIEWS = [VIEWS.FOUNDRY, VIEWS.WILDERNESS, VIEWS.COLLECTION, VIEWS
  * worse bug than a long stack. So the held count can exceed this; it just cannot be pushed
  * over it at the till.
  */
-const MAX_HELD_PACKS = 20;
+const MAX_HELD_PACKS = 10;
 const DEFAULT_LOOT_SEEN = Object.freeze({ [VIEWS.FOUNDRY]: true, [VIEWS.WILDERNESS]: true });
 
 /** Sum of every positive entry across some claim/reward queues. */
@@ -2326,15 +2326,10 @@ function GameApp({ savedState, account }) {
       max: MAX_POCKET_CAPACITY,
       cost: getPocketUpgradeCost(pocketCapacity),
     },
-    {
-      id: 'mineSlot',
-      label: 'Mine Slot',
-      unit: 'slots',
-      detail: 'One more worker mining at once.',
-      current: mineSlotCapacity,
-      max: MAX_MINE_SLOT_CAPACITY,
-      cost: getMineSlotUpgradeCost(mineSlotCapacity),
-    },
+    // NOTE: Mine Slot is deliberately NOT listed. It was, and it read "Maxed" for every player, because
+    // DEFAULT_MINE_SLOT_CAPACITY and MAX_MINE_SLOT_CAPACITY are both 4 — a new game already starts at the
+    // cap, so the MINE_SLOT_COSTS ladder is unreachable. Pulled at the author's request pending a rework of
+    // how mine slots work. `handleUnlockMineSlot` and the Mine's own button are untouched.
   ];
 
   /**
@@ -2344,7 +2339,6 @@ function GameApp({ savedState, account }) {
    */
   function handleBuyUpgrade(upgradeId) {
     if (upgradeId === 'handSlot') return handleUnlockPocketSlot();
-    if (upgradeId === 'mineSlot') return handleUnlockMineSlot();
     return false;
   }
 

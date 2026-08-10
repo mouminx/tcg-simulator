@@ -522,41 +522,17 @@ export default function UnpackPage({
   const busy = !!flyingPack || isOpening || !!stagedPack;
 
   /**
-   * The fan's arc, sized to the row it is actually in.
+   * The held packs are a STACKED HORIZONTAL LINE, not a fan.
    *
-   * `RADIUS` was a flat 600 with a spread up to 60 degrees, which puts the outermost pack
-   * `sin(30°) × 600 = 300px` off centre — a 600px-wide fan plus the pack itself. That was fine while
-   * Summon was its own full-width page. It is now the right column of the shop, so a fixed radius sends
-   * the end packs straight out of the column.
+   * The fan positioned each pack on an arc — an angle, a radius, and a `left`/`top` per pack, with the
+   * radius solved from the container so the end packs did not leave the column. All of that is gone. A line
+   * of packs overlapping like a dealt row needs no geometry at all: the row is a flex line and the overlap
+   * is a negative margin, so it reflows on resize with no measurement and no ResizeObserver.
    *
-   * Solved for the radius that fits instead of picking one: the fan's span is
-   * `2 · sin(spread/2) · RADIUS + PACK_W`, so the widest radius the row can hold is
-   * `(width − PACK_W) / (2 · sin(spread/2))`. Capped at the original 600 so a wide window looks exactly
-   * as it did, and floored so a very narrow column flattens the arc rather than inverting it.
+   * The overlap is a CSS custom property rather than a per-pack inline style, because every pack after the
+   * first gets the same treatment — see `.unpack-pack-row--line` in App.css.
    */
-  const [fanWidth, setFanWidth] = useState(0);
   const packRowRef = useRef(null);
-  useEffect(() => {
-    const el = packRowRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(entries => {
-      const width = Math.round(entries[0].contentRect.width);
-      // Equality guard: writing state unconditionally from a ResizeObserver is how these turn into
-      // feedback loops, since the write can change layout and re-fire the observer.
-      setFanWidth(prev => (prev === width ? prev : width));
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const PACK_W = 110;
-  const totalAngle = packs.length > 1 ? Math.min(60, (packs.length - 1) * 10) : 0;
-  const RADIUS = (() => {
-    if (!fanWidth || totalAngle <= 0) return 600;
-    const halfSpread = Math.sin((totalAngle / 2) * Math.PI / 180);
-    if (halfSpread <= 0) return 600;
-    return Math.max(140, Math.min(600, (fanWidth - PACK_W) / (2 * halfSpread)));
-  })();
 
   function stagePackObject(pack) {
     const packType = getPackTypeById(pack.packTypeId);
@@ -673,13 +649,23 @@ export default function UnpackPage({
   return (
     <div className="unpack-page">
 
-      {/* Pack fan row — always rendered for layout stability */}
+      {/* Titles the altar half, matching the shop's own "SHOP". Both are centred over their own column
+          rather than over the page — see `.shop-header` / `.unpack-header` in App.css. */}
+      <div className="shop-header unpack-header">
+        <h2>Summon</h2>
+      </div>
+
+      {/* The held packs, as an overlapping horizontal line. Always rendered, so the row below it does not
+          jump when the last pack is opened. */}
       <div
         ref={el => {
           packRowRef.current = el;
           if (packFanRef) packFanRef.current = el;
         }}
-        className={`unpack-pack-row${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}
+        className={`unpack-pack-row unpack-pack-row--line${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}
+        // The one thing CSS cannot work out for itself: how many gaps the overlap has to close so the whole
+        // stack fits the row. `max(1, …)` guards the divide-by-zero at a single pack.
+        style={{ '--pack-gaps': Math.max(1, packs.length - 1) }}
       >
         {packs.length === 0 ? (
           <p className="unpack-pack-row-empty-hint">
@@ -688,21 +674,14 @@ export default function UnpackPage({
         ) : packs.map((pack, i) => {
           const packType = getPackTypeById(pack.packTypeId);
           const isHidden = hiddenPackId === pack.id;
-          const angle = packs.length > 1 ? (i / (packs.length - 1) - 0.5) * totalAngle : 0;
-          const angleRad = angle * Math.PI / 180;
-          const x = Math.sin(angleRad) * RADIUS;
-          const y = (1 - Math.cos(angleRad)) * RADIUS;
           return (
             <div
               key={pack.id}
               ref={el => { packItemRefs.current[pack.id] = el; }}
               className={`unpack-pack-item${isHidden ? ' unpack-pack-item--hidden' : ''}`}
-              style={{
-                left: `calc(50% + ${x.toFixed(1)}px - ${PACK_W / 2}px)`,
-                top: `${(y + 16).toFixed(1)}px`,
-                zIndex: i + 1,
-                '--pack-angle': `${angle.toFixed(1)}deg`,
-              }}
+              // The only per-pack value left. Ascending, so each pack overlaps the one before it and a
+              // hovered pack can lift clear of its right-hand neighbour.
+              style={{ zIndex: i + 1 }}
               draggable={!busy}
               onDragStart={e => handlePackDragStart(e, pack)}
               onDragEnd={handlePackDragEnd}

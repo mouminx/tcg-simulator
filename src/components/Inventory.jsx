@@ -12,32 +12,14 @@ import {
   parseElementResourceId,
 } from '../game/arcana';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
-
-const makeArtMap = (files) => {
-  const map = {};
-  for (const [path, src] of Object.entries(files)) {
-    map[path.split('/').pop().replace(/\.webp$/i, '').toLowerCase()] = src;
-  }
-  return map;
-};
-
-// Separate maps so silver/gold/platinum ore art isn't overwritten by same-named ingot art
-const ORE_ART = makeArtMap(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' }));
-const INGOT_ART = makeArtMap(import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' }));
-const RESOURCE_ART = makeArtMap(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }));
-const CHARM_ART = makeArtMap(import.meta.glob('../assets/cards/charms/*.webp', { eager: true, import: 'default' }));
-const ELEMENT_ART = makeArtMap({
-  ...import.meta.glob('../assets/elements/essences/*.webp', { eager: true, import: 'default' }),
-  ...import.meta.glob('../assets/elements/motes/*.webp', { eager: true, import: 'default' }),
-  ...import.meta.glob('../assets/elements/wisps/*.webp', { eager: true, import: 'default' }),
-  ...import.meta.glob('../assets/elements/quintessences/*.webp', { eager: true, import: 'default' }),
-});
-
-function getResourceArt(key) {
-  if (!key) return null;
-  const k = key.toLowerCase();
-  return RESOURCE_ART[k] ?? CHARM_ART[k] ?? null;
-}
+// Moved to `game/resourceArt.js` so the shop's Goods shelf can draw the same cards. See that file for why
+// ore and ingot art must stay in separate maps.
+import {
+  getArcanaResourceArt,
+  getIngotArt,
+  getOreArt,
+  getResourceArt,
+} from '../game/resourceArt';
 
 /**
  * Drawstring sack — the tab's identity marker. Inline rather than an asset so it
@@ -69,30 +51,6 @@ function SackIcon({ className = '' }) {
   );
 }
 
-function getArcanaResourceArt(resourceId) {
-  if (!resourceId) return null;
-  const { elementId, tier } = parseElementResourceId(resourceId);
-  const baseName = ESSENCES_BY_ID[elementId]?.name.replace(/ Essence$/i, '') ?? titleCase(elementId);
-  const label = tier === 'essence' ? `${baseName} Essence` : `${baseName} ${titleCase(tier)}`;
-  const key = label.toLowerCase();
-
-  return ELEMENT_ART[key]
-    ?? ELEMENT_ART[key.replace('quintessence', 'quitessence')]
-    ?? RESOURCE_ART[elementId]
-    ?? null;
-}
-
-function getOreArt(oreId) {
-  if (!oreId) return null;
-  const key = oreId.toLowerCase();
-  return ORE_ART[key] ?? ORE_ART[`${key} ore`] ?? RESOURCE_ART[key] ?? null;
-}
-
-function getIngotArt(artKey) {
-  if (!artKey) return null;
-  const key = artKey.toLowerCase();
-  return INGOT_ART[key] ?? RESOURCE_ART[key] ?? null;
-}
 
 function fmtCount(count) {
   return new Intl.NumberFormat('en-US').format(count ?? 0);

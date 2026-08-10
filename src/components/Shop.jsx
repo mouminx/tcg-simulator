@@ -5,6 +5,7 @@ import { PACK_TYPES } from '../game/cards';
 import Gold from './Gold';
 import { PERMANENT_PACK_IDS } from '../game/cards';
 import { SHOP_MATERIALS, getRotationOffers, discountedCost } from '../game/shop';
+import { getShopMaterialArt } from '../game/resourceArt';
 
 /**
  * The permanently-stocked shelves. Two, not five.
@@ -194,18 +195,41 @@ export default function Shop({
                 </p>
               </div>
 
-              <ul className="goods-shelf">
+              {/* The goods themselves, as the same square resource cards the Bag and the production
+                  queues draw — so what you are buying looks like what you will receive. It was a list of
+                  text rows with a price button, which read as a spreadsheet rather than a shop. */}
+              <ul className="goods-grid">
                 {SHOP_MATERIALS.map(material => {
                   const affordable = balance >= material.cost;
+                  const artSrc = getShopMaterialArt(material);
                   return (
-                    <li key={material.id} className="goods-item">
-                      <span className="goods-item__qty">×{material.qty}</span>
-                      <span className="goods-item__label">{material.label}</span>
+                    <li key={material.id} className="goods-card">
+                      {/* `card-face-wrapper no-twirl foundry-square-resource` is the shared inventory tile
+                          treatment, reused rather than restyled so the two cannot drift apart. */}
+                      <div className="card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned goods-card__tile">
+                        <div className="card-face-inner">
+                          <div className="card-face-front foundry-square-resource__front">
+                            <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
+                              {/* The quantity SOLD, not a quantity owned — hence the leading multiplier. */}
+                              <span className="foundry-square-resource__count">×{material.qty}</span>
+                            </div>
+                            <div className="foundry-square-resource__art-wrap">
+                              {artSrc
+                                ? <img src={artSrc} alt={material.label} className="foundry-square-resource__art" />
+                                : <span className="goods-card__no-art" aria-hidden="true">⬡</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <span className="goods-card__label">{material.label}</span>
+
                       <button
                         type="button"
-                        className="goods-item__buy"
+                        className="goods-item__buy goods-card__buy"
                         disabled={!affordable}
-                        title={affordable ? undefined : 'Not enough gold'}
+                        title={affordable ? `Buy ${material.qty} ${material.label}` : 'Not enough gold'}
+                        aria-label={`Buy ${material.qty} ${material.label} for ${material.cost}`}
                         onClick={() => onBuyMaterial?.(material.id)}
                       >
                         <Gold amount={material.cost} />

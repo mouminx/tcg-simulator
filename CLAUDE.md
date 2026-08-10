@@ -50,6 +50,7 @@ src/
   fonts.css
   game/
     graphics.js
+    resourceArt.js       art lookup for every resource id — Vite-only (import.meta.glob)
     storage.js
     account.js
     slots.js
@@ -1382,10 +1383,60 @@ each column ~650px, which pinned the shelf packs at 76px with unreadable descrip
 ~700px for five legible packs; the altar's fan and summoning field are comfortable much narrower.
 `clamp(300px, 27%, 420px)` gives the shelf 849–1010px and packs of 109–141px, against 145px before the merge.
 
-**A reveal takes the whole page** — `.shop-summon--opening` hides the shop column and drops the grid to one
-track. A card reveal squeezed into a rail is worse than briefly showing one thing, and every buy button is
-locked mid-reveal anyway. Driven by the `opening` flag App already derives for the tab lockout, **not** by
-CSS `:has()`, so there is one source of that truth rather than two that can disagree.
+**A reveal happens IN PLACE, inside the altar column.** `.shop-summon--opening` dims the shop side to 0.32
+and sets `pointer-events: none`; it does **not** hide it, and the grid does **not** re-proportion. It used to
+do both. Two reasons it no longer does: a pack opening on a page that briefly becomes a different page is
+the separate screen this merge existed to remove, and re-proportioning the columns mid-reveal would resize
+every shelf pack at the moment the player's attention is elsewhere. A layout that jumps when the payoff
+starts is worse than one that is merely narrow.
+
+That is why the altar rail is sized for a **card**, not for a pack row — nothing expands to accommodate the
+reveal, so its resting width has to hold one. The class is still driven by the `opening` flag App already
+derives for the tab lockout, **not** by CSS `:has()`, so there is one source of that truth rather than two
+that can disagree.
+
+**The altar column owns its scrolling and its heading is `position: sticky`.** A reveal makes the column
+taller than itself, and without the sticky the "SUMMON" label scrolled out of view exactly when the player
+was looking at that half. It needs a background, or the pack stack shows through it as it passes underneath.
+
+### Both halves are titled, each centred on its own column
+
+`.shop` and `.unpack-page` each carry `align-items: center`, so "SHOP" and "SUMMON" centre on their own
+content. Centring them on the *page* would put "SUMMON" over the border between the halves. Measured: Shop
+0px off its column centre, Summon 11px — the offset is the altar's left border and padding, and it is
+correct, because the label is centred over its contents rather than its column box.
+
+### The held packs are a stacked horizontal line
+
+`.unpack-pack-row--line`. Was an arc: every pack carried an angle plus an absolutely-positioned `left`/`top`
+computed from a radius, and the radius itself had to be solved from the container width so the end packs did
+not leave the column. All of that is gone — the row is a flex line and the overlap is a negative margin, so
+it reflows on resize with no measurement, no `ResizeObserver` and no geometry.
+
+**The overlap tightens as the stack grows, so all ten always fit without scrolling.**
+
+```css
+margin-left: min(
+  calc(var(--pack-overlap) * -1),                                  /* 58px baseline */
+  calc((100% - var(--pack-w)) / var(--pack-gaps) - var(--pack-w))   /* exact fit */
+);
+```
+
+The second term is the step that makes N packs span the row exactly; `min()` picks the more negative, i.e.
+the *larger* overlap, so the baseline holds for a small stack and the computed value takes over once it is
+needed. Percentage margins resolve against the container's inline size, which is what lets this work with no
+JS. `--pack-gaps` is the only thing React supplies (CSS cannot know the count) and is `max(1, length - 1)`
+to avoid dividing by zero at one pack. Measured 1/3/6/10 packs: 0–1px of scroll at every count.
+
+**A hovered pack must become fully CLICKABLE, not just fully painted.** The pack after a hovered one steps
+aside to `margin-left: 0`. At a partial step the hovered pack's own centre stayed underneath its neighbour,
+so it was painted on top (`z-index: 100 !important`, needed to beat the inline ascending `zIndex`) while a
+pointer at its middle still hit the neighbour — a pack you could see but not click. A player entering from
+the visible strip gets hover and then the whole pack is live. Note when testing: **Playwright clicks an
+element's centre**, so a pack in the stack must be clicked at its visible strip (`position: {x: 18, y: 60}`)
+or hovered first.
+
+The cap on held packs came down to 10 with this — see **Held-pack cap**.
 
 **Both things that fly at "where packs go" were re-aimed, and they go to different places:**
 
@@ -1464,6 +1515,29 @@ producing player just accumulated.
 player who runs dry has no option but to go back to the mine. Prices sit well **above** what the same
 material sells for, so buying is convenience and not arbitrage.
 
+**Goods render as the resource cards themselves**, reusing the `foundry-square-resource` tile the Bag and
+the production queues draw — so what you are buying looks like what lands in your Bag. It was a list of text
+rows with a price button, which read as a spreadsheet. The count badge is the quantity **sold** (`×10`), not
+a quantity owned, hence the leading multiplier.
+
+Artwork comes from **`src/game/resourceArt.js`**, extracted from `Inventory.jsx` so both draw from one
+lookup. Two things there are load-bearing:
+
+- **Ore and ingot art must stay in separate maps.** `silver`, `gold` and `platinum` exist as both, with the
+  same filename, so a single merged map silently resolves one to the other's art.
+- **`getShopMaterialArt` dispatches on `material.inventory`**, never on the id — the same rule
+  `handleBuyMaterial` follows when routing the purchase, and required for the same reason: `silver` alone
+  cannot tell you which one is meant.
+
+That module calls `import.meta.glob`, so it is Vite-only. Do not import it from anything that has to run
+under plain Node — the same constraint `audioLibrary.js` carries, for the same reason.
+
+**`.goods-grid` needs an explicit `width: 100%`.** `.shop-section` is `display: flex; align-items: center`,
+which shrink-wraps its children, so `auto-fill` resolved against the grid's own min-content and produced a
+**single 115px column** running off the bottom of the page. The text list this replaced escaped that only by
+accident — its rows were wide enough that content-sizing looked like full width. `.goods-shelf` (the Upgrades
+list) carries the same fix for the same reason.
+
 `findUnsellableMaterials()` exists because a mistyped id fails in the worst way: the player pays and the
 goods land under a key nothing reads. It caught exactly that — the mote ids were written `smolderingMote`
 when the real format is `smoldering_mote`, so those are now built with `getElementResourceId` rather than
@@ -1493,12 +1567,14 @@ right thing to be able to do.
 - **Rows show `current → next`, not a bare cost.** "45 gold" says nothing about what you get.
 - **Maxed rows stay visible**, greyed, reading `Maxed`. A shelf that silently loses rows as you buy them
   reads as things going missing. The rail's count excludes them, so the number matches what is purchasable.
-- Only these two are listed. Gathering slots are a fixed `GATHERING_SLOT_COUNT` of 4 with no cost table, and
-  Expedition's and Market's slots sit behind `COMING_SOON_VIEWS`.
+- **Hand Slot is the only entry.** Gathering slots are a fixed `GATHERING_SLOT_COUNT` of 4 with no cost
+  table, and Expedition's and Market's slots sit behind `COMING_SOON_VIEWS`.
 
-**Known dead data:** `DEFAULT_MINE_SLOT_CAPACITY` and `MAX_MINE_SLOT_CAPACITY` are **both 4**, so a new game
-starts at the cap and the `MINE_SLOT_COSTS` ladder (45/110/240/420) is unreachable. The row honestly reads
-`Maxed` for everyone. Lowering the default is a **balance** decision, not a layout fix, so it was left alone.
+**Mine Slot was listed and has been pulled.** `DEFAULT_MINE_SLOT_CAPACITY` and `MAX_MINE_SLOT_CAPACITY` are
+**both 4**, so a new game starts at the cap and the `MINE_SLOT_COSTS` ladder (45/110/240/420) is unreachable —
+the row read `Maxed` for every player. Removed at the author's request pending a rework of how mine slots
+work. `handleUnlockMineSlot` and the Mine's own button are untouched, so re-listing it is one entry in
+`shopUpgrades`.
 
 ### Welcome Pack
 
@@ -1516,12 +1592,12 @@ starts at the cap and the `MINE_SLOT_COSTS` ladder (45/110/240/420) is unreachab
 
 ### Held-pack cap
 
-`MAX_HELD_PACKS` (20) in `App.jsx` blocks **purchases** once that many packs are unopened.
+`MAX_HELD_PACKS` (**10**, was 20) in `App.jsx` blocks **purchases** once that many packs are unopened.
 The Shop reflects it rather than swallowing the click: every buy button goes `disabled`, the
 price tags dim, and the subtitle changes to say why.
 
 The cap is deliberately **not** applied to treasure packs earned from Treasure Sense — those
-are still granted past 20, because silently destroying loot a player worked for is a worse
+are still granted past 10, because silently destroying loot a player worked for is a worse
 bug than a long stack. So the held count can exceed the cap; it just cannot be pushed over
 it at the till.
 
@@ -2979,7 +3055,9 @@ Coin reward art:
   down from 1449px / 1066px). Closing the rest needs the ROW to get shorter, which is a
   design change — see **One forge row and one processing bench at a time**.
 - `MINE_SLOT_COSTS` is unreachable dead data: the default mine capacity already equals the
-  max. See **The Upgrades shelf**.
+  max, which is why Mine Slot is no longer offered in the shop. See **The Upgrades shelf**.
+- `src/game/resourceArt.js` uses `import.meta.glob` and is therefore **Vite-only** — never
+  import it from code that has to run under plain Node.
 - build passes. The remaining chunk-size warning is the JS bundle (~497 kB), not
   images — the image payload is now 11 MB total.
 

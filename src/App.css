@@ -1640,9 +1640,13 @@ optgroup {
   display: grid;
   /* The altar is a RAIL, not an equal half. Measured why: the shelf needs ~700px to show five packs
      legibly, and an even split at 1366px gave each column ~650px — which pinned the packs at 76px and
-     made their descriptions unreadable. The altar's own content (a pack fan and the summoning field) is
-     comfortable much narrower, and the fan now sizes its arc to the column it is in. */
-  grid-template-columns: minmax(0, 1fr) clamp(300px, 27%, 420px);
+     made their descriptions unreadable.
+
+     Widened from `clamp(300px, 27%, 420px)` when the pack REVEAL moved in here. The reveal shows a card at
+     full art detail and nothing expands to make room for it, so the resting width has to hold one; 300px
+     did not. The shelf gives up ~10px per pack for it, which is the right trade — a card reveal is the
+     payoff, a pack on a shelf is a button. */
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 33%, 520px);
   gap: 1.4rem;
   align-items: stretch;
   width: 100%;
@@ -1672,21 +1676,21 @@ optgroup {
   padding-left: 1.3rem;
 }
 
-/* A reveal takes the whole page. Squeezing a card reveal into half the width is worse than briefly
-   showing one thing, and the shelves are unusable mid-reveal anyway (every buy button is locked while
-   `opening`). Driven by a class from React rather than `:has()`, because `opening` is already derived in
-   App.jsx for the tab lockout and a second, CSS-only source of the same truth could disagree with it. */
-.shop-summon--opening {
-  grid-template-columns: minmax(0, 1fr);
-}
+/* A reveal happens IN PLACE, in the altar column, with the shop still beside it.
+   This previously hid the shop column and gave the reveal the whole page. That is why the altar rail is now
+   sized for a card rather than for a pack fan — the reveal has to be legible at its resting width, because
+   nothing expands to accommodate it. Deliberately no grid change on `--opening`: re-proportioning the
+   columns mid-reveal would resize every shelf pack at the moment the player's attention is elsewhere, and a
+   layout that jumps when the payoff starts is worse than one that is merely narrow.
 
+   `.shop-summon--opening` is still applied — it dims and locks the shop side rather than removing it. */
 .shop-summon--opening .shop-summon__shop {
-  display: none;
-}
-
-.shop-summon--opening .shop-summon__altar {
-  border-left: 0;
-  padding-left: 0;
+  /* Not `display: none`, and not `visibility: hidden` either: the column keeps its box so the grid does not
+     move, and stays faintly visible so the page still reads as the shop. */
+  opacity: 0.32;
+  pointer-events: none;
+  filter: saturate(0.65);
+  transition: opacity 0.3s ease, filter 0.3s ease;
 }
 
 /* The fan's 260px was sized for a full-page arc. In the rail the radius is solved down to fit the column
@@ -4283,17 +4287,73 @@ optgroup {
   user-select: none;
 }
 
-.unpack-pack-item {
-  position: absolute;
-  cursor: pointer;
-  transform: rotate(var(--pack-angle, 0deg));
-  transform-origin: bottom center;
-  transition: transform 0.22s ease, filter 0.22s ease;
+/* ── The held packs: an overlapping horizontal line ──
+   Was an arc. Each pack carried an angle plus an absolutely-positioned `left`/`top` computed from a radius,
+   and the radius itself had to be solved from the container width so the end packs did not leave the
+   column. A line needs none of that: the row is a flex line, the overlap is a negative margin, and it
+   reflows on resize with no measurement at all.
+
+   The overlap TIGHTENS as the stack grows, so all ten always fit without scrolling. At a fixed 58px bite
+   ten packs span 52*9 + 110 = 578px and overflowed a 422px column — and a row you have to scroll defeats
+   the point of showing the stack at all.
+
+   The second term is the exact step that makes N packs span the row: `step = (100% - packW) / gaps`, so the
+   margin is `step - packW`. `min()` of the two picks the MORE NEGATIVE, i.e. the larger overlap — so the
+   58px baseline holds for a small stack and the computed value takes over once it is needed. Percentage
+   margins resolve against the container's inline size, which is what makes this work with no measurement,
+   no ResizeObserver and no JS at all.
+
+   `--pack-gaps` is the only thing React supplies, because CSS cannot know the count. It is
+   `max(1, length - 1)` rather than `length - 1` to keep a one-pack stack from dividing by zero. */
+.unpack-pack-row--line {
+  --pack-overlap: 58px;
+  --pack-w: 110px;   /* `PackCard size="sm"` — see `.pack-display--sm` */
+  --pack-gaps: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-start;
+  height: auto;
+  padding: 0.6rem 0.2rem 0.9rem;
+  /* Scrolls on the axis it grows along. `overflow-y: visible` is not available once one axis scrolls — CSS
+     forces the cross axis to non-visible — so the hover lift is absorbed by the padding above instead of
+     escaping the box. That is the same constraint the nav bar hit with its rune particles. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180, 130, 40, 0.3) transparent;
 }
 
+.unpack-pack-row--line > .unpack-pack-item + .unpack-pack-item {
+  margin-left: min(
+    calc(var(--pack-overlap) * -1),
+    calc((100% - var(--pack-w)) / var(--pack-gaps) - var(--pack-w))
+  );
+}
+
+.unpack-pack-item {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+  transition: transform 0.22s ease, filter 0.22s ease, margin 0.22s ease;
+}
+
+/* Lifts and slides clear of its right-hand neighbour, so a hovered pack is fully visible rather than
+   still half-covered — the whole point of hovering one in a stack. The `z-index` needs `!important`
+   because the inline ascending `zIndex` on each pack would otherwise win. */
 .unpack-pack-item:hover {
-  transform: rotate(var(--pack-angle, 0deg)) translateY(-28px) scale(1.06);
+  transform: translateY(-18px) scale(1.06);
   z-index: 100 !important;
+}
+
+/* The pack AFTER a hovered one steps fully aside, which is what actually uncovers the hovered pack. Only
+   reachable with a sibling combinator, so it cannot be folded into the rule above.
+
+   `0`, not a reduced overlap. At a partial step the hovered pack's own centre stayed underneath its
+   neighbour, so the pack was painted on top (`z-index: 100`) while the pointer at its middle still hit the
+   neighbour — you could see a pack you could not click. A player entering from the visible strip gets hover
+   and then the whole pack becomes clickable; anything less leaves a dead middle. */
+.unpack-pack-row--line > .unpack-pack-item:hover + .unpack-pack-item {
+  margin-left: 0;
 }
 
 .unpack-pack-item:hover .pack-display.pack-type-dusk       { filter: drop-shadow(0 14px 22px rgba(180,120, 50,0.7)); }
@@ -14822,7 +14882,9 @@ html[data-quality="low"] .tab-rune-stream {
 .shop-shelf {
   --shelf-plank-h: 21px;
   --shelf-tag-h: 38px;
-  --shelf-desc-h: 40px;
+  /* Three lines at 0.7rem/1.3 plus the top padding. Was 40px, which fitted 2.75 lines — fine at the old
+     145px pack width, one line short once the altar took the right column and packs came down to ~106px. */
+  --shelf-desc-h: 52px;
   position: relative;
   /* `100%`, not `fit-content`. A percentage or flex-shared pack width cannot resolve against an
      INDEFINITE container width — that is what pinned every pack at its clamp floor (76px) and then let
@@ -15025,6 +15087,12 @@ html[data-quality="low"] .tab-rune-stream {
   line-height: 1.3;
   color: #6a5e48;
   text-align: center;
+  /* Clamped to whole lines rather than clipped at a pixel height. The box holds three lines at this size,
+     and a bare `overflow: hidden` cut the third one through the middle of the letters — visible now that
+     the shelf shares the page with the altar and a pack is ~106px rather than 145px wide. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
@@ -16195,6 +16263,9 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
   margin: 0;
   padding: 0;
   list-style: none;
+  /* Same requirement as `.goods-grid`: `.shop-section` centres its flex children, which shrink-wraps an
+     `auto-fill` grid to its min-content. It looked right here only because these rows are wide. */
+  width: 100%;
 }
 
 .goods-item {
@@ -16319,4 +16390,82 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
   font-family: var(--font-ui);
   font-size: 0.78rem;
   color: rgba(150, 130, 100, 0.7);
+}
+
+/* ── Goods, as the resource cards themselves ──────────────────────────────────
+   Was a list of text rows with a price button, which read as a spreadsheet. The tile is the same
+   `foundry-square-resource` treatment the Bag and the production queues use, so what you are buying looks
+   like what lands in your Bag. */
+.goods-grid {
+  display: grid;
+  /* `auto-fill` with a floor rather than a fixed column count: this shelf shares the page with the
+     summoning altar, so its width is not something to hard-code. */
+  grid-template-columns: repeat(auto-fill, minmax(7.2rem, 1fr));
+  gap: 0.7rem 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* REQUIRED. `.shop-section` is `display: flex; align-items: center`, which shrink-wraps its children — so
+     `auto-fill` resolved against the grid's own min-content and produced a SINGLE 115px column running off
+     the bottom of the page. The text list this replaced only escaped it by accident: its rows were wide
+     enough that content-sizing looked like full width. */
+  width: 100%;
+}
+
+.goods-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* The tile fills its grid cell rather than carrying a fixed size — the same fix `.collection-card-slot`
+   needed, and for the same reason: a fixed tile in a shrinking cell overflows it. */
+.goods-card__tile {
+  width: 100%;
+  max-width: 6.4rem;
+  aspect-ratio: 1;
+}
+
+.goods-card__no-art {
+  font-size: 1.6rem;
+  color: rgba(180, 150, 100, 0.35);
+}
+
+.goods-card__label {
+  max-width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: rgba(224, 206, 168, 0.9);
+  text-align: center;
+  /* Two lines, then clip. "Smoldering Mote" does not fit one line at this width, and letting it wrap freely
+     made the rows different heights and the grid look broken. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.goods-card__buy {
+  width: 100%;
+  max-width: 6.4rem;
+  text-align: center;
+}
+
+/* The altar's title, matching the shop's. Both are centred over their OWN column rather than over the page:
+   `.shop` and `.unpack-page` each carry `align-items: center`, so each header centres on its own content.
+   Centring them on the page instead would put "SUMMON" over the border between the two halves. */
+.unpack-header {
+  width: 100%;
+  text-align: center;
+  /* Sticky, because the altar column owns its own scrolling and a reveal makes its content taller than the
+     column. Without this the label scrolls out of view exactly when the player is looking at this half.
+     The background is needed or the pack stack shows through it as it passes underneath. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 0.35rem;
+  background: linear-gradient(180deg, rgba(14, 10, 5, 0.96) 68%, rgba(14, 10, 5, 0));
 }
