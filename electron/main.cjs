@@ -26,7 +26,8 @@
  * protections to do it. Don't.
  */
 
-const { app, BrowserWindow, Menu, protocol, net, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, protocol, net, session, shell } = require('electron');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -67,6 +68,157 @@ function serveDist() {
       return new Response('Forbidden', { status: 403 });
     }
     return net.fetch(pathToFileURL(target).toString());
+  });
+}
+
+// ── The save file ─────────────────────────────────────────────────────────────
+
+/**
+ * The desktop save lives on disk instead of in `localStorage`, which is the whole point of the
+ * storage adapter: a file can be backed up, copied between machines, and inspected when a player
+ * reports something impossible. A localStorage partition can also be evicted by Chromium under disk
+ * pressure, which for a game with no server is simply data loss.
+ *
+ * `userData` is the OS's per-user application-data directory — on macOS
+ * `~/Library/Application Support/Cards of Arcana`. Electron creates it, and it is the one location
+ * guaranteed writable in a signed, sandboxed, installed app.
+ */
+const SLOT_COUNT = 3;
+const SAVE_FILE = slot => path.join(app.getPath('userData'), `save-${slot}.json`);
+const BAK_FILE = slot => `${SAVE_FILE(slot)}.bak`;
+const LEGACY_SAVE_FILE = () => path.join(app.getPath('userData'), 'save.json');
+
+/** Rejects anything that is not one of the three slots, so a renderer cannot name a path. */
+function validSlot(slot) {
+  const n = Number(slot);
+  return Number.isInteger(n) && n >= 1 && n <= SLOT_COUNT ? n : null;
+}
+
+/**
+ * Moves a pre-slots `save.json` into slot 1.
+ *
+ * Anyone who played the desktop build before slots existed has their whole game in that file. Leaving
+ * it would show three empty slots and read as a wiped save; deleting it would be worse. Renaming is
+ * atomic and keeps the `.bak` alongside it.
+ *
+ * Guarded on slot 1 not already existing, so this cannot clobber a real save if the legacy file is ever
+ * recreated by an older build running against the same directory.
+ */
+function migrateLegacySaveFile() {
+  const legacy = LEGACY_SAVE_FILE();
+  const target = SAVE_FILE(1);
+  try {
+    if (!fs.existsSync(legacy) || fs.existsSync(target)) return;
+    fs.renameSync(legacy, target);
+    if (fs.existsSync(`${legacy}.bak`)) fs.renameSync(`${legacy}.bak`, BAK_FILE(1));
+    console.log('[save] migrated legacy save.json into slot 1');
+  } catch (err) {
+    console.error('[save] could not migrate legacy save.json:', err.message);
+  }
+}
+
+/**
+ * Writes the save so that a crash cannot leave a half-written file.
+ *
+ * `fs.writeFileSync` straight onto `save.json` is not safe: the whole save is one JSON document, so a
+ * process killed partway through truncates it into something that will not parse — and it is the only
+ * copy. The sequence here means there is always at least one complete file on disk:
+ *
+ *   1. write the new save to `save.json.tmp` and fsync it,
+ *   2. move the current `save.json` aside to `save.json.bak`,
+ *   3. rename the temp file into place.
+ *
+ * `rename` within one directory is atomic on every platform we target, so step 3 either happened or
+ * it did not. The narrow window is between 2 and 3, where only `.bak` exists — which `readSave`
+ * recovers from, so it is survivable rather than fatal.
+ *
+ * The fsync matters and is easy to leave out: `writeFileSync` returning only means the data reached
+ * the OS page cache. On a power loss the rename can be durable while the file contents are not, which
+ * produces a `save.json` full of zero bytes — the classic way this pattern still loses data.
+ */
+function writeSave(slot, serialized) {
+  const n = validSlot(slot);
+  if (n === null) {
+    console.error('[save] refused a write for an invalid slot:', slot);
+    return false;
+  }
+  const file = SAVE_FILE(n);
+  const tmp = `${file}.tmp`;
+  try {
+    const handle = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(handle, serialized);
+      fs.fsyncSync(handle);
+    } finally {
+      fs.closeSync(handle);
+    }
+    if (fs.existsSync(file)) fs.renameSync(file, BAK_FILE(n));
+    fs.renameSync(tmp, file);
+    return true;
+  } catch (err) {
+    console.error('[save] write failed:', err.message);
+    // Leave no half-written temp file behind to be mistaken for a real save later.
+    try { fs.unlinkSync(tmp); } catch { /* already gone */ }
+    return false;
+  }
+}
+
+/**
+ * Reads the save, falling back to the backup if the primary is missing or unparseable.
+ *
+ * The `JSON.parse` here is a validity probe, not a parse whose result is used — the renderer gets the
+ * raw string, because the save's shape is the game's business and not the shell's (see
+ * `src/game/storage.js`). Probing is what lets a corrupt file fall through to `.bak` instead of being
+ * handed to the renderer, where it would throw during boot and read as a wiped save.
+ */
+function readSave(slot) {
+  const n = validSlot(slot);
+  if (n === null) return null;
+  for (const file of [SAVE_FILE(n), BAK_FILE(n)]) {
+    let raw;
+    try {
+      raw = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue; // not present
+    }
+    try {
+      JSON.parse(raw);
+      return raw;
+    } catch {
+      console.error(`[save] ${path.basename(file)} is not valid JSON; trying the backup`);
+    }
+  }
+  return null;
+}
+
+/**
+ * Two channels rather than one, because the flush-on-exit path has a different requirement.
+ *
+ * A routine autosave is `invoke`/fire-and-forget: it must not block the renderer, which is running the
+ * game loop. The flush the renderer performs on `pagehide` cannot be async — the renderer is about to
+ * be destroyed, and an async message posted at that point may never be delivered. `sendSync` blocks
+ * the renderer until the write has actually happened, which is exactly the guarantee needed there and
+ * exactly the wrong default everywhere else.
+ */
+function registerSaveIpc() {
+  migrateLegacySaveFile();
+  ipcMain.handle('save:read', (_event, slot) => readSave(slot));
+  ipcMain.handle('save:write', (_event, slot, serialized) => writeSave(slot, serialized));
+  ipcMain.on('save:write-sync', (event, slot, serialized) => {
+    event.returnValue = writeSave(slot, serialized);
+  });
+  /**
+   * Deleting a save frees a slot, which is a normal player action once there are only three.
+   * Both files go: leaving the `.bak` would let the next read resurrect the save the player just
+   * deleted, which is the opposite of what they asked for.
+   */
+  ipcMain.handle('save:delete', (_event, slot) => {
+    const n = validSlot(slot);
+    if (n === null) return false;
+    for (const file of [SAVE_FILE(n), BAK_FILE(n)]) {
+      try { fs.rmSync(file, { force: true }); } catch { /* nothing there */ }
+    }
+    return true;
   });
 }
 
@@ -203,6 +355,7 @@ function createWindow() {
 app.whenReady().then(() => {
   buildMenu();
   applyCsp();
+  registerSaveIpc();
   serveDist();
   createWindow();
 });

@@ -34,6 +34,22 @@ src/assets/.optimized
 # electron-builder output (installers). Built artefacts, not source.
 release
 
+# Environment config. `.env.example` IS tracked and is the documentation; the real files are not.
+#
+# Note what is and is not a secret here. Vite inlines every `VITE_`-prefixed var into the client
+# bundle, so `VITE_SUPABASE_ANON_KEY` is public by construction — it ships to every player and cannot
+# be hidden. That is fine: the security model is RLS plus `save_game()`, not key secrecy (see
+# supabase/migrations). What must NEVER be in a `VITE_` var or in this repo is the service-role key,
+# which bypasses RLS entirely. These rules exist so that a stray one cannot be committed by accident.
+.env
+.env.*
+!.env.example
+
+# Local Supabase stack state (Docker volumes, generated temp files). The migrations under
+# supabase/migrations ARE tracked — they are the schema's source of truth.
+supabase/.branches
+supabase/.temp
+
 # macOS conflict duplicates ("StationMerge 2.jsx", "wood 2.webp"). Something syncing
 # ~/Documents created 112 of these inside src/ — byte-identical copies of tracked files.
 # Harmless where they sit, but the asset globs match them (dead keys in the bundle) and a

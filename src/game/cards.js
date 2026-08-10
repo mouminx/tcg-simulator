@@ -796,7 +796,58 @@ function rollValue(rarity, tier, tag) {
   return Math.round(raw * 100) / 100;
 }
 
-let nextId = Date.now();
+// ── Identity ──────────────────────────────────────────────────────────────────
+
+/**
+ * The id primitive — UUIDv4 — used for cards and for held packs. The reason is worth stating because
+ * the counter it replaced looked perfectly serviceable.
+ *
+ * It was `let nextId = Date.now()` incremented per card, which makes identity a function of *when a
+ * client started* rather than of the card. Two consequences:
+ *
+ *   1. It re-seeds from the wall clock on every page load. Mint more cards in one session than there
+ *      are milliseconds since it began and the counter runs into the future, so the next reload hands
+ *      out ids that are already taken. Reachable, if only barely, from the Lab's fusion loop.
+ *   2. It is not unique across clients at all. Two players opening a pack in the same millisecond get
+ *      the same ids — so the moment a server holds both collections, or one save is imported into
+ *      another, cards silently collide and overwrite. Card ids key the collection, the hand, every
+ *      station slot and the drag payload, so a collision is not a cosmetic clash: it grafts one
+ *      player's card onto another's slot.
+ *
+ * A UUID is unique without coordination, which is the property a distributed system needs and a
+ * counter cannot have. It also survives JSON, `String()` and use as a React key unchanged, which a
+ * float id (`Date.now() + Math.random()`) does not reliably do.
+ *
+ * `crypto.randomUUID` needs a secure context. Vercel is https, localhost counts, and the Electron
+ * shell registers `app://` as `secure` precisely so this kind of API works — but the fallback stays,
+ * because a silent throw here would break card creation entirely, and `getRandomValues` has no such
+ * requirement.
+ */
+export function newId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // RFC 4122 v4 from raw random bytes: set the version nibble to 4 and the variant bits to 10.
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * The one place a card comes into existence. Every generator below routes through it.
+ *
+ * Worth the indirection over three inline `id: newCardId()` calls because this is the seam a server
+ * eventually replaces: when the backend mints cards, the client stops choosing ids and starts being
+ * handed them, and that is a change to this function rather than a hunt through the generators. It is
+ * also the natural home for anything else that must be true of *every* card — a provenance stamp, a
+ * schema version — none of which exists yet, which is exactly why the boundary should exist first.
+ */
+export function mintCard(fields) {
+  return { id: newId(), ...fields };
+}
 
 const NEW_PLAYER_BOOST = 10;
 
@@ -822,8 +873,7 @@ export function openPack(packTypeId = 'iron', boosted = false, options = {}) {
     const unitClass = rollUnitClass();
     const value     = rollValue(rarity, tier, tag);
     const affixes   = rollCardAffixes(unitClass.id, rarity, tier);
-    return {
-      id: nextId++,
+    return mintCard({
       name: resolveCardName(unitClass.id, rarity, tier),
       classType: unitClass.id,
       artVariant: Math.floor(Math.random() * 5),
@@ -832,7 +882,7 @@ export function openPack(packTypeId = 'iron', boosted = false, options = {}) {
       tag,
       value,
       affixes,
-    };
+    });
   });
 }
 
@@ -843,8 +893,7 @@ export function openWelcomePack() {
     const tier    = 1;
     const value   = rollValue(rarity, tier, null);
     const affixes = rollCardAffixes(unitClass.id, rarity, tier);
-    return {
-      id: nextId++,
+    return mintCard({
       name: resolveCardName(unitClass.id, rarity, tier),
       classType: unitClass.id,
       artVariant: Math.floor(Math.random() * 5),
@@ -853,7 +902,7 @@ export function openWelcomePack() {
       tag: null,
       value,
       affixes,
-    };
+    });
   });
 }
 
@@ -912,8 +961,7 @@ export function makeCard(rarity, classType = null) {
     : rollUnitClass();
   const value      = rollValue(rarity, tier, null);
   const affixes    = rollCardAffixes(unitClass.id, rarity, tier);
-  return {
-    id: nextId++,
+  return mintCard({
     name: resolveCardName(unitClass.id, rarity, tier),
     classType: unitClass.id,
     artVariant: Math.floor(Math.random() * 5),
@@ -922,7 +970,7 @@ export function makeCard(rarity, classType = null) {
     tag: null,
     value,
     affixes,
-  };
+  });
 }
 
 // ── Lab: Tag Imprinting ───────────────────────────────────────────────────────

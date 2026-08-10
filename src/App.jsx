@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Shop from './components/Shop';
 import UnpackPage from './components/UnpackPage';
 import Collection from './components/Collection';
@@ -14,6 +14,7 @@ import Inventory from './components/Inventory';
 import SceneBackdrop from './components/SceneBackdrop';
 import SplashScreen from './components/SplashScreen';
 import AudioSettings from './components/AudioSettings';
+import AccountMenu from './components/AccountMenu';
 import { ARCANA_ITEMS_BY_ID, DEFAULT_RESOURCES } from './game/arcana';
 import { openBlankSlatePack } from './game/arcanaPackOpening';
 import {
@@ -69,7 +70,7 @@ import {
   startProcessingSlot,
   startGatheringSlots,
 } from './game/wilderness';
-import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, migrateCreatureCard, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
+import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
 import {
   EXPEDITION_STATES,
   EXPEDITION_DIFFICULTIES,
@@ -85,6 +86,11 @@ import {
   startExpeditionRun,
   resolveExpeditionRun,
 } from './game/expedition';
+import { getStorage, setStorage } from './game/storage';
+import { getClient, getProfile, getSession, isOnlineConfigured, signOut } from './game/account';
+import { SLOT_MODES, adapterForSlot, deleteSlot, listSlots } from './game/slots';
+import LoginPage from './components/LoginPage';
+import SaveSlots from './components/SaveSlots';
 import { audioEngine } from './game/audio/audioEngine';
 import { AUDIO_DEFINITIONS, DEFAULT_AUDIO_SETTINGS, SOUND_IDS, findSilentDefinitions, normalizeAudioSettings } from './game/audio/audioLibrary';
 import {
@@ -167,7 +173,7 @@ const TAB_ACCENTS = {
 // still gets a scrolling pane, which is the pre-existing behaviour.
 const FIT_VIEWS = new Set([VIEWS.SHOP, VIEWS.COLLECTION, VIEWS.FOUNDRY, VIEWS.WILDERNESS]);
 
-const SAVE_VERSION = 22;
+const SAVE_VERSION = 23;
 const POCKET_SYSTEM_VERSION = 1;
 const DEFAULT_MARKET = { legendarySlots: 0, mythicSlots: 0 };
 const DEFAULT_POCKET_CAPACITY = 3;
@@ -304,11 +310,94 @@ function migrateGatheredOresAndIngots(parsed) {
   return parsed;
 }
 
-function loadState() {
+/** Matches a canonical UUID, so a card already migrated is left alone and this can run twice safely. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Every place in the save that holds a card object. The Hand and all five station slot arrays hold
+ * *copies* of collection cards, matched back to the original by id (`sameCardId`) — so an id rewrite
+ * has to reach all of them or the copies stop resolving.
+ *
+ * `expeditionRun` is the awkward one: it snapshots `unitSlots` when the run starts and then builds a
+ * parallel `unitResults` during resolution, so a run in flight carries a *third* and *fourth* copy of
+ * the same card. Miss those and a player mid-expedition loses the reveal screen's cards on upgrade.
+ */
+const CARD_SLOT_ARRAYS = [
+  'mineSlots',
+  'forgeCardSlots',
+  'gatheringSlots',
+  'processingSlots',
+  'expeditionUnitSlots',
+];
+
+/**
+ * Save 23: re-keys every card from the legacy `Date.now()`-seeded counter onto a UUID.
+ *
+ * See `newCardId` in cards.js for why the counter had to go. This is the half of that change that
+ * touches saves already on disk, and the whole difficulty is that it must be a *consistent* rename:
+ * one old id maps to exactly one new id everywhere it appears, or the copy in a mine slot stops
+ * matching the original in the collection and the card reads as both socketed and missing.
+ *
+ * So it runs in two passes. The first walks the collection and assigns new ids, because the collection
+ * is canonical. The second rewrites every other holder *through that same map*. A card found in a slot
+ * with no collection entry still gets a stable id — `remap` memoizes on first sight — which covers
+ * saves where the two had already drifted rather than dropping the card.
+ */
+function migrateCardIdsToUuid(parsed) {
+  const idMap = new Map();
+
+  const remap = oldId => {
+    if (oldId == null) return oldId;
+    const key = String(oldId);
+    // Already a UUID: keep it. Makes the migration idempotent, and means a save that has been
+    // partially migrated (or hand-edited) is not needlessly churned.
+    if (UUID_RE.test(key)) return key;
+    if (!idMap.has(key)) idMap.set(key, newId());
+    return idMap.get(key);
+  };
+
+  const remapCard = card => (card && typeof card === 'object' ? { ...card, id: remap(card.id) } : card);
+  const remapCards = cards => (Array.isArray(cards) ? cards.map(remapCard) : cards);
+  const remapSlots = slots => (Array.isArray(slots)
+    ? slots.map(slot => (slot?.card ? { ...slot, card: remapCard(slot.card) } : slot))
+    : slots);
+
+  // Pass 1 — the collection defines the mapping.
+  parsed.collection = remapCards(parsed.collection);
+
+  // Pass 2 — every other holder resolves through it.
+  parsed.pocket = remapCards(parsed.pocket);
+  CARD_SLOT_ARRAYS.forEach(key => { parsed[key] = remapSlots(parsed[key]); });
+
+  if (parsed.expeditionRun && typeof parsed.expeditionRun === 'object') {
+    const run = { ...parsed.expeditionRun };
+    run.unitSlots = remapSlots(run.unitSlots);
+    if (Array.isArray(run.unitResults)) {
+      run.unitResults = run.unitResults.map(entry =>
+        entry?.card ? { ...entry, card: remapCard(entry.card) } : entry,
+      );
+    }
+    parsed.expeditionRun = run;
+  }
+
+  return parsed;
+}
+
+/**
+ * Turns a stored save into game state, running every migration the version needs on the way.
+ *
+ * It takes the raw serialized string rather than reading storage itself, because *where* the save
+ * lives is now the storage adapter's business — `localStorage` on the web, a JSON file in the desktop
+ * shell, a server row later. See `src/game/storage.js`. This function owns the save's *shape*; the
+ * adapter owns its *location*, and neither needs to know about the other.
+ *
+ * `raw` being null or unparseable both land on a fresh save, which is the behaviour the inlined
+ * version had.
+ */
+function parseSave(raw) {
   try {
-    const saved = localStorage.getItem('tcg-sim');
-    if (saved) {
-      const parsed = JSON.parse(saved);
+    if (raw) {
+      const parsed = JSON.parse(raw);
       // Accept saves from version 9 (creature cards) through current version
       if ((parsed.version ?? 0) <= SAVE_VERSION) {
         const needsCardMigration = (parsed.version ?? 0) < 10;
@@ -370,13 +459,40 @@ function loadState() {
         if ((parsed.version ?? 0) < 22) {
           migrateGatheredOresAndIngots(parsed);
         }
-        if ((parsed.version ?? 0) < 18) {
-          return collapseLegacyExpeditionSupportSlots(parsed);
+        // Must sit above the `< 18` branch: that one *returns*, so anything below it never runs for
+        // the oldest saves — which are precisely the ones carrying counter-based ids.
+        if ((parsed.version ?? 0) < 23) {
+          migrateCardIdsToUuid(parsed);
         }
-        return parsed;
+        if ((parsed.version ?? 0) < 18) {
+          return withDefaults(collapseLegacyExpeditionSupportSlots(parsed));
+        }
+        return withDefaults(parsed);
       }
     }
   } catch {}
+  return freshSave();
+}
+
+/**
+ * Fills in any key a save does not have.
+ *
+ * `parseSave` used to return the parsed object as-is, which worked only because the game itself was the
+ * only thing that ever wrote a save and always wrote every field. That stopped being true: a save now
+ * comes back from a server, where a row could be written by an older client, a future server-side mint,
+ * or a partial write — and `GameApp` reads `savedState.collection` straight into `useState`, so one
+ * missing key crashed the whole app with `Cannot read properties of undefined (reading 'length')`.
+ *
+ * A shallow merge is enough. Every nested map already gets spread over its own defaults at the point of
+ * use (`{ ...DEFAULT_MARKET, ...(savedState.market ?? {}) }`); what was missing was any guarantee that
+ * the top-level key exists at all.
+ */
+function withDefaults(parsed) {
+  return { ...freshSave(), ...parsed };
+}
+
+/** A brand-new game. Also the shape every loaded save is completed against. */
+function freshSave() {
   return {
     balance: STARTING_BALANCE,
     collection: [],
@@ -419,12 +535,53 @@ function loadState() {
   };
 }
 
-function saveState(state) {
-  localStorage.setItem('tcg-sim', JSON.stringify({
+/**
+ * Serializes game state for storage. The counterpart to `parseSave`, and the only place the two
+ * version stamps are applied — they are written here rather than held in state so they cannot be stale.
+ */
+function serializeSave(state) {
+  return JSON.stringify({
     ...state,
     version: SAVE_VERSION,
     pocketSystemVersion: POCKET_SYSTEM_VERSION,
-  }));
+  });
+}
+
+/**
+ * Hands the serialized save to whichever adapter this build resolved to.
+ *
+ * `sync` is forwarded rather than decided here: only the caller knows whether it is a routine autosave
+ * (async is fine, and keeps the write off the game loop) or a flush during teardown (async may never be
+ * delivered). See the desktop adapter for why that distinction is real.
+ */
+function saveState(state, { sync = false } = {}) {
+  const result = getStorage().write(serializeSave(state), sync);
+  reportWriteFailure(result);
+  // Returned so a caller that is about to leave the save can await it. The local adapters are already
+  // synchronous, but the remote one is not, and "Switch Save" must not race the write it just triggered.
+  return result;
+}
+
+/**
+ * Surfaces a write the adapter said it could not do.
+ *
+ * A silent persistence failure is indistinguishable from a working one until the next reload, at which
+ * point the player has lost a session — the same shape as the forge-fuel bug that discarded loaded coal
+ * on every save. localStorage throws on quota exceeded, and the desktop adapter returns `false` when
+ * the file write fails; both used to vanish here.
+ *
+ * Not gated on DEV. A persistence failure in a shipped build is precisely when someone needs to see it,
+ * and it is the one thing a player could be told to check before losing more progress.
+ *
+ * The result is a boolean from the synchronous adapters and a promise from the desktop async path, so
+ * both shapes are handled rather than assuming one.
+ */
+function reportWriteFailure(result) {
+  const complain = detail => console.error(`[save] the storage adapter could not write the save${detail ? `: ${detail}` : ''}`);
+  if (result === false) complain();
+  else if (result && typeof result.then === 'function') {
+    result.then(ok => { if (ok === false) complain(); }).catch(err => complain(err?.message ?? String(err)));
+  }
 }
 
 // Serializing the whole save (collection, pocket, and every slot array with its
@@ -435,10 +592,15 @@ function saveState(state) {
 // durability in practice, and the flush handlers below guarantee no loss on exit.
 const SAVE_DEBOUNCE_MS = 2000;
 
-export default function App() {
-  const initialState = useRef(null);
-  if (initialState.current === null) initialState.current = loadState();
-  const savedState = initialState.current;
+/**
+ * The game. Receives its starting state as a prop rather than reading storage itself — see `App` at
+ * the bottom of this file for why, and for the boot gate that supplies it.
+ *
+ * `savedState` must be referentially stable for the life of the component: roughly forty `useState`
+ * initializers read it, and they only run once. `App` holds it in state and never replaces it, and
+ * this component is keyed on the boot so a remount gets a fresh set.
+ */
+function GameApp({ savedState, account }) {
   const isLegacyPocketState = savedState.pocketSystemVersion == null;
   const migratedPocketCapacity = (() => {
     const savedCapacity = savedState.pocketCapacity;
@@ -533,7 +695,15 @@ export default function App() {
   // something a save should be able to re-trigger or permanently suppress.
   // ONE screen now, not an intro variant plus a menu variant — see SplashScreen.jsx. Open on load
   // and reopenable from the wordmark; `hasEntered` only picks the button's label.
-  const [titleScreen, setTitleScreen] = useState(true);
+  /**
+   * The title screen opens on the first save entered in a session, and not again.
+   *
+   * It used to be unconditionally `true`, which was right when entering the game happened once. Now that
+   * "Switch Save" remounts `GameApp`, an unconditional splash meant the title card reappeared every time
+   * a player changed save — immediately after they had just been on the slot picker, which is one screen
+   * too many for a choice they already made. It is still reopenable from the wordmark.
+   */
+  const [titleScreen, setTitleScreen] = useState(() => !account.hasEnteredBefore);
   const [hasEntered, setHasEntered] = useState(false);
 
   const [inventoryOpen, setInventoryOpen] = useState(true);
@@ -631,9 +801,36 @@ export default function App() {
       saveTimerRef.current = null;
     }
     if (!pendingSaveRef.current) return;
-    saveState(pendingSaveRef.current);
+    // `sync: true` because every caller of this is teardown — `pagehide`, a hidden tab, or unmount.
+    // On the desktop adapter an async write posted at that moment can be dropped when the renderer is
+    // destroyed, which silently loses up to SAVE_DEBOUNCE_MS of progress on every window close.
+    const result = saveState(pendingSaveRef.current, { sync: true });
     pendingSaveRef.current = null;
+    // Awaitable for the one caller that can afford to wait — leaving a save deliberately. The teardown
+    // callers cannot await anything, which is exactly why they ask for a synchronous write.
+    return result;
   }).current;
+
+  /**
+   * Leaves the current save deliberately — switching saves, signing out, signing in.
+   *
+   * The flush is **awaited** before handing control back, which is the whole reason this exists rather
+   * than calling the callbacks directly. The unmount cleanup below does flush, but it cannot await: on a
+   * cloud slot the write is an HTTP request, so an un-awaited flush would race the component's teardown
+   * and could lose up to `SAVE_DEBOUNCE_MS` of play every time someone changed save. A player choosing to
+   * leave is the one moment we *can* afford to wait, so we do.
+   *
+   * Failures are logged rather than blocking the exit: refusing to let someone leave because a save write
+   * failed traps them in a session they are trying to end, and the local copy is already consistent.
+   */
+  const leaveSave = async next => {
+    try {
+      await flushSave();
+    } catch (err) {
+      console.error('[save] flush before leaving failed:', err);
+    }
+    await next?.();
+  };
 
   // Write on the way out. `pagehide` and a hidden `visibilitychange` are the two
   // events that reliably fire before a tab is closed or discarded on mobile and
@@ -802,6 +999,32 @@ export default function App() {
    */
   const skipGoldStreamRef = useRef(false);
   const countUpTimerRef = useRef(null);
+  /**
+   * Dev-only ring buffer of the last 50 gold changes, written by `applyGoldDelta`.
+   *
+   * Every balance change now states a reason, and this is where those reasons are readable — the
+   * question "what just paid me?" has no other answer, because the coin sound and the burst are driven
+   * by the balance rather than by the thing that caused it. It is also the shape the server-side
+   * ledger wants, so the call sites are already carrying the field.
+   */
+  const goldLedgerRef = useRef([]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    window.__gold = () => goldLedgerRef.current.slice();
+    return () => { delete window.__gold; };
+  }, []);
+
+  /**
+   * Overdraft warning, in an effect rather than inside `applyGoldDelta`'s updater so it reads the
+   * *committed* balance exactly once. Every spend site checks affordability itself; a negative balance
+   * therefore means one of those checks is missing or wrong, which is otherwise silent.
+   */
+  useEffect(() => {
+    if (!import.meta.env.DEV || balance >= 0) return;
+    const last = goldLedgerRef.current[goldLedgerRef.current.length - 1];
+    console.warn(`[gold] balance is negative (${balance}). Last change: ${last?.reason ?? 'unknown'} ${last?.delta ?? '?'}`);
+  }, [balance]);
 
   useEffect(() => {
     function handlePress(event) {
@@ -1380,12 +1603,52 @@ export default function App() {
     setLootMarkers(next);
   }, [lootPending, lootSeen, view, packs.length, collection.length]);
 
+  /**
+   * The single seam every gold change goes through. `amount` is signed — negative to spend.
+   *
+   * This replaced 17 scattered `setBalance(b => Math.round((b ± x) * 100) / 100)` calls. Three things
+   * make one seam worth having:
+   *
+   *   1. **Rounding happens once.** Every site repeated the same `* 100 / 100` two-decimal round, and
+   *      any that forgot would drift the balance into float dust that `fmt()` then displays.
+   *   2. **Gold gains a stated reason.** The server phase needs an audit trail — "why did this balance
+   *      change" is the question a marketplace dispute reduces to — and a ledger cannot be inferred
+   *      after the fact from a bare `setBalance`. Passing the reason now means the call sites are
+   *      already carrying it when there is somewhere to send it.
+   *   3. **Overdrafts become visible.** Each spend site checks affordability itself, so a missing check
+   *      currently just produces a negative balance and no complaint.
+   *
+   * It deliberately does **not** clamp at zero. A clamp would paper over exactly the bug the warning
+   * is trying to surface, and turn "the price check is missing" into free money.
+   *
+   * The audio and animation wiring stays where it is: `reward.coin` and the gold burst hang off an
+   * effect watching `balance`, so they already see every change without this needing to know about
+   * them. See "Coin is wired to the balance, not to the callers" in CLAUDE.md.
+   */
+  function applyGoldDelta(reason, amount) {
+    const delta = Number(amount);
+    // A zero or malformed delta is a no-op rather than a state write, so a proc that rolled nothing
+    // cannot trigger the balance effect and fire a coin sound for no gold.
+    if (!Number.isFinite(delta) || delta === 0) return;
+    // Recorded OUTSIDE the updater on purpose. StrictMode double-invokes state updaters in
+    // development, so a push in there would duplicate every entry and make the ledger lie about how
+    // many times gold moved. Same rationale as `window.__audio`: read it with `__gold()`.
+    if (import.meta.env.DEV) {
+      goldLedgerRef.current.push({ reason, delta });
+      if (goldLedgerRef.current.length > 50) goldLedgerRef.current.shift();
+    }
+    setBalance(prev => Math.round((prev + delta) * 100) / 100);
+  }
+
   function handleBuyPack(packTypeId) {
     const pt = PACK_TYPES[packTypeId];
     if (!pt || balance < pt.cost) return;
     if (packs.length >= MAX_HELD_PACKS) return;
-    setBalance(b => Math.round((b - pt.cost) * 100) / 100);
-    setPacks(prev => [...prev, { id: Date.now() + Math.random(), packTypeId }]);
+    applyGoldDelta('pack:buy', -pt.cost);
+    // A UUID for the same reason cards get one: `Date.now() + Math.random()` is a float keyed to the
+    // wall clock, so it is neither stable across clients nor safe to round-trip. Held packs persist,
+    // and a later phase has the server minting them.
+    setPacks(prev => [...prev, { id: newId(), packTypeId }]);
     audioEngine.play(SOUND_IDS.packBuy);
   }
 
@@ -1439,7 +1702,7 @@ export default function App() {
       // The coins already burst where their cards sat (see onCoinPop), so the balance effect must not
       // also stream them into the corner — that would show the same gold arriving twice.
       skipGoldStreamRef.current = true;
-      setBalance(prev => Math.round((prev + goldFromRewards) * 100) / 100);
+      applyGoldDelta('pack:coinReward', goldFromRewards);
     }
     setPendingCards([]);
     setPendingResourceCards([]);
@@ -1572,7 +1835,7 @@ export default function App() {
   function handleUnlockPocketSlot() {
     const cost = getPocketUpgradeCost(pocketCapacity);
     if (!cost || balance < cost || pocketCapacity >= MAX_POCKET_CAPACITY) return false;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('hand:unlockSlot', -cost);
     setPocketCapacity(prev => clampPocketCapacity(prev + 1));
     return true;
   }
@@ -1895,7 +2158,7 @@ export default function App() {
   function handleUnlockMineSlot() {
     const cost = getMineSlotUpgradeCost(mineSlotCapacity);
     if (!cost || balance < cost || mineSlotCapacity >= MAX_MINE_SLOT_CAPACITY) return false;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('mine:unlockSlot', -cost);
     setMineSlotCapacity(prevCapacity => {
       const nextCapacity = clampMineSlotCapacity(prevCapacity + 1);
       setMineSlots(prevSlots => normalizeMiningSlots(prevSlots, nextCapacity));
@@ -1914,7 +2177,7 @@ export default function App() {
     if (hasQueuedBonusRewards(mineRewardQueue)) {
       const { coins = 0, ...elementalDrops } = mineRewardQueue;
       if (coins > 0) {
-        setBalance(prev => Math.round((prev + coins) * 100) / 100);
+        applyGoldDelta('mine:coinProc', coins);
         audioEngine.play(SOUND_IDS.coin);
       }
       setResources(prev => mergeResourceCounts(prev, elementalDrops));
@@ -2021,7 +2284,7 @@ export default function App() {
     if (hasQueuedBonusRewards(forgeRewardQueue)) {
       const { coins = 0, ...elementalDrops } = forgeRewardQueue;
       if (coins > 0) {
-        setBalance(prev => Math.round((prev + coins) * 100) / 100);
+        applyGoldDelta('forge:coinProc', coins);
       }
       setResources(prev => mergeResourceCounts(prev, elementalDrops));
     }
@@ -2079,7 +2342,7 @@ export default function App() {
     const treasurePacks = gatheringClaimQueue[TREASURE_PACK_RESOURCE.id] ?? 0;
     const { coins: rewardCoins = 0, ...elementalDrops } = gatheringRewardQueue;
     if (rewardCoins > 0) {
-      setBalance(prev => Math.round((prev + rewardCoins) * 100) / 100);
+      applyGoldDelta('gathering:coinProc', rewardCoins);
     }
     /**
      * Split by canonical inventory. A miner card in a gathering slot rolls ores and a blacksmith
@@ -2234,7 +2497,7 @@ export default function App() {
     if (hasQueuedBonusRewards(processingRewardQueue)) {
       const { coins = 0, ...elementalDrops } = processingRewardQueue;
       if (coins > 0) {
-        setBalance(prev => Math.round((prev + coins) * 100) / 100);
+        applyGoldDelta('processing:coinProc', coins);
       }
       setResources(prev => mergeResourceCounts(prev, elementalDrops));
     }
@@ -2397,7 +2660,7 @@ export default function App() {
     if (!limits || currentCapacity >= limits.max) return false;
     const cost = getExpeditionUpgradeCost(type, currentCapacity);
     if (!cost || balance < cost) return false;
-    setBalance(prev => Math.round((prev - cost) * 100) / 100);
+    applyGoldDelta(`expedition:unlockSlot:${type}`, -cost);
     if (type === 'unit') setExpeditionUnitSlots(prev => normalizeExpeditionUnitSlots(prev, prev.length + 1));
     if (type === 'supply') setExpeditionSupplySlots(prev => normalizeExpeditionSupplySlots(prev, prev.length + 1));
     if (type === 'arcana') setExpeditionArcanaSlots(prev => normalizeExpeditionArcanaSlots(prev, prev.length + 1));
@@ -2460,7 +2723,7 @@ export default function App() {
     });
 
     if (coinDelta > 0) {
-      setBalance(prev => Math.round((prev + coinDelta) * 100) / 100);
+      applyGoldDelta('expedition:reward', coinDelta);
     }
     if (Object.keys(oreAdds).length > 0) setOreInventory(prev => addOreCounts(prev, oreAdds));
     if (Object.keys(ingotAdds).length > 0) {
@@ -2525,7 +2788,7 @@ export default function App() {
   function handleSell(cardId) {
     const card = collection.find(c => c.id === cardId);
     if (!card) return;
-    setBalance(b => Math.round((b + getCardSellValue(card)) * 100) / 100);
+    applyGoldDelta('collection:sell', getCardSellValue(card));
     setCollection(prev => prev.filter(c => c.id !== cardId));
     removeFromPocket(cardId);
     clearMiningCards(cardId);
@@ -2540,7 +2803,7 @@ export default function App() {
     if (!card) return;
     const cost = getGradeCost(card);
     if (balance < cost) return;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('lab:grade', -cost);
     setCollection(prev => prev.map(c =>
       c.id === cardId
         ? { ...c, grade, gradeAttempts: (c.gradeAttempts ?? 0) + 1 }
@@ -2550,7 +2813,7 @@ export default function App() {
 
   function handleFuse(cardIds, cost, newCard) {
     if (balance < cost) return;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('lab:fuse', -cost);
     setCollection(prev => {
       const filtered = prev.filter(c => !cardIds.includes(c.id));
       return newCard ? [...filtered, newCard] : filtered;
@@ -2567,7 +2830,7 @@ export default function App() {
     if (!card || card.tag) return;
     const cost = getImprintCost(tag, card.rarity);
     if (!cost || balance < cost) return;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('lab:imprint', -cost);
     if (success) {
       setCollection(prev => prev.map(c => c.id === cardId ? { ...c, tag, value: newValue } : c));
     } else {
@@ -2598,7 +2861,7 @@ export default function App() {
 
   function handleMarketSell(cardId, marketPrice) {
     if (!collection.find(c => c.id === cardId)) return;
-    setBalance(b => Math.round((b + marketPrice) * 100) / 100);
+    applyGoldDelta('market:sell', marketPrice);
     setCollection(prev => prev.filter(c => c.id !== cardId));
     removeFromPocket(cardId);
     clearMiningCards(cardId);
@@ -2610,14 +2873,14 @@ export default function App() {
   function handleBuyLegendarySlot() {
     const cost = LEGENDARY_SLOT_PRICES[market.legendarySlots];
     if (!cost || balance < cost || market.legendarySlots >= 5) return;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('market:buyLegendarySlot', -cost);
     setMarket(m => ({ ...m, legendarySlots: m.legendarySlots + 1 }));
   }
 
   function handleBuyMythicSlot() {
     const cost = MYTHIC_SLOT_PRICES[market.mythicSlots];
     if (!cost || balance < cost || market.mythicSlots >= 5) return;
-    setBalance(b => Math.round((b - cost) * 100) / 100);
+    applyGoldDelta('market:buyMythicSlot', -cost);
     setMarket(m => ({ ...m, mythicSlots: m.mythicSlots + 1 }));
   }
 
@@ -2694,6 +2957,16 @@ export default function App() {
           <span className="app-build__version">{__APP_VERSION__}</span>
         </span>
         <div className="header-right">
+          <AccountMenu
+            signedIn={account.signedIn}
+            onlineAvailable={account.onlineAvailable}
+            playerName={account.playerName}
+            slot={account.slot}
+            /* Every one of these flushes the pending save first — see `leaveSave`. */
+            onSwitchSave={() => leaveSave(account.onSwitchSave)}
+            onSignOut={() => leaveSave(account.onSignOut)}
+            onSignIn={() => leaveSave(account.onSignIn)}
+          />
           <AudioSettings settings={audioSettings} onChange={setAudioSettings} />
           <div
             className="quality-picker"
@@ -3041,5 +3314,274 @@ export default function App() {
       ))}
     </div>
     </GraphicsContext.Provider>
+  );
+}
+
+/**
+ * The boot gate.
+ *
+ * `GameApp` reads its entire starting state from `savedState` in forty-odd `useState` initializers,
+ * which run exactly once during the first render — so the save has to be in hand *before* it mounts.
+ * That used to be free: `localStorage.getItem` is synchronous, so `loadState()` could be called inline.
+ *
+ * It is not free any more. The desktop adapter reads a file over IPC and the future remote adapter will
+ * read a server, and neither can be made synchronous. So the read moves into an effect here, and
+ * `GameApp` mounts once its result exists.
+ *
+ * ── Why a wrapper rather than making GameApp handle a null save ──
+ * The alternative is `useState(() => savedState?.balance ?? STARTING_BALANCE)` forty times over, plus
+ * an effect to fill them in when the real save lands. That is forty chances to get a default wrong, it
+ * makes every initializer describe two situations at once, and it would briefly run the production
+ * ticker against a fresh save — creating and then discarding real progress. Gating the mount means the
+ * component's contract is unchanged: `savedState` is always complete.
+ *
+ * ── The blank screen is deliberate ──
+ * There is no spinner. A local read resolves in a few milliseconds — well inside one frame on the web,
+ * where it is synchronous under the hood — and the app opens on the title screen, which fades in. A
+ * loading indicator that appears and vanishes within 16ms reads as a flash of broken layout. The
+ * background colour matches `.app`'s darkest gradient stop and the shell's `backgroundColor`, so the
+ * transition from window-open to title screen is one continuous dark field.
+ */
+export default function App() {
+  /**
+   * ── The boot sequence ──
+   *
+   *   login  → only when online is configured and there is no session. Offers offline as a real choice.
+   *   slots  → always. Three positions; the player picks or creates one.
+   *   ready  → `savedState` is authoritative and `GameApp` mounts.
+   *
+   * The adapter is chosen **before** the save is read, because which save exists depends on it. Reading
+   * first and reconciling after would mean briefly running the game on the wrong save.
+   */
+  const [phase, setPhase] = useState('deciding');
+  const [savedState, setSavedState] = useState(null);
+  const [client, setClient] = useState(null);
+  const [playerName, setPlayerName] = useState(null);
+  const [slotList, setSlotList] = useState({ slots: [], overflow: [], canCreate: true });
+  const [busySlot, setBusySlot] = useState(null);
+  // The slot currently being played. Held here rather than in GameApp because it survives GameApp
+  // unmounting and remounting, which is exactly what switching saves does.
+  const [activeSlot, setActiveSlot] = useState(null);
+  // Whether a save has been opened yet this session. Drives the title screen appearing once rather than
+  // on every save switch; lives here because it must survive GameApp unmounting.
+  const enteredBeforeRef = useRef(false);
+  const [error, setError] = useState(null);
+  const [loginError, setLoginError] = useState(null);
+
+  /** Refreshes the slot list. `signedInClient` is passed explicitly because it may not be in state yet. */
+  const refreshSlots = useCallback(async signedInClient => {
+    try {
+      setSlotList(await listSlots(signedInClient ?? null));
+      setError(null);
+    } catch (err) {
+      // A failure here is almost always the online listing. Local slots still work, so fall back to them
+      // rather than stranding the player on an empty picker.
+      setError(err.message ?? 'Could not list your saves.');
+      try { setSlotList(await listSlots(null)); } catch { /* nothing more to try */ }
+    }
+  }, []);
+
+  // ── Initial decision: do we need the login page? ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isOnlineConfigured()) {
+        if (!cancelled) { await refreshSlots(null); setPhase('slots'); }
+        return;
+      }
+      let session = null;
+      try {
+        session = await getSession();
+      } catch (err) {
+        console.error('[account] could not restore a session:', err);
+      }
+      if (cancelled) return;
+      if (!session) { setPhase('login'); return; }
+
+      const c = await getClient();
+      if (cancelled) return;
+      setClient(c);
+      getProfile().then(p => { if (!cancelled) setPlayerName(p?.display_name ?? null); });
+      await refreshSlots(c);
+      if (!cancelled) setPhase('slots');
+    })();
+    // StrictMode mounts, unmounts and remounts in development, so an in-flight boot must not set state
+    // after its effect was cleaned up.
+    return () => { cancelled = true; };
+  }, [refreshSlots]);
+
+  /**
+   * Loads one slot and mounts the game.
+   *
+   * A remote read failure is NOT swallowed the way a local one is. Locally, "no save" and "unreadable
+   * save" both sensibly mean a new game. Online they do not: an unreachable server would start an empty
+   * game over an account that has progress, and the first autosave would overwrite it with nothing. So a
+   * failed online read leaves the player on the picker with the reason.
+   */
+  const openSlot = useCallback(async entry => {
+    setBusySlot(entry.slot);
+    setError(null);
+    const online = entry.mode === SLOT_MODES.ONLINE;
+
+    /**
+     * A save from a newer build is refused rather than opened.
+     *
+     * `parseSave` ignores a save whose version exceeds `SAVE_VERSION` and hands back a fresh game —
+     * migrations only run forward, so there is nothing else it can do. Combined with the server's
+     * version-regression check that produces the worst possible outcome: the player sees an empty game,
+     * plays it, and every autosave is silently refused. Saying so up front is the only honest option.
+     */
+    if (entry.saveVersion > SAVE_VERSION) {
+      setError(`That save was made by a newer version of the game (save format ${entry.saveVersion}, this build reads ${SAVE_VERSION}). Update to open it.`);
+      setBusySlot(null);
+      return;
+    }
+
+    let adapter;
+    try {
+      adapter = adapterForSlot(entry, client);
+    } catch (err) {
+      setError(err.message);
+      setBusySlot(null);
+      return;
+    }
+
+    let raw = null;
+    try {
+      raw = await adapter.read();
+    } catch (err) {
+      if (online) {
+        setError(err.message ?? 'Could not load that save.');
+        setBusySlot(null);
+        return;
+      }
+      console.error('[save] local read failed; starting fresh:', err);
+    }
+
+    setStorage(adapter);
+    setSavedState(parseSave(raw));
+    setActiveSlot({ slot: entry.slot, mode: entry.mode });
+    setBusySlot(null);
+    setPhase('ready');
+  }, [client]);
+
+  const handleCreate = useCallback((slot, mode) => openSlot({ slot, mode }), [openSlot]);
+
+  const handleDelete = useCallback(async entry => {
+    setBusySlot(entry.slot);
+    try {
+      await deleteSlot(entry, client);
+    } catch (err) {
+      setError(err.message ?? 'Could not delete that save.');
+    }
+    await refreshSlots(client);
+    setBusySlot(null);
+  }, [client, refreshSlots]);
+
+  /**
+   * Back to the slot picker from inside a save.
+   *
+   * `savedState` is cleared so a later mount cannot reuse a stale one — `GameApp`'s ~40 `useState`
+   * initializers only run once, so handing it the previous save's object would silently resurrect it.
+   * The storage adapter is cleared for the same reason: nothing should be able to write to the slot we
+   * just left. `GameApp` has already flushed by this point (see `leaveSave`).
+   */
+  const handleSwitchSave = useCallback(async () => {
+    // Set here, on the way OUT, not when a save is opened. Setting it in `openSlot` looked equivalent and
+    // was not: it runs synchronously before React re-renders, so the very first save would already read
+    // `true` and skip the title screen it is supposed to show.
+    enteredBeforeRef.current = true;
+    setPhase('deciding');
+    setStorage(null);
+    setSavedState(null);
+    setActiveSlot(null);
+    await refreshSlots(client);
+    setPhase('slots');
+  }, [client, refreshSlots]);
+
+  const handleSignedIn = useCallback(async () => {
+    setPhase('deciding');
+    setLoginError(null);
+    const c = await getClient();
+    setClient(c);
+    const profile = await getProfile();
+    setPlayerName(profile?.display_name ?? null);
+    await refreshSlots(c);
+    setPhase('slots');
+  }, [refreshSlots]);
+
+  const handlePlayOffline = useCallback(async () => {
+    setPhase('deciding');
+    setStorage(null);
+    setSavedState(null);
+    setActiveSlot(null);
+    setClient(null);
+    setPlayerName(null);
+    await refreshSlots(null);
+    setPhase('slots');
+  }, [refreshSlots]);
+
+  const handleSignOut = useCallback(async () => {
+    setPhase('deciding');
+    setStorage(null);
+    setSavedState(null);
+    setActiveSlot(null);
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('[account] sign out failed:', err);
+    }
+    setClient(null);
+    setPlayerName(null);
+    // Straight back to the login page rather than to the picker: signing out is a statement about which
+    // account you are using, and the offline saves are one click away on that screen anyway.
+    setPhase(isOnlineConfigured() ? 'login' : 'slots');
+  }, []);
+
+  if (phase === 'login') {
+    return (
+      <LoginPage
+        initialError={loginError}
+        onSignedIn={handleSignedIn}
+        onPlayOffline={handlePlayOffline}
+      />
+    );
+  }
+
+  if (phase === 'slots') {
+    return (
+      <SaveSlots
+        slots={slotList.slots}
+        overflow={slotList.overflow}
+        canCreate={slotList.canCreate}
+        signedIn={Boolean(client)}
+        onlineAvailable={isOnlineConfigured()}
+        playerName={playerName}
+        busySlot={busySlot}
+        error={error}
+        onPlay={openSlot}
+        onCreate={handleCreate}
+        onDelete={handleDelete}
+        onSignOut={handleSignOut}
+        onSignIn={() => setPhase('login')}
+      />
+    );
+  }
+
+  if (phase !== 'ready' || !savedState) return <div className="app-booting" />;
+  return (
+    <GameApp
+      savedState={savedState}
+      account={{
+        signedIn: Boolean(client),
+        onlineAvailable: isOnlineConfigured(),
+        playerName,
+        slot: activeSlot,
+        hasEnteredBefore: enteredBeforeRef.current,
+        onSwitchSave: handleSwitchSave,
+        onSignOut: handleSignOut,
+        onSignIn: () => { setPhase('login'); },
+      }}
+    />
   );
 }

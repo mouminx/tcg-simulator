@@ -6,16 +6,34 @@ import react from '@vitejs/plugin-react'
 // badge in the header cannot drift from the actual build.
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
+/**
+ * Three build modes:
+ *
+ *   (default)  the web build — Vercel. Online mode configured from the environment.
+ *   desktop    the Electron build that SHIPS ON STEAM. Online-capable; SSF is a per-slot choice.
+ *   ssf        an Electron build with online mode compiled out entirely. Not currently shipped.
+ *
+ * `desktop` used to be the offline-only build, which was right while Steam was hypothetical and the
+ * web build was the product. It is now the reverse: Steam is the release, so the desktop build has to
+ * reach the backend or none of the online work is shipping anywhere. SSF survives as a *mode inside the
+ * app* — a slot is SSF or online — rather than as a property of the binary, which is where it belongs:
+ * a player choosing to play offline is a gameplay decision, not a download decision.
+ *
+ * `ssf` is kept because "cannot phone home" is occasionally something a build needs to be able to claim
+ * (a DRM-free store, a sandboxed environment). It is one flag rather than a branch to re-derive later.
+ */
+const DESKTOP_MODES = ['desktop', 'ssf']
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
-  // Relative asset paths for the desktop build, absolute for the web.
+  // Relative asset paths for the Electron builds, absolute for the web.
   //
   // Vercel serves from a domain root, so `/assets/...` is correct there. The Electron shell serves
   // `dist/` over a custom `app://` protocol from a synthetic host, and while absolute paths happen to
   // resolve there too, relative ones are immune to whatever host or subpath the shell mounts at —
   // including a plain file:// fallback. Cheap insurance for a build that has no dev server to catch
   // the mistake.
-  base: mode === 'desktop' ? './' : '/',
+  base: DESKTOP_MODES.includes(mode) ? './' : '/',
   plugins: [react()],
   server: {
     watch: {
@@ -35,6 +53,32 @@ export default defineConfig(({ mode }) => ({
   },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+
+    /**
+     * `ssf` mode compiles online mode out, and this is what makes that structural rather than
+     * circumstantial.
+     *
+     * **Vite loads `.env.local` in every mode**, so without this an `ssf` build would pick up whatever
+     * Supabase project the developer happened to have configured and quietly stop being offline. Relying
+     * on `.env.ssf.local` to blank the vars instead does not work: it is gitignored and per-machine, so
+     * the guarantee would hold only on the machine that happened to have the file.
+     *
+     * Hard-coding both to empty makes `isOnlineConfigured()` false by construction, so `getClient()`
+     * returns null before it can reach the dynamic `import()` and no network client is ever instantiated.
+     *
+     * It does NOT remove the `@supabase/supabase-js` chunk: Rollup cannot prove a runtime-guarded
+     * `import()` is unreachable, so ~215 KB of never-fetched JavaScript is still emitted. That costs
+     * nothing at runtime and is invisible beside Electron's ~200 MB. Aliasing the package to a stub would
+     * make it genuinely absent, and was avoided because a stub lets the app silently do the wrong thing
+     * if the guard above is ever changed.
+     *
+     * **`desktop` is deliberately NOT in this list.** That build ships on Steam and has to reach the
+     * backend; blanking it there was the old arrangement, from when the web build was the product.
+     */
+    ...(mode === 'ssf' ? {
+      'import.meta.env.VITE_SUPABASE_URL': '""',
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': '""',
+    } : {}),
   },
   build: {
     // Vite inlines assets under 4 KB as base64 data URIs. That is right for the small

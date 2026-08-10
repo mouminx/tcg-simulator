@@ -51,6 +51,519 @@ optgroup {
   font-variant-numeric: tabular-nums;
 }
 
+/* Shown only while the save is being read — see the `App` boot gate in App.jsx.
+   Deliberately empty of content: a local read resolves in a few milliseconds, and a spinner that
+   appears and vanishes inside one frame reads as a flash of broken layout rather than as loading.
+   The colour is `.app`'s darkest gradient stop, and the same value the Electron window uses for
+   `backgroundColor`, so window-open through to title screen is one unbroken dark field. */
+.app-booting {
+  height: 100vh;
+  background: #0d0a07;
+}
+
+/* ── Account gate ──────────────────────────────────────────────────────────────
+   Shown before the game mounts, when online mode is configured and nobody is signed in. It borrows the
+   splash screen's furniture — the wordmark face, the runed rule, the Enter button treatment — because
+   it is the same moment in the same game, and a differently-styled login screen reads as a third-party
+   page asking for a password. It does NOT reuse `.splash__*` classes: the splash carries a fixed
+   backdrop, a scene and a particle field, none of which belong here. */
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 0%, rgba(100, 55, 10, 0.22) 0%, transparent 65%),
+    linear-gradient(-30deg, #0d0a07, #120d08, #0a0805);
+}
+
+.gate__panel {
+  width: 100%;
+  max-width: 25rem;
+  padding: 2rem 2.1rem 1.7rem;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(30, 21, 11, 0.86), rgba(16, 11, 6, 0.9));
+  border: 1px solid rgba(150, 110, 48, 0.42);
+  border-radius: 4px;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.6);
+}
+
+.gate__title {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 1.85rem;
+  font-weight: 400;
+  line-height: 1.15;
+  background: linear-gradient(180deg, #f6e3b4, #cf9f4e 62%, #9c6f2c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gate__rule {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0 1.2rem;
+}
+
+.gate__rule--minor { margin: 1.3rem 0 1rem; opacity: 0.72; }
+
+.gate__rule-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(196, 150, 70, 0.55), transparent);
+}
+
+.gate__rule-rune {
+  font-family: var(--font-runic);
+  font-size: 0.8rem;
+  color: rgba(216, 172, 90, 0.85);
+}
+
+.gate__tabs {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 1.15rem;
+}
+
+.gate__tab {
+  flex: 1;
+  padding: 0.45rem 0.5rem;
+  font-family: var(--font-caps);
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(214, 192, 148, 0.66);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(150, 110, 48, 0.26);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.gate__tab:hover { color: #f0dcae; border-color: rgba(196, 150, 70, 0.5); }
+
+.gate__tab--active {
+  color: #f6e3b4;
+  background: linear-gradient(180deg, rgba(96, 64, 18, 0.6), rgba(48, 31, 8, 0.6));
+  border-color: rgba(212, 168, 80, 0.55);
+}
+
+.gate__form { display: flex; flex-direction: column; gap: 0.72rem; }
+
+.gate__field { display: flex; flex-direction: column; gap: 0.26rem; text-align: left; }
+
+.gate__label {
+  font-family: var(--font-caps);
+  font-size: 0.56rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(206, 180, 132, 0.78);
+}
+
+.gate__input {
+  padding: 0.5rem 0.62rem;
+  font-size: 0.86rem;
+  color: #f0e5cc;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(150, 110, 48, 0.36);
+  border-radius: 3px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.gate__input:focus {
+  outline: none;
+  border-color: rgba(226, 182, 96, 0.75);
+  box-shadow: 0 0 0 2px rgba(196, 150, 70, 0.16);
+}
+
+.gate__error, .gate__notice {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.gate__error  { color: #e59a8c; }
+.gate__notice { color: #8fc98a; }
+
+/* Matches `.splash__enter`, so the button that starts the game looks the same in both places. */
+.gate__submit {
+  margin-top: 0.4rem;
+  padding: 0.6rem 1.4rem;
+  font-family: var(--font-caps);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #f2dcae;
+  background: linear-gradient(180deg, rgba(96, 64, 18, 0.72), rgba(48, 31, 8, 0.72));
+  border: 1px solid rgba(212, 168, 80, 0.5);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.gate__submit:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(140, 95, 26, 0.85), rgba(70, 46, 12, 0.85));
+  border-color: rgba(240, 205, 130, 0.8);
+  transform: translateY(-2px);
+}
+
+.gate__submit:disabled { opacity: 0.55; cursor: default; }
+
+/* Quieter than the submit button but still plainly a button — offline is a real choice, not a
+   consolation link. */
+.gate__offline {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  font-family: var(--font-caps);
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(224, 204, 164, 0.9);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(150, 110, 48, 0.34);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.gate__offline:hover:not(:disabled) {
+  color: #f6e3b4;
+  background: rgba(0, 0, 0, 0.44);
+  border-color: rgba(196, 150, 70, 0.55);
+}
+
+.gate__offline:disabled { opacity: 0.5; cursor: default; }
+
+.gate__offline-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: rgba(198, 176, 134, 0.68);
+}
+
+/* Live availability feedback on the player name, sitting inside the field's own label so it cannot
+   shift the form's height as it appears and disappears. */
+.gate__name-state {
+  float: right;
+  font-family: var(--font-ui);
+  font-size: 0.62rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(198, 176, 134, 0.7);
+}
+
+.gate__name-state--free    { color: #8fc98a; }
+.gate__name-state--taken,
+.gate__name-state--invalid { color: #e59a8c; }
+.gate__name-state--unknown { color: #e8b84d; }
+
+/* ── Save slots ───────────────────────────────────────────────────────────── */
+.gate__panel--slots { max-width: 30rem; }
+
+.slots__account {
+  margin: 0 0 1rem;
+  font-size: 0.76rem;
+  color: rgba(206, 184, 140, 0.82);
+}
+
+.slots__account strong { color: #f0dcae; font-weight: 700; }
+
+.slots__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slots__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(150, 110, 48, 0.3);
+  border-radius: 3px;
+}
+
+.slots__item--empty { border-style: dashed; background: rgba(0, 0, 0, 0.16); }
+
+.slots__index {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  font-family: var(--font-caps);
+  font-size: 1rem;
+  text-align: center;
+  color: rgba(214, 176, 96, 0.72);
+}
+
+/* min-width: 0 so a long summary wraps instead of widening the row — the panel is a fixed max-width and
+   an overflowing flex child would push the action buttons out of the box. */
+.slots__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.slots__headline { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+.slots__badge {
+  flex: 0 0 auto;
+  padding: 0.14rem 0.42rem;
+  font-family: var(--font-caps);
+  font-size: 0.54rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  border-radius: 2px;
+}
+
+.slots__badge--ssf {
+  color: #d8c69a;
+  background: rgba(120, 100, 60, 0.26);
+  border-color: rgba(180, 150, 80, 0.42);
+}
+
+/* Online is the one that touches a server, so it reads cooler and distinctly — the badge is the only
+   thing distinguishing two otherwise identical rows. */
+.slots__badge--online {
+  color: #a8cdf2;
+  background: rgba(48, 84, 124, 0.3);
+  border-color: rgba(120, 170, 220, 0.45);
+}
+
+.slots__summary {
+  font-size: 0.76rem;
+  color: rgba(220, 202, 164, 0.86);
+  overflow-wrap: anywhere;
+}
+
+.slots__prompt {
+  font-size: 0.74rem;
+  color: rgba(220, 202, 164, 0.8);
+}
+
+.slots__confirm-text {
+  margin-right: auto;
+  font-size: 0.74rem;
+  color: #e59a8c;
+}
+
+.slots__actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+.slots__btn {
+  padding: 0.32rem 0.7rem;
+  font-family: var(--font-caps);
+  font-size: 0.58rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: rgba(216, 196, 154, 0.9);
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(150, 110, 48, 0.34);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.slots__btn:hover:not(:disabled) {
+  color: #f6e3b4;
+  background: rgba(0, 0, 0, 0.46);
+  border-color: rgba(196, 150, 70, 0.56);
+}
+
+.slots__btn:disabled { opacity: 0.45; cursor: default; }
+
+.slots__btn--primary {
+  color: #f2dcae;
+  background: linear-gradient(180deg, rgba(96, 64, 18, 0.7), rgba(48, 31, 8, 0.7));
+  border-color: rgba(212, 168, 80, 0.5);
+}
+
+.slots__btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(140, 95, 26, 0.85), rgba(70, 46, 12, 0.85));
+  border-color: rgba(240, 205, 130, 0.8);
+}
+
+.slots__btn--danger {
+  color: #f0c4bb;
+  background: linear-gradient(180deg, rgba(110, 40, 32, 0.72), rgba(60, 20, 16, 0.72));
+  border-color: rgba(198, 96, 80, 0.55);
+}
+
+.slots__btn--danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(150, 54, 42, 0.85), rgba(84, 28, 22, 0.85));
+  border-color: rgba(226, 130, 110, 0.8);
+}
+
+.slots__new {
+  width: 100%;
+  padding: 0.42rem 0.6rem;
+  font-family: var(--font-caps);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(200, 178, 134, 0.66);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.slots__new:hover:not(:disabled) { color: #f0dcae; }
+.slots__new:disabled { opacity: 0.45; cursor: default; }
+
+/* ── Account menu (header) ─────────────────────────────────────────────────────
+   The trigger lives in the header; the PANEL is portaled to document.body and positioned `fixed`, which
+   is the only way it paints above `.nav-shell` (201). See AccountMenu.jsx — a z-index on a header
+   descendant cannot escape the header's stacking context. */
+.account-menu { position: relative; display: flex; align-items: center; }
+
+.account-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.34rem;
+  max-width: 11rem;
+  padding: 0.28rem 0.55rem;
+  font-family: var(--font-caps);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: rgba(216, 196, 154, 0.88);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(150, 110, 48, 0.32);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.account-menu__trigger:hover {
+  color: #f6e3b4;
+  background: rgba(0, 0, 0, 0.42);
+  border-color: rgba(196, 150, 70, 0.55);
+}
+
+.account-menu__glyph {
+  font-family: var(--font-runic);
+  font-size: 0.7rem;
+  color: rgba(214, 176, 96, 0.8);
+}
+
+/* A generated player name can be 24 characters, which would push the quality picker off a narrow
+   header. Truncating the trigger keeps the header's fixed height and layout intact. */
+.account-menu__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu__panel {
+  position: fixed;
+  z-index: 12200;
+  width: 15.5rem;
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  background: linear-gradient(180deg, rgba(32, 22, 12, 0.97), rgba(17, 12, 7, 0.98));
+  border: 1px solid rgba(160, 118, 52, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.62);
+}
+
+.account-menu__header { display: flex; flex-direction: column; gap: 0.15rem; }
+
+.account-menu__label {
+  font-family: var(--font-caps);
+  font-size: 0.54rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(200, 176, 130, 0.72);
+}
+
+.account-menu__player {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #f0dcae;
+  overflow-wrap: anywhere;
+}
+
+.account-menu__slot {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+.account-menu__slot-text { font-size: 0.76rem; color: rgba(220, 202, 164, 0.86); }
+
+.account-menu__note {
+  margin: 0.55rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: rgba(198, 176, 134, 0.7);
+}
+
+.account-menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(150, 110, 48, 0.28);
+}
+
+.account-menu__action {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-caps);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  color: rgba(220, 200, 158, 0.9);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(150, 110, 48, 0.3);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.account-menu__action:hover:not(:disabled) {
+  color: #f6e3b4;
+  background: rgba(0, 0, 0, 0.46);
+  border-color: rgba(196, 150, 70, 0.55);
+}
+
+.account-menu__action:disabled { opacity: 0.5; cursor: default; }
+
+.account-menu__hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.66rem;
+  color: rgba(190, 168, 126, 0.6);
+}
+
+.slots__overflow {
+  margin: 0.9rem 0 0;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: left;
+  color: #e8c98d;
+  background: rgba(90, 62, 14, 0.28);
+  border: 1px solid rgba(200, 158, 70, 0.4);
+  border-radius: 3px;
+}
+
 @keyframes liquid-bg {
   0%   { background-position: 0% 0%, 0% 0%, 0% 50%; }
   50%  { background-position: 0% 0%, 0% 0%, 100% 50%; }
