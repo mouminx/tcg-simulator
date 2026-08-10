@@ -87,7 +87,7 @@ import {
   resolveExpeditionRun,
 } from './game/expedition';
 import { getStorage, setStorage } from './game/storage';
-import { discountedCost, getRotationOffers } from './game/shop';
+import { SHOP_MATERIALS, discountedCost, findUnsellableMaterials, getRotationOffers } from './game/shop';
 import { getClient, getProfile, getSession, isOnlineConfigured, signOut } from './game/account';
 import { SLOT_MODES, adapterForSlot, deleteSlot, listSlots } from './game/slots';
 import LoginPage from './components/LoginPage';
@@ -949,6 +949,13 @@ function GameApp({ savedState, account }) {
     if (silent.length > 0) {
       console.warn(`[audio] ${silent.length} sound(s) have no source and will be silent:`, silent);
     }
+
+    // Same idea for the shop's goods: a material whose id does not exist in the inventory it claims takes
+    // the player's gold and delivers into a key nothing reads. Silent unless surfaced.
+    const unsellable = findUnsellableMaterials();
+    if (unsellable.length > 0) {
+      console.warn(`[shop] ${unsellable.length} material(s) cannot be delivered:`, unsellable.map(m => m.id));
+    }
   }, []);
 
   useEffect(() => {
@@ -1702,6 +1709,44 @@ function GameApp({ savedState, account }) {
       if (goldLedgerRef.current.length > 50) goldLedgerRef.current.shift();
     }
     setBalance(prev => Math.round((prev + delta) * 100) / 100);
+  }
+
+  /**
+   * Buys a material from the shop's goods shelf.
+   *
+   * The price and quantity come from `SHOP_MATERIALS`, never from the caller — the same reason
+   * `handleBuyPack` recomputes its own discount. A handler that accepts an amount from the UI is a handler
+   * that can be told to charge nothing.
+   *
+   * Routing by `inventory` rather than guessing from the id is what keeps a bought ore out of the Gathered
+   * section: ores and ingots have exactly one canonical home each, and the shop has to respect it or the
+   * goods appear somewhere the player does not look. See `GATHERED_CANONICAL_TARGET` in wilderness.js.
+   */
+  function handleBuyMaterial(materialId) {
+    const material = SHOP_MATERIALS.find(m => m.id === materialId);
+    if (!material || balance < material.cost) return false;
+
+    const add = setter => setter(prev => ({
+      ...prev,
+      [material.id]: (prev[material.id] ?? 0) + material.qty,
+    }));
+
+    switch (material.inventory) {
+      case 'ore':       add(setOreInventory); break;
+      case 'ingot':     add(setIngotInventory); break;
+      case 'gathered':  add(setGatheredInventory); break;
+      case 'processed': add(setProcessedInventory); break;
+      case 'resource':  add(setResources); break;
+      default:
+        // An unroutable material must not take the player's gold. `findUnsellableMaterials` warns about
+        // this at startup; this is the guard that makes the failure harmless rather than costly.
+        console.error(`[shop] material "${material.id}" has no inventory route; refusing the sale`);
+        return false;
+    }
+
+    applyGoldDelta(`shop:material:${material.id}`, -material.cost);
+    audioEngine.play(SOUND_IDS.packBuy);
+    return true;
   }
 
   function handleBuyPack(packTypeId) {
@@ -3172,6 +3217,7 @@ function GameApp({ savedState, account }) {
           <Shop
             balance={balance}
             onBuyPack={handleBuyPack}
+            onBuyMaterial={handleBuyMaterial}
             packsNavRef={unpackBtnRef}
             packsHeld={packs.length}
             maxPacks={MAX_HELD_PACKS}

@@ -4,7 +4,7 @@ import PackCard from './PackCard';
 import { PACK_TYPES } from '../game/cards';
 import Gold from './Gold';
 import { PERMANENT_PACK_IDS } from '../game/cards';
-import { getRotationOffers, discountedCost } from '../game/shop';
+import { SHOP_MATERIALS, getRotationOffers, discountedCost } from '../game/shop';
 
 /**
  * The permanently-stocked shelves. Two, not five.
@@ -58,7 +58,7 @@ function FlyingPack({ startX, startY, endX, endY, packType, onDone }) {
   );
 }
 
-export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, maxPacks = Infinity }) {
+export default function Shop({ balance, onBuyPack, onBuyMaterial, packsNavRef, packsHeld = 0, maxPacks = Infinity }) {
   const buyBtnRefs = useRef({});
   const [flyingPacks, setFlyingPacks] = useState([]);
   // One shelf at a time. Ten stacked sections was ~3600px of scroll; a few categories
@@ -86,6 +86,15 @@ export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, m
 
   const SECTIONS = [
     ...PERMANENT_SECTIONS,
+    {
+      id: 'goods',
+      label: 'Goods',
+      tagline: 'Materials, delivered to your Bag',
+      detail: 'Bought at a premium over what they sell for — a shortcut when a forge is idle, not a way to '
+        + 'turn gold into more gold.',
+      // Not packs. The shelf below branches on this id; the count still wants a length.
+      packIds: SHOP_MATERIALS.map(m => m.id),
+    },
     {
       id: 'rotation',
       label: 'Rotation Deals',
@@ -145,7 +154,43 @@ export default function Shop({ balance, onBuyPack, packsNavRef, packsHeld = 0, m
           ))}
         </div>
 
-        {SECTIONS.filter(section => section.id === activeSection).map(section => {
+        {activeSection === 'goods' && (
+          <div className="shop-section shop-section--goods">
+            <div className="shop-section-header">
+              <div className="shop-section-title-row">
+                <h3 className="shop-section-title">Goods</h3>
+                <span className="shop-section-tagline">Materials, delivered to your Bag</span>
+              </div>
+              <p className="shop-section-detail">
+                Bought at a premium over what they sell for — a shortcut when a forge is idle, not a way to
+                turn gold into more gold.
+              </p>
+            </div>
+
+            <ul className="goods-shelf">
+              {SHOP_MATERIALS.map(material => {
+                const affordable = balance >= material.cost;
+                return (
+                  <li key={material.id} className="goods-item">
+                    <span className="goods-item__qty">×{material.qty}</span>
+                    <span className="goods-item__label">{material.label}</span>
+                    <button
+                      type="button"
+                      className="goods-item__buy"
+                      disabled={!affordable}
+                      title={affordable ? undefined : 'Not enough gold'}
+                      onClick={() => onBuyMaterial?.(material.id)}
+                    >
+                      <Gold amount={material.cost} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {SECTIONS.filter(section => section.id === activeSection && section.id !== 'goods').map(section => {
           const packs = section.packIds.map(id => PACK_TYPES[id]).filter(Boolean);
           return (
             <div key={section.id} className={`shop-section shop-section--${section.id}`}>

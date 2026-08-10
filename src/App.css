@@ -15896,3 +15896,64 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
   letter-spacing: 0.08em;
   color: #8fc98a;
 }
+
+/* ── Goods shelf ──────────────────────────────────────────────────────────────
+   The gold sink's storefront. A plain list rather than the pack shelf's plank-and-tag furniture: these are
+   sacks of ore, not collectible packs, and dressing them the same way would imply they open. */
+.goods-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goods-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(150, 110, 48, 0.3);
+  border-radius: 3px;
+}
+
+.goods-item__qty {
+  flex: 0 0 auto;
+  min-width: 2.1rem;
+  font-family: var(--font-caps);
+  font-size: 0.7rem;
+  color: rgba(214, 176, 96, 0.85);
+}
+
+/* min-width: 0 so a long name truncates instead of pushing the price button out of the tile. */
+.goods-item__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: rgba(224, 206, 168, 0.9);
+}
+
+.goods-item__buy {
+  flex: 0 0 auto;
+  padding: 0.28rem 0.55rem;
+  font-family: var(--font-caps);
+  font-size: 0.62rem;
+  color: #f2dcae;
+  background: linear-gradient(180deg, rgba(96, 64, 18, 0.72), rgba(48, 31, 8, 0.72));
+  border: 1px solid rgba(212, 168, 80, 0.5);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.goods-item__buy:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(140, 95, 26, 0.85), rgba(70, 46, 12, 0.85));
+  border-color: rgba(240, 205, 130, 0.8);
+}
+
+.goods-item__buy:disabled { opacity: 0.45; cursor: default; }

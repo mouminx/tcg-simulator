@@ -1374,7 +1374,17 @@ material sells for, so buying is convenience and not arbitrage.
 `findUnsellableMaterials()` exists because a mistyped id fails in the worst way: the player pays and the
 goods land under a key nothing reads. It caught exactly that — the mote ids were written `smolderingMote`
 when the real format is `smoldering_mote`, so those are now built with `getElementResourceId` rather than
-typed.
+typed. It runs at startup beside `findSilentDefinitions`, and `handleBuyMaterial` refuses the sale outright
+if a material has no inventory route, so an unroutable good cannot cost the player anything.
+
+**`handleBuyMaterial` takes an id, never a price or a quantity**, both of which come from `SHOP_MATERIALS` —
+the same reason `handleBuyPack` recomputes its own discount. A handler that accepts an amount from the UI is
+a handler that can be told to charge nothing.
+
+**Routing is by `inventory`, not inferred from the id.** Ores and ingots have exactly one canonical home
+each (see `GATHERED_CANONICAL_TARGET` in wilderness.js), and the shop has to respect it or bought coal shows
+up under Gathered — which is precisely the bug save 22 existed to fix. Verified: coal lands in Ores, +10,
+and the Gathered count does not move.
 
 ### Welcome Pack
 
