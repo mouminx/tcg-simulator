@@ -58,7 +58,19 @@ function FlyingPack({ startX, startY, endX, endY, packType, onDone }) {
   );
 }
 
-export default function Shop({ balance, onBuyPack, onBuyMaterial, packsNavRef, packsHeld = 0, maxPacks = Infinity }) {
+export default function Shop({
+  balance, onBuyPack, onBuyMaterial, packsNavRef, packsHeld = 0, maxPacks = Infinity,
+  /**
+   * Permanent upgrades, as `{ id, label, detail, unit, cost, current, max }`.
+   *
+   * Supplied by App rather than defined here, because the costs and the caps already live beside the
+   * handlers that spend the gold — and `onBuyUpgrade` takes an ID ONLY, never a price, for the same
+   * reason `handleBuyMaterial` does: a handler that accepts an amount from the UI is a handler that can
+   * be told to charge nothing.
+   */
+  upgrades = [],
+  onBuyUpgrade,
+}) {
   const buyBtnRefs = useRef({});
   const [flyingPacks, setFlyingPacks] = useState([]);
   // One shelf at a time. Ten stacked sections was ~3600px of scroll; a few categories
@@ -94,6 +106,16 @@ export default function Shop({ balance, onBuyPack, onBuyMaterial, packsNavRef, p
         + 'turn gold into more gold.',
       // Not packs. The shelf below branches on this id; the count still wants a length.
       packIds: SHOP_MATERIALS.map(m => m.id),
+    },
+    {
+      id: 'upgrades',
+      label: 'Upgrades',
+      tagline: 'Permanent · one-off',
+      detail: 'Bought once and kept. These were buttons buried in the Hand rail and the Mine, where a '
+        + 'player with gold to spend had no reason to look.',
+      // Only what can still be bought. A shelf of maxed-out upgrades is a shelf of things you cannot
+      // buy, and the count in the rail has to agree with what is actually on offer.
+      packIds: upgrades.filter(u => u.cost != null && u.current < u.max).map(u => u.id),
     },
     {
       id: 'rotation',
@@ -195,7 +217,59 @@ export default function Shop({ balance, onBuyPack, onBuyMaterial, packsNavRef, p
             </div>
           )}
 
-          {SECTIONS.filter(section => section.id === activeSection && section.id !== 'goods').map(section => {
+          {activeSection === 'upgrades' && (
+            <div className="shop-section shop-section--upgrades">
+              <div className="shop-section-header">
+                <div className="shop-section-title-row">
+                  <h3 className="shop-section-title">Upgrades</h3>
+                  <span className="shop-section-tagline">Permanent · one-off</span>
+                </div>
+                <p className="shop-section-detail">
+                  Bought once and kept. Each shows what you have now and what you would have.
+                </p>
+              </div>
+
+              <ul className="goods-shelf upgrade-shelf">
+                {upgrades.map(upgrade => {
+                  const maxed = upgrade.current >= upgrade.max || upgrade.cost == null;
+                  const affordable = !maxed && balance >= upgrade.cost;
+                  return (
+                    <li key={upgrade.id} className={`goods-item upgrade-item${maxed ? ' upgrade-item--maxed' : ''}`}>
+                      <span className="upgrade-item__level">
+                        {/* The current and next value, not a bare cost. "45 gold" says nothing about what
+                            you get; "3 → 4" is the whole proposition. */}
+                        {upgrade.current}
+                        {!maxed && <span className="upgrade-item__arrow" aria-hidden="true"> → </span>}
+                        {!maxed && upgrade.current + 1}
+                      </span>
+                      <span className="upgrade-item__text">
+                        <span className="goods-item__label">{upgrade.label}</span>
+                        <span className="upgrade-item__detail">{upgrade.detail}</span>
+                      </span>
+                      {maxed ? (
+                        <span className="upgrade-item__maxed">Maxed</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="goods-item__buy"
+                          disabled={!affordable}
+                          title={affordable ? `Unlock — ${upgrade.label}` : 'Not enough gold'}
+                          onClick={() => onBuyUpgrade?.(upgrade.id)}
+                        >
+                          <Gold amount={upgrade.cost} />
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+                {upgrades.length === 0 && (
+                  <li className="goods-item upgrade-item--empty">Nothing left to upgrade.</li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          {SECTIONS.filter(section => section.id === activeSection && !['goods', 'upgrades'].includes(section.id)).map(section => {
             const packs = section.packIds.map(id => PACK_TYPES[id]).filter(Boolean);
             return (
               <div key={section.id} className={`shop-section shop-section--${section.id}`}>

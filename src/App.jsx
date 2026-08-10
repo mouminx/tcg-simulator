@@ -2304,6 +2304,50 @@ function GameApp({ savedState, account }) {
     return true;
   }
 
+  /**
+   * The shop's Upgrades shelf.
+   *
+   * These two purchases already existed, as a button in the Hand's rail and another inside the Mine — both
+   * places a player *standing on those pages* would find, and neither a place a player with gold to spend
+   * would think to look. The gold sink is the shop, so the shop is where they are sold. The originals stay
+   * where they are: buying a hand slot while looking at your hand is the right thing to be able to do.
+   *
+   * Only the two that exist. Gathering slots are a fixed `GATHERING_SLOT_COUNT` of 4 with no cost table,
+   * and Expedition's and the Market's slots are behind `COMING_SOON_VIEWS` — listing either would be
+   * advertising something that cannot be bought.
+   */
+  const shopUpgrades = [
+    {
+      id: 'handSlot',
+      label: 'Hand Slot',
+      unit: 'slots',
+      detail: 'One more card carried between stations.',
+      current: pocketCapacity,
+      max: MAX_POCKET_CAPACITY,
+      cost: getPocketUpgradeCost(pocketCapacity),
+    },
+    {
+      id: 'mineSlot',
+      label: 'Mine Slot',
+      unit: 'slots',
+      detail: 'One more worker mining at once.',
+      current: mineSlotCapacity,
+      max: MAX_MINE_SLOT_CAPACITY,
+      cost: getMineSlotUpgradeCost(mineSlotCapacity),
+    },
+  ];
+
+  /**
+   * Takes an ID, never a price — the same discipline as `handleBuyMaterial` and `handleBuyPack`. Both
+   * targets are the pre-existing handlers, which already check affordability and the cap and move the gold
+   * through `applyGoldDelta`, so there is exactly one place either upgrade can be paid for.
+   */
+  function handleBuyUpgrade(upgradeId) {
+    if (upgradeId === 'handSlot') return handleUnlockPocketSlot();
+    if (upgradeId === 'mineSlot') return handleUnlockMineSlot();
+    return false;
+  }
+
   function handleUnlockMineSlot() {
     const cost = getMineSlotUpgradeCost(mineSlotCapacity);
     if (!cost || balance < cost || mineSlotCapacity >= MAX_MINE_SLOT_CAPACITY) return false;
@@ -3252,6 +3296,8 @@ function GameApp({ savedState, account }) {
                 balance={balance}
                 onBuyPack={handleBuyPack}
                 onBuyMaterial={handleBuyMaterial}
+                upgrades={shopUpgrades}
+                onBuyUpgrade={handleBuyUpgrade}
                 packsNavRef={summonAltarRef}
                 packsHeld={packs.length}
                 maxPacks={MAX_HELD_PACKS}

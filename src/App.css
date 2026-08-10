@@ -16245,3 +16245,78 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
 }
 
 .goods-item__buy:disabled { opacity: 0.45; cursor: default; }
+
+/* ── The Upgrades shelf ───────────────────────────────────────────────────────
+   Permanent one-off purchases. These already existed as a button in the Hand's rail and another inside the
+   Mine — findable while standing on those pages, invisible to a player with gold looking for something to
+   spend it on. The originals stay; this is a second route, in the place that is meant to be the gold sink.
+
+   Reuses `.goods-shelf` / `.goods-item` so it is the same furniture as Goods, with only the parts that
+   differ overridden. An upgrade needs two things Goods does not: what you have now versus what you would
+   have, and a line saying what the thing actually does. */
+.upgrade-shelf {
+  /* Wider tiles than Goods. These carry a description line, and at the goods' 13rem the text wrapped to
+     four lines and the row height doubled. */
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+}
+
+.upgrade-item {
+  align-items: flex-start;
+}
+
+/* The proposition, not the price: "3 → 4" says what you are buying in a way "45 gold" cannot. */
+.upgrade-item__level {
+  flex: 0 0 auto;
+  min-width: 3.4rem;
+  padding-top: 0.05rem;
+  font-family: var(--font-caps);
+  font-size: 0.78rem;
+  color: #e8be65;
+  white-space: nowrap;
+}
+
+.upgrade-item__arrow {
+  color: rgba(214, 176, 96, 0.55);
+}
+
+.upgrade-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  /* `min-width: 0` on the flex child as well as on `.goods-item__label` inside it. Without it the label's
+     own ellipsis has nothing to resolve against and the tile grows to fit the longest word instead. */
+  flex: 1;
+  min-width: 0;
+}
+
+.upgrade-item__detail {
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: rgba(150, 130, 100, 0.75);
+}
+
+/* Kept visible rather than filtered out of the list. A maxed upgrade is information — it says this is
+   finished — and a shelf that silently loses rows as you buy them reads as things going missing. The rail's
+   count excludes them, so the number still matches what is purchasable. */
+.upgrade-item--maxed {
+  opacity: 0.5;
+}
+
+.upgrade-item__maxed {
+  flex: 0 0 auto;
+  padding: 0.28rem 0.55rem;
+  font-family: var(--font-caps);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: rgba(180, 160, 125, 0.8);
+  border: 1px solid rgba(150, 110, 48, 0.35);
+  border-radius: 2px;
+}
+
+.upgrade-item--empty {
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: rgba(150, 130, 100, 0.7);
+}
