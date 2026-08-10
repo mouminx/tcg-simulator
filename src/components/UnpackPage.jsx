@@ -502,6 +502,8 @@ export default function UnpackPage({
   onCoinPop,
   collectionBtnRef,
   inventoryTargetRef,
+  /** The pack fan, so the shop's shelves can fly a purchase to where it actually lands. */
+  packFanRef = null,
 }) {
   const [flyingPack, setFlyingPack] = useState(null);
   const [hiddenPackId, setHiddenPackId] = useState(null);
@@ -519,9 +521,42 @@ export default function UnpackPage({
   );
   const busy = !!flyingPack || isOpening || !!stagedPack;
 
-  const RADIUS = 600;
+  /**
+   * The fan's arc, sized to the row it is actually in.
+   *
+   * `RADIUS` was a flat 600 with a spread up to 60 degrees, which puts the outermost pack
+   * `sin(30°) × 600 = 300px` off centre — a 600px-wide fan plus the pack itself. That was fine while
+   * Summon was its own full-width page. It is now the right column of the shop, so a fixed radius sends
+   * the end packs straight out of the column.
+   *
+   * Solved for the radius that fits instead of picking one: the fan's span is
+   * `2 · sin(spread/2) · RADIUS + PACK_W`, so the widest radius the row can hold is
+   * `(width − PACK_W) / (2 · sin(spread/2))`. Capped at the original 600 so a wide window looks exactly
+   * as it did, and floored so a very narrow column flattens the arc rather than inverting it.
+   */
+  const [fanWidth, setFanWidth] = useState(0);
+  const packRowRef = useRef(null);
+  useEffect(() => {
+    const el = packRowRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const width = Math.round(entries[0].contentRect.width);
+      // Equality guard: writing state unconditionally from a ResizeObserver is how these turn into
+      // feedback loops, since the write can change layout and re-fire the observer.
+      setFanWidth(prev => (prev === width ? prev : width));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const PACK_W = 110;
   const totalAngle = packs.length > 1 ? Math.min(60, (packs.length - 1) * 10) : 0;
+  const RADIUS = (() => {
+    if (!fanWidth || totalAngle <= 0) return 600;
+    const halfSpread = Math.sin((totalAngle / 2) * Math.PI / 180);
+    if (halfSpread <= 0) return 600;
+    return Math.max(140, Math.min(600, (fanWidth - PACK_W) / (2 * halfSpread)));
+  })();
 
   function stagePackObject(pack) {
     const packType = getPackTypeById(pack.packTypeId);
@@ -639,7 +674,13 @@ export default function UnpackPage({
     <div className="unpack-page">
 
       {/* Pack fan row — always rendered for layout stability */}
-      <div className={`unpack-pack-row${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}>
+      <div
+        ref={el => {
+          packRowRef.current = el;
+          if (packFanRef) packFanRef.current = el;
+        }}
+        className={`unpack-pack-row${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}
+      >
         {packs.length === 0 ? (
           <p className="unpack-pack-row-empty-hint">
             Acquire packs from the Shop to begin summoning

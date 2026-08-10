@@ -1313,7 +1313,10 @@ optgroup {
 
 .pack-display--md { width: 200px; height: 300px; }
 .pack-display--sm { width: 110px; height: 160px; }
-.pack-display--shelf { width: var(--shelf-pack-w); height: calc(var(--shelf-pack-w) * 1.4545); }
+/* Fills the flex-shared `.shelf-pack` column, with `aspect-ratio` carrying the proportions rather than a
+   `height: calc(...)` off a width variable. The variable is gone (see `.shelf-pack`), and a calc off a
+   percentage width would have resolved against the containing block's HEIGHT anyway. */
+.pack-display--shelf { width: 100%; aspect-ratio: 1 / 1.4545; height: auto; }
 
 /* Top strip (above the cut line) */
 .pack-strip-top {
@@ -1602,7 +1605,11 @@ optgroup {
      shifted the shelf's centre right by half the rail's width and pushed the last pack further under the
      Bag drawer than it already sat. Measured, not estimated — see the note on `.shop` above for why this
      is a viewport formula rather than a fixed size. */
-  --shelf-pack-w: clamp(100px, calc(20vw - 161px), 210px);
+  /* NOTE: `--shelf-pack-w` is gone. Pack width is now `flex: 1 1 0` sharing of the shelf's row — see
+     `.shelf-pack`. It was `clamp(100px, calc(20vw - 161px), 210px)`, a viewport formula that had to be
+     re-derived by hand every time anything else on the page changed width: once when the section rail
+     moved to the left, and again when the summoning altar took the right column. Flex sharing needs no
+     recalibration, and cannot leave the packs and their gaps summing past the row. */
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
@@ -1618,6 +1625,75 @@ optgroup {
 .shop-categories,
 .shop-section-header {
   flex: 0 0 auto;
+}
+
+/* ── The merged Cards page: shelves left, summoning altar right ───────────────
+   Buying a pack and opening it are one activity and they were two pages, so every purchase ended in a tab
+   switch. `VIEWS.UNPACK` is gone from the nav and `UnpackPage` renders in the right column.
+
+   `minmax(0, …)` on both tracks: a bare `fr` has an `auto` track minimum, so the altar's summoning field —
+   which has a real min-content width — could take space from the shelves and push the last pack under the
+   Bag drawer. That is exactly the failure the `--shelf-pack-w` note above describes.
+
+   Each column owns its own scrolling, because `.main--fit` gives this page no page scroll at all. */
+.shop-summon {
+  display: grid;
+  /* The altar is a RAIL, not an equal half. Measured why: the shelf needs ~700px to show five packs
+     legibly, and an even split at 1366px gave each column ~650px — which pinned the packs at 76px and
+     made their descriptions unreadable. The altar's own content (a pack fan and the summoning field) is
+     comfortable much narrower, and the fan now sizes its arc to the column it is in. */
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 27%, 420px);
+  gap: 1.4rem;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.shop-summon__shop,
+.shop-summon__altar {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The altar scrolls on its own if the summoning field runs tall on a short window. `.shop-summon__shop`
+   deliberately does NOT — `.shop` already manages its internal regions, and a second scroll container
+   around it would swallow the first. */
+.shop-summon__altar {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180, 130, 40, 0.3) transparent;
+  /* A visible seam between shopping and summoning. Without it the two halves read as one crowded page. */
+  border-left: 1px solid rgba(180, 130, 40, 0.16);
+  padding-left: 1.3rem;
+}
+
+/* A reveal takes the whole page. Squeezing a card reveal into half the width is worse than briefly
+   showing one thing, and the shelves are unusable mid-reveal anyway (every buy button is locked while
+   `opening`). Driven by a class from React rather than `:has()`, because `opening` is already derived in
+   App.jsx for the tab lockout and a second, CSS-only source of the same truth could disagree with it. */
+.shop-summon--opening {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shop-summon--opening .shop-summon__shop {
+  display: none;
+}
+
+.shop-summon--opening .shop-summon__altar {
+  border-left: 0;
+  padding-left: 0;
+}
+
+/* The fan's 260px was sized for a full-page arc. In the rail the radius is solved down to fit the column
+   (see `RADIUS` in UnpackPage), so the arc barely sags and most of that band was empty — which pushed the
+   summoning field below the fold for no reason. A `sm` pack is 160px, so 200px holds it plus the sag. */
+.shop-summon__altar .unpack-pack-row {
+  height: 200px;
 }
 
 /* ── Section rail, down the left ──────────────────────────────────────────────
@@ -1863,6 +1939,10 @@ optgroup {
 
 .shop-pack-preview {
   flex-shrink: 0;
+  /* `block`, not the default `inline`: a percentage-width child of an inline box has no definite width
+     to resolve against, which is the other half of the zero-width shelf pack above. */
+  display: block;
+  width: 100%;
   filter: drop-shadow(0 4px 12px rgba(99,102,241,0.35));
   transition: filter 0.2s;
 }
@@ -4618,7 +4698,13 @@ optgroup {
   width: 100%;
   max-width: 780px;
   margin: 0.75rem auto 0;
+  /* A CONTAINER query context, so the field responds to the column it is in rather than to the window.
+     That distinction matters here: the altar is a rail of `clamp(300px, 27%, 420px)`, so its width and
+     the viewport's are not proportional — a media query would stack the field on a narrow window even
+     when the rail was wide, and leave it in three cramped columns on a wide window with a narrow rail. */
+  container-type: inline-size;
 }
+
 
 /* Field container — Arcana panel aesthetic */
 .summon-field {
@@ -4694,6 +4780,39 @@ optgroup {
 .summon-col--inactive {
   opacity: 0.38;
   pointer-events: none;
+}
+
+/* Three columns side by side need ~620px. Below that they stack, because at the altar rail's 345px they
+   came out ~110px each and the ATTUNEMENT and EFFECT panels were clipped by `overflow-x: hidden`.
+   Container query, not a media query: the rail is `clamp(300px, 27%, 420px)`, so its width and the
+   window's are not proportional — a media query would stack the field on a narrow window even when the
+   rail was wide, and leave it cramped on a wide window with a narrow rail.
+
+   MUST stay below the `.summon-field` / `.summon-col--*` rules above. A container query adds NO
+   specificity, so source order decides — placed above them, `flex-direction: row` simply won and this
+   whole block did nothing. Same trap as the shop's category media query. */
+@container (max-width: 620px) {
+  .summon-field {
+    flex-direction: column;
+  }
+
+  .summon-col--left,
+  .summon-col--right {
+    width: 100%;
+  }
+
+  /* What separated the columns was `border-right`, which is the wrong edge once they stack. */
+  .summon-col--left,
+  .summon-col--center {
+    border-right: 0;
+    border-bottom: 1px solid rgba(120, 80, 30, 0.28);
+  }
+
+  /* The centre column is the pack drop target, so it keeps a usable height rather than collapsing to its
+     label now that nothing beside it is setting the row height. */
+  .summon-col--center {
+    min-height: 190px;
+  }
 }
 
 /* Column header — Arcana label style */
@@ -14705,8 +14824,12 @@ html[data-quality="low"] .tab-rune-stream {
   --shelf-tag-h: 38px;
   --shelf-desc-h: 40px;
   position: relative;
-  width: fit-content;
-  max-width: 100%;
+  /* `100%`, not `fit-content`. A percentage or flex-shared pack width cannot resolve against an
+     INDEFINITE container width — that is what pinned every pack at its clamp floor (76px) and then let
+     the row's total exceed 100% so `flex-wrap` broke five packs onto four rows, making the section
+     1196px tall inside a 424px box. The plank already spans the shelf's full width, so filling the
+     column reads the same as furniture sized to its packs. */
+  width: 100%;
   padding: 0 18px;
 }
 
@@ -14757,7 +14880,11 @@ html[data-quality="low"] .tab-rune-stream {
   display: flex;
   align-items: flex-end;
   gap: 1.15rem;
-  flex-wrap: wrap;
+  /* `nowrap`, deliberately. With `flex: 1 1 0` packs the row can always fit by shrinking, so a wrap can
+     only ever be the symptom of a sizing bug — and when it happened it was silent, turning one shelf
+     into four stacked rows rather than reporting anything. */
+  flex-wrap: nowrap;
+  justify-content: center;
 }
 
 /**
@@ -14770,8 +14897,12 @@ html[data-quality="low"] .tab-rune-stream {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: var(--shelf-pack-w);
-  flex: 0 0 auto;
+  /* Equal shares of whatever the shelf's row is, capped so a wide window does not produce absurd packs.
+     `flex-basis: 0` rather than `auto` so the tag and description text cannot contribute to the basis —
+     with `auto` a long pack description widens its own column and the packs stop being equal. */
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 210px;
   /* Reserve the plank's thickness so the pack's base sits on the board and the
      tag lands on its front face. */
   padding-bottom: calc(var(--shelf-plank-h) + var(--shelf-tag-h) + var(--shelf-desc-h));
@@ -14783,6 +14914,10 @@ html[data-quality="low"] .tab-rune-stream {
 .shelf-pack__grab {
   position: relative;
   display: block;
+  /* Explicit, because the pack inside now asks for `100%` of it. As a bare block in a flex column it
+     shrank to fit-content, and its content's width was a percentage of itself — circular, so both
+     resolved to ZERO and the shelf rendered five invisible packs with only their tags showing. */
+  width: 100%;
   padding: 0;
   border: none;
   background: none;

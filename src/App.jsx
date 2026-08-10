@@ -109,7 +109,15 @@ import './App.css';
 
 const VIEWS = { SHOP: 'shop', UNPACK: 'unpack', COLLECTION: 'collection', ARCANA: 'arcana', FOUNDRY: 'foundry', WILDERNESS: 'wilderness', EXPEDITION: 'expedition', LAB: 'lab', MARKET: 'market' };
 const TAB_ICONS = { shop: '⊙', unpack: '✦', collection: '⊞', arcana: '◌', foundry: '⚒', wilderness: '❈', expedition: '▣', market: '↗', lab: '⚗' };
-const VIEW_ORDER = [VIEWS.SHOP, VIEWS.UNPACK, VIEWS.COLLECTION, VIEWS.ARCANA, VIEWS.FOUNDRY, VIEWS.WILDERNESS, VIEWS.EXPEDITION, VIEWS.LAB, VIEWS.MARKET];
+/**
+ * The tab order. **`VIEWS.UNPACK` is deliberately absent**: buying a pack and opening it are one
+ * activity, and they were two pages, so every purchase ended in a tab switch. The shop page now carries
+ * the summoning altar in its right column and `UnpackPage` renders there.
+ *
+ * The constant itself stays — `VIEWS.UNPACK` is still what `TAB_ACCENTS` and the old save's `lootSeen`
+ * keys are written against, and removing it would be a rename with a migration attached for no gain.
+ */
+const VIEW_ORDER = [VIEWS.SHOP, VIEWS.COLLECTION, VIEWS.ARCANA, VIEWS.FOUNDRY, VIEWS.WILDERNESS, VIEWS.EXPEDITION, VIEWS.LAB, VIEWS.MARKET];
 
 /**
  * Views held back from players. Their tabs render greyed with a `Soon` tag and are
@@ -139,7 +147,7 @@ const COMING_SOON_VIEWS = new Set([VIEWS.EXPEDITION, VIEWS.LAB, VIEWS.MARKET]);
  * and clears on the visit itself. `collectionSeen` is what makes that difference, not a special case in
  * the indicator code.
  */
-const LOOT_TAB_VIEWS = [VIEWS.FOUNDRY, VIEWS.WILDERNESS, VIEWS.COLLECTION, VIEWS.UNPACK];
+const LOOT_TAB_VIEWS = [VIEWS.FOUNDRY, VIEWS.WILDERNESS, VIEWS.COLLECTION, VIEWS.SHOP];
 
 /**
  * Ceiling on packs a player can *buy* while already holding a stack.
@@ -744,7 +752,25 @@ function GameApp({ savedState, account }) {
   const inventoryHeaderRef = useRef(null);
 
   const tabRefs = useRef([]);
-  const unpackBtnRef = useRef(null);
+  /**
+   * The summoning altar's pack fan, on the shop page.
+   *
+   * This used to be the Summon TAB, and both of the things that fly at it — a pack bought from a shelf,
+   * and a treasure pack claimed in the Wilderness — were aimed at a tab because that was the only thing
+   * standing in for "where packs go". They now fly to the altar itself, which is where they actually
+   * land, and on the shop page it is on screen at the moment of purchase.
+   */
+  const summonAltarRef = useRef(null);
+  /**
+   * The Cards tab. Where a treasure pack claimed in the Wilderness flies to.
+   *
+   * It cannot fly to `summonAltarRef`: the altar is only mounted on the shop page, and a treasure pack
+   * is claimed while standing in the Wilderness — so that ref is null there, and `animateGroup` bails on
+   * a null target, which would have silently dropped the animation rather than crashing. The tab is
+   * always mounted and is the thing the player has to click to reach the pack, so it is the honest
+   * target. The shop's own purchases still fly to the altar, which is on screen at that moment.
+   */
+  const shopBtnRef = useRef(null);
   const collectionBtnRef = useRef(null);
   const arcanaBtnRef = useRef(null);
   const [underline, setUnderline] = useState({ left: 0, width: 0 });
@@ -1278,9 +1304,10 @@ function GameApp({ savedState, account }) {
     // Cards gained since the Collection was last opened. Clamped at zero so selling cards — which
     // shrinks the collection below the seen count — cannot produce a negative "pending".
     [VIEWS.COLLECTION]: Math.max(0, collection.length - collectionSeen),
-    // Unopened packs. The same semantics as Foundry and Wilderness — pending until consumed — so the
-    // diamond persists while packs are held and disappears when the last one is opened.
-    [VIEWS.UNPACK]: packs.length,
+    // Unopened packs, now on the Cards tab — the summoning altar lives on that page. The same semantics
+    // as Foundry and Wilderness (pending until consumed), so the diamond persists while packs are held
+    // and disappears when the last one is opened.
+    [VIEWS.SHOP]: packs.length,
   }), [
     mineClaimQueue, mineRewardQueue, ingotClaimQueue, forgeRewardQueue,
     gatheringClaimQueue, gatheringRewardQueue, processedClaimQueue, processingRewardQueue,
@@ -3122,11 +3149,9 @@ function GameApp({ savedState, account }) {
       <nav className="tab-bar">
         {VIEW_ORDER.map((v, i) => {
           let label;
+          // One page for buying and opening. The diamond on this tab means "you are holding unopened
+          // packs" — pending until consumed, the same semantics the Summon tab's carried.
           if (v === VIEWS.SHOP) label = 'Cards';
-          // No count here either. It was kept as "a pack count is a to-do, not a total", but a number in a
-          // tab title is a number in a tab title — and treasure packs made one appear unprompted. The
-          // diamond carries it now, with exactly the right semantics: pending until opened.
-          else if (v === VIEWS.UNPACK) label = 'Summon';
           // No count. The diamond says "something new is in here", which is the part a player acts on;
           // a running total is noise on a bar with ~6px of slack at 1024px (see CLAUDE.md).
           else if (v === VIEWS.COLLECTION) label = 'Collection';
@@ -3143,7 +3168,7 @@ function GameApp({ savedState, account }) {
               key={v}
               ref={el => {
                 tabRefs.current[i] = el;
-                if (v === VIEWS.UNPACK) unpackBtnRef.current = el;
+                if (v === VIEWS.SHOP) shopBtnRef.current = el;
                 if (v === VIEWS.COLLECTION) collectionBtnRef.current = el;
                 if (v === VIEWS.ARCANA) arcanaBtnRef.current = el;
               }}
@@ -3213,30 +3238,42 @@ function GameApp({ savedState, account }) {
           view === VIEWS.EXPEDITION ? 'main--expedition' : '',
         ].filter(Boolean).join(' ')}
       >
+        {/* Buying a pack and opening it are one activity, so they are one page: the shop's shelves on
+            the left, the summoning altar on the right. Every purchase used to end in a tab switch.
+
+            While a reveal is in flight the shop column is hidden and the altar takes the full width —
+            `opening` is already derived above for the tab lockout. A card reveal squeezed into half a
+            page is worse than a page that briefly shows one thing, and the shelves are unusable during
+            a reveal anyway. */}
         {view === VIEWS.SHOP && (
-          <Shop
-            balance={balance}
-            onBuyPack={handleBuyPack}
-            onBuyMaterial={handleBuyMaterial}
-            packsNavRef={unpackBtnRef}
-            packsHeld={packs.length}
-            maxPacks={MAX_HELD_PACKS}
-          />
-        )}
-        {view === VIEWS.UNPACK && (
-          <UnpackPage
-            packs={packs}
-            arcanaInventory={arcanaInventory}
-            pendingCards={pendingCards}
-            pendingResourceCards={pendingResourceCards}
-            onCoinPop={spawnGoldPop}
-            pendingEssenceDrops={pendingEssenceDrops}
-            pendingPackType={pendingPackType}
-            onOpenPack={handleOpenPack}
-            onPackDone={handlePackDone}
-            collectionBtnRef={collectionBtnRef}
-            inventoryTargetRef={inventoryHeaderRef}
-          />
+          <div className={`shop-summon${opening ? ' shop-summon--opening' : ''}`}>
+            <div className="shop-summon__shop">
+              <Shop
+                balance={balance}
+                onBuyPack={handleBuyPack}
+                onBuyMaterial={handleBuyMaterial}
+                packsNavRef={summonAltarRef}
+                packsHeld={packs.length}
+                maxPacks={MAX_HELD_PACKS}
+              />
+            </div>
+            <div className="shop-summon__altar">
+              <UnpackPage
+                packs={packs}
+                arcanaInventory={arcanaInventory}
+                pendingCards={pendingCards}
+                pendingResourceCards={pendingResourceCards}
+                onCoinPop={spawnGoldPop}
+                pendingEssenceDrops={pendingEssenceDrops}
+                pendingPackType={pendingPackType}
+                onOpenPack={handleOpenPack}
+                onPackDone={handlePackDone}
+                collectionBtnRef={collectionBtnRef}
+                inventoryTargetRef={inventoryHeaderRef}
+                packFanRef={summonAltarRef}
+              />
+            </div>
+          </div>
         )}
         {view === VIEWS.COLLECTION && (
           <Collection
@@ -3308,7 +3345,7 @@ function GameApp({ savedState, account }) {
             returnsGatheringCardsToPocket={pocket.length < pocketCapacity}
             returnsProcessingCardsToPocket={pocket.length < pocketCapacity}
             collectTargetRef={inventoryHeaderRef}
-            summonTargetRef={unpackBtnRef}
+            summonTargetRef={shopBtnRef}
             onSocketGatheringCard={handleSocketPocketCardToGathering}
             onUnsocketGatheringCard={handleUnsocketGatheringCard}
             onCollectGatheredResources={handleCollectGatheredResources}
