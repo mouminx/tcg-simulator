@@ -186,6 +186,13 @@ neglect.
 | Foundry — forge half | 338px | 263px | 234px |
 | Wilderness — processing half | 206px | 145px | 96px |
 
+Those production figures are with empty collection queues. With a large haul (11–12 entries) the queues used
+to add ~200px each; stacked, they add ~30px. Measured at 1366x768 with the same seed, before → after:
+**Foundry mine 293px → 97px**, **Wilderness gathering 307px → 111px**. The Wilderness *processing* half went
+389px → 406px, and that +17px is honest: its bonus queue holds two tiles, and the grid's `align-items:
+stretch` had been compressing those tiles *below* their content height. That half is dominated by the 558px
+processing row either way.
+
 The last two were **1449 / 1288 / 1380** and **1066 / 948 / 980** before the row selector; see below for
 why they are not zero. The Cards row is the merged shop + summoning altar — its `.main` overflow is zero at
 every width from 1024 to 1920, though the altar rail owns up to 109px of its own scroll on a short window.
@@ -1391,13 +1398,18 @@ every shelf pack at the moment the player's attention is elsewhere. A layout tha
 starts is worse than one that is merely narrow.
 
 That is why the altar rail is sized for a **card**, not for a pack row — nothing expands to accommodate the
-reveal, so its resting width has to hold one. The class is still driven by the `opening` flag App already
+reveal, so its resting width has to hold one. The drawn cards are a `.stack-line` too, and the held-pack row
+is **collapsed** (`display: none`) while a reveal is in flight: it reserves 200px "for layout stability",
+which is right while choosing a pack and pure waste once one is open — measured 200px holding nothing but a
+16px hint. Together those took the altar's scroll during a reveal from 357px to 157px. The class is still driven by the `opening` flag App already
 derives for the tab lockout, **not** by CSS `:has()`, so there is one source of that truth rather than two
 that can disagree.
 
-**The altar column owns its scrolling and its heading is `position: sticky`.** A reveal makes the column
-taller than itself, and without the sticky the "SUMMON" label scrolled out of view exactly when the player
-was looking at that half. It needs a background, or the pack stack shows through it as it passes underneath.
+**The altar column owns its own scrolling**, since `.main--fit` gives this page none. Its heading is plain and
+`static`, matching "SHOP" exactly. It was briefly `position: sticky` with a dark gradient behind it, so it
+would survive the column scrolling during a reveal — and that gradient was a dark band under one heading and
+not the other, which read as a mistake. The reveal is short enough now (see below) that neither is needed.
+**If the altar ever scrolls badly again, shorten it rather than reinstating the sticky.**
 
 ### Both halves are titled, each centred on its own column
 
@@ -1406,35 +1418,55 @@ content. Centring them on the *page* would put "SUMMON" over the border between 
 0px off its column centre, Summon 11px — the offset is the altar's left border and padding, and it is
 correct, because the label is centred over its contents rather than its column box.
 
-### The held packs are a stacked horizontal line
+### `.stack-line` — one overlapping horizontal row, sized to fit whatever it holds
 
-`.unpack-pack-row--line`. Was an arc: every pack carried an angle plus an absolutely-positioned `left`/`top`
-computed from a radius, and the radius itself had to be solved from the container width so the end packs did
-not leave the column. All of that is gone — the row is a flex line and the overlap is a negative margin, so
-it reflows on resize with no measurement, no `ResizeObserver` and no geometry.
-
-**The overlap tightens as the stack grows, so all ten always fit without scrolling.**
+**Five consumers**: the held packs, the pack-reveal card queue, and all four production collection queues.
+Each of them was previously either a wrapping grid or an arc, and each grew until its container had to scroll.
 
 ```css
 margin-left: min(
-  calc(var(--pack-overlap) * -1),                                  /* 58px baseline */
-  calc((100% - var(--pack-w)) / var(--pack-gaps) - var(--pack-w))   /* exact fit */
+  calc(var(--stack-overlap) * -1),                                     /* baseline bite */
+  calc((100% - var(--stack-w)) / var(--stack-gaps) - var(--stack-w))    /* exact fit */
 );
 ```
 
-The second term is the step that makes N packs span the row exactly; `min()` picks the more negative, i.e.
-the *larger* overlap, so the baseline holds for a small stack and the computed value takes over once it is
-needed. Percentage margins resolve against the container's inline size, which is what lets this work with no
-JS. `--pack-gaps` is the only thing React supplies (CSS cannot know the count) and is `max(1, length - 1)`
-to avoid dividing by zero at one pack. Measured 1/3/6/10 packs: 0–1px of scroll at every count.
+The second term is the step that makes N items span the row exactly; `min()` picks the more negative, i.e.
+the *larger* overlap, so the baseline holds for a short row and the computed value takes over once it is
+needed. **Percentage margins resolve against the container's inline size**, which is what lets this work with
+no measurement, no `ResizeObserver` and no geometry — the arc it replaced needed all three.
 
-**A hovered pack must become fully CLICKABLE, not just fully painted.** The pack after a hovered one steps
-aside to `margin-left: 0`. At a partial step the hovered pack's own centre stayed underneath its neighbour,
-so it was painted on top (`z-index: 100 !important`, needed to beat the inline ascending `zIndex`) while a
-pointer at its middle still hit the neighbour — a pack you could see but not click. A player entering from
-the visible strip gets hover and then the whole pack is live. Note when testing: **Playwright clicks an
-element's centre**, so a pack in the stack must be clicked at its visible strip (`position: {x: 18, y: 60}`)
-or hovered first.
+`--stack-gaps` is the only thing React supplies, because CSS cannot know the count. Always pass
+`max(1, length - 1)`; `length - 1` divides by zero at a single item.
+
+**The rules target `> *`, not a `stack-line__item` class.** The class is opt-in on the *container*, so every
+direct child is a stack item by definition — and that is what lets four different components (queue tiles,
+card faces, pack items, the pack-count tile) render into these rows without each needing to cooperate.
+
+#### Four things that break this, all of which look fine until measured
+
+1. **Any leftover flex `gap` is added on top of the solved step.** `.foundry-queue-slots` carried
+   `gap: 0.65rem` from its grid days: 10 gaps × 10.4px = *exactly* the 104px by which the queue overflowed.
+   `.stack-line` resets it, but see the next point.
+2. **`.stack-line` is specificity 0,1,0 and loses to anything equal defined later in the file.**
+   `.foundry-queue-slots` sets `display: grid` **and** that gap, and is defined ~5000 lines further down — so
+   the stack silently never engaged. The override is the compound `.foundry-queue-slots.stack-line`, which
+   wins on specificity regardless of order. Third time this exact trap has appeared (the shop's category
+   media query, the summon field's container query).
+3. **A hovered item must become fully CLICKABLE, not just fully painted.** The item after a hovered one steps
+   aside to `margin-left: 0`. At a partial step the hovered item's own centre stayed under its neighbour, so
+   it was painted on top (`z-index: 100 !important`, needed to beat the inline ascending `zIndex`) while a
+   pointer at its middle still hit the neighbour. Note when testing: **Playwright clicks an element's
+   centre**, so an item in a stack must be clicked at its visible strip (`position: {x: 18, y: 60}`) or
+   hovered first — and the pointer must be *parked away* before measuring positions, or the hover lift shows
+   up as a second distinct `top`.
+4. **Reserved padding for the hover lift is real height.** A box that scrolls on one axis forces the cross
+   axis to non-visible, so the lift has to be absorbed by the element's own padding — 22px of it. The
+   collection queues instead take `overflow: visible`, trading a scrollbar that measurement says never
+   appears for 22px of permanent height in a half that has none to spare. The reveal queue keeps its padding,
+   because the altar column around it does scroll.
+
+Per-consumer sizing: packs 110px wide / 58px bite; reveal cards 110px / 78px (twice the pack cap in a
+narrower column, so a tighter grouping); queue tiles 112px / 62px.
 
 The cap on held packs came down to 10 with this — see **Held-pack cap**.
 
@@ -3051,9 +3083,13 @@ Coin reward art:
   no `VIEWS.UNPACK` tab. Anything that drove the game by clicking a "Summon" tab needs
   updating — the maintained `test-*.mjs` suites never did, but several older ad-hoc probes
   in the scratchpad do and are stale.
-- **The forge and processing halves still scroll internally** (338px / 206px at 1366x768,
-  down from 1449px / 1066px). Closing the rest needs the ROW to get shorter, which is a
-  design change — see **One forge row and one processing bench at a time**.
+- **The forge and processing halves still scroll internally** (338px / 206px at 1366x768
+  with empty queues, down from 1449px / 1066px). Closing the rest needs the ROW to get
+  shorter, which is a design change — see **One forge row and one processing bench at a
+  time**. The altar column also still scrolls ~157px during a pack reveal; the remaining
+  cost there is `.opening-stage`'s 300px `min-height`, which is reserved so the layout does
+  not jump between reveal phases. Shrinking it trades permanent scroll for a mid-reveal
+  jump, which is a judgement call rather than a fix.
 - `MINE_SLOT_COSTS` is unreachable dead data: the default mine capacity already equals the
   max, which is why Mine Slot is no longer offered in the shop. See **The Upgrades shelf**.
 - `src/game/resourceArt.js` uses `import.meta.glob` and is therefore **Vite-only** — never

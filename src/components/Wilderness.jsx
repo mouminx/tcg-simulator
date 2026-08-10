@@ -956,7 +956,13 @@ export default function Wilderness({
                     Collect
                   </button>
                 </div>
-                <div className="foundry-queue-slots wilderness-queue-slots">
+                {/* Counted from exactly what renders below: the treasure-pack tile, the drop pool, and the
+                    bonus rewards. See `.stack-line` for why the count has to come from React. */}
+                <div
+                  className="foundry-queue-slots wilderness-queue-slots stack-line"
+                  style={{ '--stack-gaps': Math.max(1,
+                    (queuedTreasurePacks > 0 ? 1 : 0) + queueResources.length + gatheringRewardEntries.length - 1) }}
+                >
                   {queuedTreasurePacks > 0 ? (
                     <QueuePackCard
                       packTypeId="treasure"
@@ -1104,7 +1110,10 @@ export default function Wilderness({
                       Collect
                     </button>
                   </div>
-                  <div className="foundry-queue-slots wilderness-queue-slots">
+                  <div
+                    className="foundry-queue-slots wilderness-queue-slots stack-line"
+                    style={{ '--stack-gaps': Math.max(1, processingRewardEntries.length - 1) }}
+                  >
                     {processingRewardEntries.map(entry => (
                       <SquareResourceCard
                         key={`processing-bonus-${entry.id}`}

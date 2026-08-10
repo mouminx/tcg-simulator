@@ -1684,6 +1684,14 @@ optgroup {
    layout that jumps when the payoff starts is worse than one that is merely narrow.
 
    `.shop-summon--opening` is still applied — it dims and locks the shop side rather than removing it. */
+/* The held-pack row is COLLAPSED during a reveal, not just dimmed. It reserves 200px "for layout stability",
+   which is right while you are choosing a pack and pure waste once one is open — measured 200px holding
+   nothing but a 16px hint, in a column with 357px of overflow. Nothing can be dragged from it mid-reveal
+   anyway; the whole shop side is `pointer-events: none`. */
+.shop-summon--opening .unpack-pack-row {
+  display: none;
+}
+
 .shop-summon--opening .shop-summon__shop {
   /* Not `display: none`, and not `visibility: hidden` either: the column keeps its box so the grid does not
      move, and stays faintly visible so the page still reads as the shop. */
@@ -2756,12 +2764,26 @@ optgroup {
 }
 
 /* Queue row */
+/* The drawn cards, as a stacked line rather than a wrapping grid. A pack can hold 20, which wrapped to four
+   rows and made the reveal taller than the column it now lives in — the scrolling this set out to remove.
+   Geometry comes from `.stack-line`; only the things specific to this row are here.
+
+   A tighter baseline overlap than the packs (78px of 110px, so 32px showing). Twenty cards is twice the pack
+   cap, and the reveal reads the drawn card in the centre stage — this row is the record of what has been
+   drawn, so a sliver carrying the rarity colour is enough, and any card can be hovered to full size. */
 .cards-queue {
-  display: flex;
-  gap: 0.75rem;
+  --stack-overlap: 78px;
   justify-content: center;
-  flex-wrap: wrap;
   margin-bottom: 1.5rem;
+  /* Room for the hover lift, which cannot escape a box that scrolls on the other axis. */
+  padding: 22px 2px 4px;
+}
+
+/* The item wrapper is the card's own box, so the stack's margins and the flight transform both act on
+   something exactly card-sized. */
+.queued-card-slot {
+  width: 110px;
+  height: 160px;
 }
 
 /* Queued card */
@@ -4287,73 +4309,83 @@ optgroup {
   user-select: none;
 }
 
-/* ── The held packs: an overlapping horizontal line ──
-   Was an arc. Each pack carried an angle plus an absolutely-positioned `left`/`top` computed from a radius,
-   and the radius itself had to be solved from the container width so the end packs did not leave the
-   column. A line needs none of that: the row is a flex line, the overlap is a negative margin, and it
-   reflows on resize with no measurement at all.
+/* ── Stacked line: one overlapping horizontal row, sized to fit whatever it holds ──
+   Shared by the held packs, the pack-reveal card queue, and the production collection queues. All three had
+   the same problem: a wrapping grid or an arc that grew until its container had to scroll.
 
-   The overlap TIGHTENS as the stack grows, so all ten always fit without scrolling. At a fixed 58px bite
-   ten packs span 52*9 + 110 = 578px and overflowed a 422px column — and a row you have to scroll defeats
-   the point of showing the stack at all.
+   The overlap TIGHTENS as the row fills, so the whole set always fits without scrolling:
 
-   The second term is the exact step that makes N packs span the row: `step = (100% - packW) / gaps`, so the
-   margin is `step - packW`. `min()` of the two picks the MORE NEGATIVE, i.e. the larger overlap — so the
-   58px baseline holds for a small stack and the computed value takes over once it is needed. Percentage
-   margins resolve against the container's inline size, which is what makes this work with no measurement,
-   no ResizeObserver and no JS at all.
+     margin-left: min(-overlap, (100% - itemW) / gaps - itemW)
 
-   `--pack-gaps` is the only thing React supplies, because CSS cannot know the count. It is
-   `max(1, length - 1)` rather than `length - 1` to keep a one-pack stack from dividing by zero. */
-.unpack-pack-row--line {
-  --pack-overlap: 58px;
-  --pack-w: 110px;   /* `PackCard size="sm"` — see `.pack-display--sm` */
-  --pack-gaps: 1;
+   The second term is the exact step that makes N items span the row (`step = (100% - itemW) / gaps`, and the
+   margin is `step - itemW`). `min()` picks the MORE NEGATIVE of the two, i.e. the LARGER overlap — so the
+   baseline holds for a short row and the computed value takes over once it is needed. Percentage margins
+   resolve against the container's inline size, which is what makes this work with no measurement, no
+   ResizeObserver and no JS at all.
+
+   `--stack-gaps` is the only thing React has to supply, because CSS cannot know the count. Always pass
+   `max(1, length - 1)`, never `length - 1`, or a single item divides by zero.
+
+   `overflow-x: auto` is a safety valve, not the plan — if a row ever cannot fit it scrolls rather than
+   clipping. Note that once one axis scrolls CSS forces the cross axis to non-visible, so a hover lift has to
+   be absorbed by this element's own top padding rather than escaping the box. Same constraint the nav bar
+   hit with its rune particles. */
+.stack-line {
+  --stack-w: 110px;
+  --stack-overlap: 58px;
+  --stack-gaps: 1;
   display: flex;
+  /* A stack line's spacing IS its negative margin, so ANY gap is a bug — it is added on top of the computed
+     step and pushes the row past the width the step was solved for. `.foundry-queue-slots` carried
+     `gap: 0.65rem` from its grid days: 10 gaps x 10.4px = exactly the 104px by which the queue overflowed. */
+  gap: 0;
   flex-direction: row;
   align-items: flex-end;
   justify-content: flex-start;
-  height: auto;
-  padding: 0.6rem 0.2rem 0.9rem;
-  /* Scrolls on the axis it grows along. `overflow-y: visible` is not available once one axis scrolls — CSS
-     forces the cross axis to non-visible — so the hover lift is absorbed by the padding above instead of
-     escaping the box. That is the same constraint the nav bar hit with its rune particles. */
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(180, 130, 40, 0.3) transparent;
 }
 
-.unpack-pack-row--line > .unpack-pack-item + .unpack-pack-item {
-  margin-left: min(
-    calc(var(--pack-overlap) * -1),
-    calc((100% - var(--pack-w)) / var(--pack-gaps) - var(--pack-w))
-  );
-}
-
-.unpack-pack-item {
+/* Every direct child of a stack line IS a stack item — the class is opt-in on the CONTAINER, so `> *` needs
+   no cooperation from the many components that render into these rows (queue tiles, card faces, pack
+   items). That is the difference between this being shared and being copied three times. */
+.stack-line > * {
   position: relative;
   flex: 0 0 auto;
-  cursor: pointer;
   transition: transform 0.22s ease, filter 0.22s ease, margin 0.22s ease;
 }
 
-/* Lifts and slides clear of its right-hand neighbour, so a hovered pack is fully visible rather than
-   still half-covered — the whole point of hovering one in a stack. The `z-index` needs `!important`
-   because the inline ascending `zIndex` on each pack would otherwise win. */
-.unpack-pack-item:hover {
+.stack-line > * + * {
+  margin-left: min(
+    calc(var(--stack-overlap) * -1),
+    calc((100% - var(--stack-w)) / var(--stack-gaps) - var(--stack-w))
+  );
+}
+
+/* A hovered item lifts AND its neighbour steps fully aside. `margin-left: 0` rather than a reduced overlap:
+   at a partial step the hovered item's own centre stayed under its neighbour, so it was painted on top while
+   a pointer at its middle still hit the neighbour — something you could see but not click. `!important` on
+   the z-index because these carry an inline ascending `zIndex` that would otherwise win. */
+.stack-line > *:hover {
   transform: translateY(-18px) scale(1.06);
   z-index: 100 !important;
 }
 
-/* The pack AFTER a hovered one steps fully aside, which is what actually uncovers the hovered pack. Only
-   reachable with a sibling combinator, so it cannot be folded into the rule above.
-
-   `0`, not a reduced overlap. At a partial step the hovered pack's own centre stayed underneath its
-   neighbour, so the pack was painted on top (`z-index: 100`) while the pointer at its middle still hit the
-   neighbour — you could see a pack you could not click. A player entering from the visible strip gets hover
-   and then the whole pack becomes clickable; anything less leaves a dead middle. */
-.unpack-pack-row--line > .unpack-pack-item:hover + .unpack-pack-item {
+.stack-line > *:hover + * {
   margin-left: 0;
+}
+
+/* ── The held packs ── */
+.unpack-pack-row--line {
+  height: auto;
+  padding: 0.6rem 0.2rem 0.9rem;
+}
+
+
+.unpack-pack-item {
+  cursor: pointer;
 }
 
 .unpack-pack-item:hover .pack-display.pack-type-dusk       { filter: drop-shadow(0 14px 22px rgba(180,120, 50,0.7)); }
@@ -9396,6 +9428,47 @@ optgroup {
   gap: 0.65rem;
   align-items: stretch;
   align-content: start;
+}
+
+/* ── Collection queues as a stacked line ──
+   The haul was a 5-column grid that grew a new row every five entries, so a good run made the half scroll.
+   Stacked, the whole haul is one row however large it gets — and a row of loot fanning out reads as a
+   reward, which a scrolling grid does not.
+
+   The selector is COMPOUND on purpose. `.stack-line` alone is specificity 0,1,0, identical to
+   `.foundry-queue-slots`, which is defined LATER in this file — so its `display: grid` would win and the
+   stack would silently never engage. Two classes beat one regardless of order. Same trap as the shop's
+   category media query and the summon field's container query.
+
+   These tiles have no intrinsic width (the grid used to give them one), so the stack has to. */
+.foundry-queue-slots.stack-line {
+  --stack-w: 112px;
+  --stack-overlap: 62px;
+  display: flex;
+  /* Must be reset HERE, not on `.stack-line`. `.foundry-queue-slots` sets `gap: 0.65rem` from its grid days
+     at the same specificity but later in the file, so the base reset lost — and the gap was added on top of
+     the solved step, overflowing the row by exactly 10 gaps x 10.4px = 104px. */
+  gap: 0;
+  align-items: flex-start;
+  /* `visible`, so the hover lift needs no reserved padding above the row. The 22px this replaces was real
+     height in a half that has none to spare. Safe here precisely because the step is solved to fit — the
+     `overflow-x: auto` safety valve on `.stack-line` has measured 0-1px of scroll at every queue size, and
+     trading a scrollbar that never appears for 22px of permanent height is the right way round. */
+  overflow: visible;
+}
+
+.foundry-queue-slots.stack-line > .foundry-queue-slot,
+.foundry-queue-slots.stack-line > .foundry-queue-pack,
+.foundry-queue-slots.stack-line > .card-face-wrapper {
+  width: var(--stack-w);
+  /* Sized to CONTENT, not to `--foundry-queue-tile-h` (188px), which was reserved for a 5-column grid cell
+     and is a tall rectangle at the stack's 112px width.
+     A fixed replacement was tried at 148px and made things WORSE where the queue is small: the Wilderness
+     processing bonus queue holds two tiles and its grid row was only 96px, so a 148px floor grew that half
+     from 389px of scroll to 464px. `0` lets each row cost exactly what it holds. */
+  min-height: 0;
+  /* `grid-column` on the pack tile is meaningless in a flex row and would otherwise be dead weight. */
+  grid-column: auto;
 }
 
 .foundry-mine-slot,
@@ -16457,15 +16530,13 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
 /* The altar's title, matching the shop's. Both are centred over their OWN column rather than over the page:
    `.shop` and `.unpack-page` each carry `align-items: center`, so each header centres on its own content.
    Centring them on the page instead would put "SUMMON" over the border between the two halves. */
+/* Plain, matching "SHOP" exactly.
+   It was `position: sticky` with a dark gradient behind it, because a reveal used to make the altar column
+   taller than itself and the label would scroll away. The gradient was the visible cost of that — a dark
+   band under one heading and not the other, which read as a mistake. Now that the drawn cards stack instead
+   of wrapping, the column does not scroll during a reveal, so neither the sticky nor the background it
+   required is needed. If the altar ever scrolls again, fix the height rather than reinstating this. */
 .unpack-header {
   width: 100%;
   text-align: center;
-  /* Sticky, because the altar column owns its own scrolling and a reveal makes its content taller than the
-     column. Without this the label scrolls out of view exactly when the player is looking at this half.
-     The background is needed or the pack stack shows through it as it passes underneath. */
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding-bottom: 0.35rem;
-  background: linear-gradient(180deg, rgba(14, 10, 5, 0.96) 68%, rgba(14, 10, 5, 0));
 }

@@ -662,10 +662,10 @@ export default function UnpackPage({
           packRowRef.current = el;
           if (packFanRef) packFanRef.current = el;
         }}
-        className={`unpack-pack-row unpack-pack-row--line${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}
+        className={`unpack-pack-row unpack-pack-row--line stack-line${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}
         // The one thing CSS cannot work out for itself: how many gaps the overlap has to close so the whole
-        // stack fits the row. `max(1, …)` guards the divide-by-zero at a single pack.
-        style={{ '--pack-gaps': Math.max(1, packs.length - 1) }}
+        // stack fits the row. `max(1, …)` guards the divide-by-zero at a single item.
+        style={{ '--stack-gaps': Math.max(1, packs.length - 1) }}
       >
         {packs.length === 0 ? (
           <p className="unpack-pack-row-empty-hint">

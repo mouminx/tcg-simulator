@@ -1062,6 +1062,13 @@ export default function Foundry({
 
   const miningRunningCount = mineSlots.filter(slot => slot.card && slot.startedAt).length;
   const mineRewardEntries = useMemo(() => buildBonusRewardEntries(mineRewardQueue), [mineRewardQueue]);
+  // Hoisted out of the JSX so the stacked queue's `--stack-gaps` counts the same list it renders. Two
+  // separate filters of the same predicate would eventually disagree, and the row would size for the wrong
+  // number of tiles.
+  const queuedOreTypes = useMemo(
+    () => ORE_TYPES.filter(ore => (mineClaimQueue[ore.id] ?? 0) > 0),
+    [mineClaimQueue],
+  );
   const forgeRewardEntries = useMemo(() => buildBonusRewardEntries(forgeRewardQueue), [forgeRewardQueue]);
   const queueHasOre = hasQueuedOre(mineClaimQueue) || hasQueuedBonusRewards(mineRewardQueue);
   const queueHasIngots = ORE_TYPES.some(ore => (ingotClaimQueue[ore.ingotId] ?? 0) > 0);
@@ -1282,8 +1289,13 @@ export default function Foundry({
                     Collect
                   </button>
                 </div>
-                <div className="foundry-queue-slots">
-                  {ORE_TYPES.filter(ore => (mineClaimQueue[ore.id] ?? 0) > 0).map(ore => (
+                {/* `--stack-gaps` lets the overlap tighten so the whole haul fits without the half
+                    scrolling; see `.stack-line`. Counted from exactly what is rendered below. */}
+                <div
+                  className="foundry-queue-slots stack-line"
+                  style={{ '--stack-gaps': Math.max(1, queuedOreTypes.length + mineRewardEntries.length - 1) }}
+                >
+                  {queuedOreTypes.map(ore => (
                     <QueueOreSlot
                       key={`queued-${ore.id}`}
                       ore={ore}
@@ -1436,7 +1448,10 @@ export default function Foundry({
                       Collect
                     </button>
                   </div>
-                  <div className="foundry-queue-slots">
+                  <div
+                    className="foundry-queue-slots stack-line"
+                    style={{ '--stack-gaps': Math.max(1, forgeRewardEntries.length - 1) }}
+                  >
                     {forgeRewardEntries.map(entry => (
                       <SquareResourceCard
                         key={`forge-bonus-${entry.id}`}

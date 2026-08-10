@@ -499,25 +499,35 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
       </div>
 
       {queuedCards.length > 0 && (
-        <div className="cards-queue" ref={queueStripRef}>
+        // Drawn cards are a stacked horizontal line, not a wrapping grid. A pack can hold 20, which wrapped
+        // to four rows and made the reveal taller than its column — the scrolling this was meant to remove.
+        // `--stack-gaps` is what lets the overlap tighten so the whole draw fits; see `.stack-line`.
+        <div
+          className="cards-queue stack-line"
+          ref={queueStripRef}
+          style={{ '--stack-gaps': Math.max(1, queuedCards.length - 1) }}
+        >
           {queuedCards.map((card, i) => (
-            isResourceReveal ? (
-              <div
-                key={card.id}
-                ref={el => { queueRefs.current[i] = el; }}
-                className="queued-card queued-card--resource"
-              >
-                <OpeningCurrencyCard reward={card} className="opening-resource-card opening-resource-card--queue" />
-              </div>
-            ) : (
-              <CardFace
-                key={card.id}
-                ref={el => { queueRefs.current[i] = el; }}
-                card={card}
-                className="queued-card"
-                holo
-              />
-            )
+            /* The wrapper is not decoration, it is REQUIRED. `queue-enter` animates `transform` on the card
+               with `fill: both`, and a finished animation's transform beats a plain declaration — so the
+               stack's hover lift had to live on a different element or it would never apply. The wrapper
+               also carries the flight transform on collect, which for the same reason no longer has to
+               cancel the entry animation first. */
+            <div
+              key={card.id}
+              ref={el => { queueRefs.current[i] = el; }}
+              className="queued-card-slot"
+              // Ascending, so each card lands on top of the last — it reads as being dealt onto a pile.
+              style={{ zIndex: i + 1 }}
+            >
+              {isResourceReveal ? (
+                <div className="queued-card queued-card--resource">
+                  <OpeningCurrencyCard reward={card} className="opening-resource-card opening-resource-card--queue" />
+                </div>
+              ) : (
+                <CardFace card={card} className="queued-card" holo />
+              )}
+            </div>
           ))}
         </div>
       )}
