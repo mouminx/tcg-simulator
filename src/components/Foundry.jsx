@@ -40,6 +40,10 @@ import {
   hasQueuedOre,
 } from '../game/foundry';
 
+/** Forge row names. Roman numerals rather than "Forge 1" — the tabs are narrow and the game already
+ *  numbers card tiers this way, so it reads as a station name instead of an array index. */
+const FORGE_ROW_LABELS = ['Forge I', 'Forge II', 'Forge III'];
+
 const INGOT_ART = {
   steel: _steel,
   silver: _isilver,
@@ -169,6 +173,51 @@ function getForgeRowProgress(forgeFuelSlot, now) {
   const duration = Math.max(1, forgeFuelSlot.endsAt - forgeFuelSlot.startedAt);
   const elapsed = Math.max(0, Math.min(duration, now - forgeFuelSlot.startedAt));
   return elapsed / duration;
+}
+
+/**
+ * Everything about one forge row's state, derived in one place.
+ *
+ * This was computed twice — once inside `ForgeSmeltingRow` and again in the half's `forgeReadyCount`
+ * reduce — with the `ingredientOk` / `oreRequired` chain written out both times. The selector needs the
+ * same answer for all three rows, and a third copy of a four-condition readiness test is a copy that
+ * will eventually disagree with the ticker about whether a row is running.
+ *
+ * `needs` is the reason a row is NOT ready, which is what the selector has to show: with two rows hidden,
+ * "row II is waiting for coal" has nowhere else to be said.
+ */
+function forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, ingotClaimQueue = {}, now }) {
+  const recipe = oreSlot?.oreType ? SMELT_RECIPES[oreSlot.oreType] : null;
+  const oreRequired = recipe?.oreCount ?? 4;
+  const ingredientRequired = recipe?.ingredient ?? null;
+  const ingredientOk = !ingredientRequired
+    || (ingredientSlot?.ingotType === ingredientRequired.type
+      && (ingredientSlot?.count ?? 0) >= ingredientRequired.count);
+  const oreOk = Boolean(oreSlot?.oreType) && (oreSlot.count ?? 0) >= oreRequired;
+  const fuelOk = (fuelSlot?.loadedCoal ?? 0) > 0;
+  const hasCard = Boolean(slot?.card);
+
+  const progress = getForgeRowProgress(fuelSlot, now);
+  const running = progress > 0 && progress < 1;
+  const ready = hasCard && oreOk && ingredientOk && fuelOk;
+
+  const ingotId = oreSlot?.oreType
+    ? (ORE_TYPES.find(o => o.id === oreSlot.oreType)?.ingotId ?? null)
+    : null;
+  const hasOutput = ingotId ? (ingotClaimQueue[ingotId] ?? 0) > 0 : false;
+
+  // Ordered by what the player has to do first, so the label names one next action rather than listing
+  // everything missing at once.
+  const needs = !hasCard ? 'card'
+    : !fuelOk ? 'coal'
+      : !oreOk ? 'ore'
+        : !ingredientOk ? 'ingredient'
+          : null;
+
+  return {
+    recipe, oreRequired, ingredientRequired, ingredientOk, oreOk, fuelOk, hasCard,
+    progress, running, ready, ingotId, hasOutput, needs,
+  };
 }
 
 function SquareResourceCard({
@@ -656,15 +705,9 @@ function ForgeSmeltingRow({
   onPreviewLeave,
   onCollect,
 }) {
-  const progress = getForgeRowProgress(fuelSlot, now);
-  const running = progress > 0 && progress < 1;
-  const recipe = oreSlot?.oreType ? SMELT_RECIPES[oreSlot.oreType] : null;
-  const rowIngotId = oreSlot?.oreType ? (ORE_TYPES.find(o => o.id === oreSlot.oreType)?.ingotId ?? null) : null;
-  const hasOutput = rowIngotId ? (ingotClaimQueue[rowIngotId] ?? 0) > 0 : false;
-  const oreRequired = recipe?.oreCount ?? 4;
-  const ingredientRequired = recipe?.ingredient ?? null;
-  const ingredientOk = !ingredientRequired || (ingredientSlot?.ingotType === ingredientRequired.type && (ingredientSlot?.count ?? 0) >= ingredientRequired.count);
-  const ready = Boolean(slot.card && oreSlot?.oreType && (oreSlot.count ?? 0) >= oreRequired && ingredientOk && fuelSlot?.loadedCoal > 0);
+  const {
+    progress, running, ready, ingredientRequired, ingredientOk, oreOk, hasOutput,
+  } = forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, ingotClaimQueue, now });
 
   /**
    * Which of the three smelt inputs is actually feeding this cycle.
@@ -676,12 +719,11 @@ function ForgeSmeltingRow({
    * Drives both the stem in the connector below and a lit edge on the slot itself, so "in use" is
    * legible from either. Aux is `off` unconditionally until that slot does something.
    */
-  const oreLive = Boolean(oreSlot?.oreType) && (oreSlot.count ?? 0) >= oreRequired;
   // Keyed by POSITION for the shared connector, then mapped back onto the slots by name below so the
   // markup stays readable. Ingredient sits left, ore in the middle, the unimplemented aux slot right.
   const stemStates = {
     left: !ingredientRequired ? 'off' : (ingredientOk ? 'live' : 'idle'),
-    middle: oreLive ? 'live' : 'idle',
+    middle: oreOk ? 'live' : 'idle',
     right: 'off',
   };
   const slotStem = { ingredient: stemStates.left, ore: stemStates.middle, aux: stemStates.right };
@@ -884,6 +926,14 @@ export default function Foundry({
   const [queueGainByForgeReward, setQueueGainByForgeReward] = useState({});
   const [isCollecting, setIsCollecting] = useState(false);
   const [hoverPreview, setHoverPreview] = useState(null);
+  /**
+   * Which forge row is shown. Deliberately NOT persisted: it is where the player happens to be looking,
+   * not progress, and restoring it would be indistinguishable from the game having switched rows by itself.
+   *
+   * Nothing auto-follows it either. A row finishing does not steal the view — the tab lights up and the
+   * player decides, the same contract the nav's loot diamond has.
+   */
+  const [activeForgeRow, setActiveForgeRow] = useState(0);
   const previousQueueRef = useRef(mineClaimQueue);
   const previousIngotQueueRef = useRef(ingotClaimQueue);
   const previousMineRewardQueueRef = useRef(mineRewardQueue);
@@ -1016,16 +1066,27 @@ export default function Foundry({
   const queueHasOre = hasQueuedOre(mineClaimQueue) || hasQueuedBonusRewards(mineRewardQueue);
   const queueHasIngots = ORE_TYPES.some(ore => (ingotClaimQueue[ore.ingotId] ?? 0) > 0);
   const queueHasForgeRewards = hasQueuedBonusRewards(forgeRewardQueue);
-  const forgeReadyCount = forgeCardSlots.reduce((count, slot, index) => {
-    const oreSlot = forgeOreSlots[index];
-    const ingredientSlot = forgeIngredientSlots[index];
-    const fuelSlot = forgeFuelSlots[index];
-    const recipe = oreSlot?.oreType ? SMELT_RECIPES[oreSlot.oreType] : null;
-    const oreRequired = recipe?.oreCount ?? 4;
-    const ingredientRequired = recipe?.ingredient ?? null;
-    const ingredientOk = !ingredientRequired || (ingredientSlot?.ingotType === ingredientRequired.type && (ingredientSlot?.count ?? 0) >= ingredientRequired.count);
-    return count + (slot?.card && oreSlot?.oreType && (oreSlot.count ?? 0) >= oreRequired && ingredientOk && (fuelSlot?.loadedCoal ?? 0) > 0 ? 1 : 0);
-  }, 0);
+  /**
+   * Every row's state, for the selector and the readiness hint alike.
+   *
+   * The selector shows ONE row at a time, so this is what stops the other two going dark: a hidden row
+   * that finished a smelt, or ran out of coal, has to be able to say so on its tab. Same reasoning as the
+   * nav's loot diamond — a completion the player cannot see is a completion they will not collect.
+   */
+  const forgeStatuses = forgeCardSlots.map((slot, index) => forgeRowStatus({
+    slot,
+    oreSlot: forgeOreSlots[index],
+    ingredientSlot: forgeIngredientSlots[index],
+    fuelSlot: forgeFuelSlots[index],
+    ingotClaimQueue,
+    now,
+  }));
+  const forgeReadyCount = forgeStatuses.filter(s => s.ready).length;
+  // Clamped at read time rather than corrected in an effect: an effect would render one frame against an
+  // out-of-range index first, and `FORGE_SLOT_COUNT` changing is exactly the kind of thing that happens
+  // once, quietly, in a later patch.
+  const activeForgeRowIndex = Math.min(activeForgeRow, Math.max(0, forgeCardSlots.length - 1));
+  const activeForgeSlot = forgeCardSlots[activeForgeRowIndex] ?? null;
 
   function handleMineSlotDrop(slotId, event) {
     event.preventDefault();
@@ -1263,21 +1324,79 @@ export default function Foundry({
             <div className="foundry-half foundry-half--forge">
               <div className="foundry-half__header">
                 <h3 className="foundry-half__title">The Forge</h3>
-                <p className="foundry-half__label">Load cards, fuel the forge with coal, then pair ores to smelt ingots.</p>
+                {/* The summary lives in the header rather than in its own action row below the rows.
+                    That row cost 32px of a half that has none to spare, and everything it said the
+                    selector now says per row — where "needs coal" is actually actionable. */}
+                <p className={`foundry-half__label${forgeReadyCount === 0 ? ' foundry-half__label--warn' : ''}`}>
+                  {forgeReadyCount > 0
+                    ? `${forgeReadyCount} of ${forgeCardSlots.length} rows ready · pick a row below`
+                    : 'Socket a card, load coal, then pair ore to smelt ingots.'}
+                </p>
+              </div>
+
+              {/* One row at a time, chosen here.
+                  Three stacked rows needed 1844px in a half that gets 395px at 1366x768 — 131px per row,
+                  less than one 112px rail tile — so no amount of shrinking fitted them. The selector is
+                  the Shop's shelf pattern: a player has already met it, and it is the only option that
+                  fits a short viewport without redrawing the row itself. */}
+              <div className="forge-selector" role="tablist" aria-label="Forge rows">
+                {forgeCardSlots.map((slot, index) => {
+                  const status = forgeStatuses[index];
+                  const active = index === activeForgeRowIndex;
+                  const state = status.running ? 'running'
+                    : status.ready ? 'ready'
+                      : status.hasCard ? 'waiting' : 'empty';
+                  return (
+                    <button
+                      key={`forge-tab-${slot.slotId}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={`forge-selector__tab forge-selector__tab--${state}${active ? ' forge-selector__tab--active' : ''}`}
+                      onClick={() => setActiveForgeRow(index)}
+                      title={
+                        status.running ? `Smelting — ${Math.round(status.progress * 100)}%`
+                          : status.ready ? 'Ready to smelt'
+                            : status.needs === 'card' ? 'Empty — socket a blacksmith'
+                              : `Waiting for ${status.needs}`
+                      }
+                    >
+                      <span className="forge-selector__name">
+                        {FORGE_ROW_LABELS[index] ?? `Forge ${index + 1}`}
+                      </span>
+                      <span className="forge-selector__state">
+                        {status.running ? `${Math.round(status.progress * 100)}%`
+                          : status.ready ? 'Ready'
+                            : status.needs === 'card' ? 'Empty'
+                              : `Needs ${status.needs}`}
+                      </span>
+                      {/* Progress rides the tab itself, so a hidden row still reads as working. */}
+                      {status.running ? (
+                        <span
+                          className="forge-selector__fill"
+                          style={{ '--forge-tab-progress': status.progress }}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      {/* Output waiting on a row you are not looking at. Same signal as the nav diamond. */}
+                      {status.hasOutput ? <span className="forge-selector__loot" aria-hidden="true" /> : null}
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="foundry-forge-rows">
-                {forgeCardSlots.map((slot, index) => (
+                {activeForgeSlot ? (
                   <ForgeSmeltingRow
-                    key={`forge-row-${slot.slotId}`}
-                    slot={slot}
-                    oreSlot={forgeOreSlots[index]}
-                    ingredientSlot={forgeIngredientSlots[index]}
-                    fuelSlot={forgeFuelSlots[index]}
+                    key={`forge-row-${activeForgeSlot.slotId}`}
+                    slot={activeForgeSlot}
+                    oreSlot={forgeOreSlots[activeForgeRowIndex]}
+                    ingredientSlot={forgeIngredientSlots[activeForgeRowIndex]}
+                    fuelSlot={forgeFuelSlots[activeForgeRowIndex]}
                     now={now}
                     ingotClaimQueue={ingotClaimQueue}
                     queueGainByIngot={queueGainByIngot}
-                    outputTileRef={el => { ingotOutputRefs.current[index] = el; }}
+                    outputTileRef={el => { ingotOutputRefs.current[activeForgeRowIndex] = el; }}
                     dragOverForgeCardSlotId={dragOverForgeCardSlotId}
                     dragOverForgeOreSlotId={dragOverForgeOreSlotId}
                     setDragOverForgeCardSlotId={setDragOverForgeCardSlotId}
@@ -1299,17 +1418,7 @@ export default function Foundry({
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
                     onCollect={handleCollectIngots}
                   />
-                ))}
-              </div>
-
-              <div className="foundry-action-row foundry-action-row--forge">
-                <p className={`foundry-action-hint${forgeReadyCount === 0 ? ' foundry-action-hint--warn' : ''}`}>
-                  {forgeReadyCount > 0
-                    ? `${forgeReadyCount} forge row${forgeReadyCount === 1 ? '' : 's'} ready · arrow fills as smelting completes`
-                    : forgeFuelSlots.every(slot => (slot?.loadedCoal ?? 0) <= 0)
-                      ? 'Load coal into any forge row, then place ore'
-                      : 'Socket cards and place ore from the resource pocket to begin'}
-                </p>
+                ) : null}
               </div>
 
               {queueHasForgeRewards ? (

@@ -9173,6 +9173,12 @@ optgroup {
   letter-spacing: 0.02em;
 }
 
+/* Nothing is ready to smelt. Muted amber rather than the action row's red — this is the resting state of
+   an idle forge, not an error, and it sits in a header that is always on screen. */
+.foundry-half__label--warn {
+  color: rgba(150, 110, 55, 0.9);
+}
+
 /* ── Mine slots ── */
 /* Two columns by default; FOUR on a short viewport, which is a height fix rather than a width preference.
    Measured at 1366x768: each `.foundry-half` gets 395px, and a 2x2 grid of 270px slots needs 551px before
@@ -9572,6 +9578,106 @@ optgroup {
 }
 
 /* ── Forge slot ── */
+/* ── The forge row selector ──
+   Shows one forge row at a time. Three stacked rows needed 1844px in a half that gets 395px at 1366x768,
+   so this is a fit fix, not a preference. Each tab carries its row's state because the two rows it hides
+   would otherwise go dark — a finished smelt the player cannot see is one they will not collect. */
+.forge-selector {
+  display: grid;
+  /* One column per row, equal width. `minmax(0, 1fr)` rather than `1fr` so a long "Needs ingredient"
+     cannot push its tab wider than its siblings — the track minimum of a bare `1fr` is `auto`. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  /* Clears the Bag's tab rail, which overlays this half's right edge on any window below ~1500px.
+     Measured a CONSTANT 9px of overhang from 1024px to 1440px, 3px at 1512px and clear above 1700px —
+     constant because the half's right edge and the viewport-anchored rail move together. 12px covers it.
+
+     Scoped to the selector rather than fixed on `.main`'s padding, which was tried and reverted: the rail
+     is anchored to the VIEWPORT while `.main` is centred inside a 1500px max-width, so a padding big
+     enough to clear the rail at one width overshoots at another and narrows every other view for nothing.
+     The row below keeps the same 9px overhang — that is the documented pre-existing limit, and unlike a
+     tab its right edge is panel padding rather than a click target. */
+  padding-right: 12px;
+}
+
+.forge-selector__tab {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  background: linear-gradient(180deg, rgba(28, 21, 14, 0.72), rgba(18, 13, 9, 0.72));
+  border: 1px solid rgba(180, 130, 40, 0.22);
+  border-radius: 3px;
+  color: #8a7245;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.forge-selector__tab:hover { border-color: rgba(212, 168, 80, 0.45); color: #c9a84c; }
+
+.forge-selector__name {
+  font-family: var(--font-caps);
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.forge-selector__state {
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.forge-selector__tab--active {
+  background: linear-gradient(180deg, rgba(58, 40, 18, 0.85), rgba(32, 22, 12, 0.85));
+  border-color: rgba(212, 168, 80, 0.6);
+  color: #e8be65;
+}
+
+.forge-selector__tab--ready { color: #c9a84c; border-color: rgba(212, 168, 80, 0.38); }
+.forge-selector__tab--running { color: #d8a45e; }
+
+/* The smelt's progress, on the tab. This is the whole reason a hidden row still reads as working —
+   scaleX from a custom property, so the ticker's 100ms `now` update repaints without a reflow. */
+.forge-selector__fill {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(168, 98, 20, 0.9), rgba(232, 190, 101, 0.95));
+  transform: scaleX(var(--forge-tab-progress, 0));
+  transform-origin: left center;
+}
+
+/* Output waiting on this row. Static colour and size, no animation — the same rule the nav's loot
+   diamond follows, because `animation` is switched off entirely at low and medium quality and this is
+   a gameplay signal rather than decoration. */
+.forge-selector__loot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  background: #e8be65;
+  transform: rotate(45deg);
+  box-shadow: 0 0 6px rgba(232, 190, 101, 0.75);
+}
+
 .foundry-forge-rows {
   display: flex;
   flex-direction: column;

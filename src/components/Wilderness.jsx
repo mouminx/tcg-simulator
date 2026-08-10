@@ -25,6 +25,10 @@ import {
   hasQueuedProcessedResources,
 } from '../game/wilderness';
 
+/** Processing row names. "Bench" rather than "Row" — it names the thing rather than its position, the
+ *  same reason the forge's are "Forge I/II/III". */
+const PROCESSING_ROW_LABELS = ['Bench I', 'Bench II', 'Bench III'];
+
 const DIVIDER_RUNES = ['ᚠ', 'ᚱ', 'ᚨ', 'ᛊ', 'ᛏ', 'ᛒ', 'ᛖ', 'ᛞ', 'ᛟ', 'ᚲ', 'ᛗ', 'ᛚ', 'ᚾ', 'ᛜ', 'ᚦ', 'ᚹ'];
 const DIVIDER_REPEAT = 6;
 
@@ -618,6 +622,8 @@ export default function Wilderness({
   const [queueGainByGatheringReward, setQueueGainByGatheringReward] = useState({});
   const [queueGainByProcessingReward, setQueueGainByProcessingReward] = useState({});
   const [hoverPreview, setHoverPreview] = useState(null);
+  /** Which processing bench is shown. Not persisted, and nothing auto-follows it — see the Forge. */
+  const [activeProcessing, setActiveProcessing] = useState(0);
   const previousQueueRef = useRef(gatheringClaimQueue);
   const previousProcessedQueueRef = useRef(processedClaimQueue);
   const previousGatheringRewardQueueRef = useRef(gatheringRewardQueue);
@@ -749,6 +755,27 @@ export default function Wilderness({
   const gatheringRunningCount = gatheringSlots.filter(slot => slot.card && slot.startedAt).length;
   const queueHasResources = hasQueuedGatheredResources(gatheringClaimQueue) || hasQueuedBonusRewards(gatheringRewardQueue);
   const processingRunningCount = processingSlots.filter(slot => slot.card && slot.startedAt).length;
+  /**
+   * Every processing row's state, for the selector. Derived here rather than inside `ProcessingRow`
+   * because the two rows the selector HIDES still have to report themselves on their tabs — the same
+   * reasoning as the Forge's `forgeStatuses`, and as the nav's loot diamond before it.
+   */
+  const processingStatuses = processingSlots.map(slot => {
+    const recipe = slot.inputId ? PROCESSING_RECIPES[slot.inputId] : null;
+    const progress = getProcessingRowProgress(slot, now);
+    const hasCard = Boolean(slot.card);
+    const inputOk = Boolean(recipe) && (slot.inputCount ?? 0) >= recipe.inputCount;
+    return {
+      progress,
+      running: progress > 0 && progress < 1,
+      ready: hasCard && inputOk,
+      hasCard,
+      hasOutput: slot.outputId ? (processedClaimQueue[slot.outputId] ?? 0) > 0 : false,
+      needs: !hasCard ? 'card' : !inputOk ? 'material' : null,
+    };
+  });
+  const activeProcessingIndex = Math.min(activeProcessing, Math.max(0, processingSlots.length - 1));
+  const activeProcessingSlot = processingSlots[activeProcessingIndex] ?? null;
   const queueHasProcessed = hasQueuedProcessedResources(processedClaimQueue) || hasQueuedBonusRewards(processingRewardQueue);
 
   function handleGatheringSlotDrop(slotId, event) {
@@ -982,20 +1009,71 @@ export default function Wilderness({
             <section className="foundry-half wilderness-half wilderness-half--processing">
               <header className="foundry-half__header wilderness-half__header">
                 <h3 className="foundry-half__title">Processing</h3>
-                <p className="foundry-half__label">
-                  Load pocket cards and gathered materials to refine timber, cloth, sealant, alkahest, extract, and leather.
+                {/* Summary in the header rather than an action row under the rows — that row cost 32px of
+                    a half with none to spare, and the selector says it per row. */}
+                <p className={`foundry-half__label${processingRunningCount === 0 ? ' foundry-half__label--warn' : ''}`}>
+                  {processingRunningCount > 0
+                    ? `${processingRunningCount} of ${processingSlots.length} benches active · pick a bench below`
+                    : 'Socket a card and load gathered materials to refine them.'}
                 </p>
               </header>
 
+              {/* Same selector as the Forge, and for the same reason: these rows share the forge's
+                  layout, so they share its height problem — 1066px of inner scroll at 1366x768. The
+                  tabs carry each row's state because the two they hide would otherwise go dark. */}
+              <div className="forge-selector" role="tablist" aria-label="Processing rows">
+                {processingSlots.map((slot, index) => {
+                  const status = processingStatuses[index];
+                  const active = index === activeProcessingIndex;
+                  const state = status.running ? 'running'
+                    : status.ready ? 'ready'
+                      : status.hasCard ? 'waiting' : 'empty';
+                  return (
+                    <button
+                      key={`processing-tab-${slot.slotId}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={`forge-selector__tab forge-selector__tab--${state}${active ? ' forge-selector__tab--active' : ''}`}
+                      onClick={() => setActiveProcessing(index)}
+                      title={
+                        status.running ? `Processing — ${Math.round(status.progress * 100)}%`
+                          : status.ready ? 'Ready to process'
+                            : status.needs === 'card' ? 'Empty — socket a card'
+                              : `Waiting for ${status.needs}`
+                      }
+                    >
+                      <span className="forge-selector__name">
+                        {PROCESSING_ROW_LABELS[index] ?? `Bench ${index + 1}`}
+                      </span>
+                      <span className="forge-selector__state">
+                        {status.running ? `${Math.round(status.progress * 100)}%`
+                          : status.ready ? 'Ready'
+                            : status.needs === 'card' ? 'Empty'
+                              : `Needs ${status.needs}`}
+                      </span>
+                      {status.running ? (
+                        <span
+                          className="forge-selector__fill"
+                          style={{ '--forge-tab-progress': status.progress }}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      {status.hasOutput ? <span className="forge-selector__loot" aria-hidden="true" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="foundry-forge-rows wilderness-processing-rows">
-                {processingSlots.map(slot => (
+                {activeProcessingSlot ? (
                   <ProcessingRow
-                    key={`processing-row-${slot.slotId}`}
-                    slot={slot}
+                    key={`processing-row-${activeProcessingSlot.slotId}`}
+                    slot={activeProcessingSlot}
                     now={now}
                     processedClaimQueue={processedClaimQueue}
                     queueGainByProcessed={queueGainByProcessed}
-                    outputTileRef={el => { processedOutputRefs.current[slot.slotId] = el; }}
+                    outputTileRef={el => { processedOutputRefs.current[activeProcessingSlot.slotId] = el; }}
                     dragOverCardSlotId={dragOverProcessingCardSlotId}
                     dragOverInputSlotId={dragOverProcessingInputSlotId}
                     setDragOverCardSlotId={setDragOverProcessingCardSlotId}
@@ -1011,17 +1089,7 @@ export default function Wilderness({
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
                     onCollect={handleCollectProcessed}
                   />
-                ))}
-              </div>
-
-              <div className="foundry-action-row foundry-action-row--forge wilderness-action-row wilderness-action-row--processing">
-                <p className={`foundry-action-hint${processingRunningCount === 0 ? ' foundry-action-hint--warn' : ''}`}>
-                  {processingRunningCount > 0
-                    ? `${processingRunningCount} processing row${processingRunningCount === 1 ? '' : 's'} active`
-                    : pocket.length > 0
-                      ? 'Drag a card from Pocket into a processing row, then load gathered materials'
-                      : 'Pocket a card first, then load gathered materials to begin'}
-                </p>
+                ) : null}
               </div>
 
               {processingRewardEntries.length > 0 ? (
