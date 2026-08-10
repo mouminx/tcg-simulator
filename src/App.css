@@ -1597,7 +1597,12 @@ optgroup {
    * as well. Clamped for the extremes — at 1024px the floor wins and the last pack can tuck
    * slightly under an open drawer, which is the same trade every view makes at that width.
    */
-  --shelf-pack-w: clamp(100px, calc(20vw - 115px), 210px);
+  /* The `-161px` accounts for the section rail's column (~175px) and its gap, spread across five packs.
+     It was `-115px`, calibrated when the shelf was centred in the whole pane; moving the rail to the left
+     shifted the shelf's centre right by half the rail's width and pushed the last pack further under the
+     Bag drawer than it already sat. Measured, not estimated — see the note on `.shop` above for why this
+     is a viewport formula rather than a fixed size. */
+  --shelf-pack-w: clamp(100px, calc(20vw - 161px), 210px);
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
@@ -1615,18 +1620,41 @@ optgroup {
   flex: 0 0 auto;
 }
 
-/* Category rail. Wraps rather than scrolls — five items always fit in two rows. */
+/* ── Section rail, down the left ──────────────────────────────────────────────
+   It was a centred horizontal row of tabs above the shelf, which reads as page navigation. Stacked down the
+   left it reads as a buy menu — what a shop counter actually has — and the rail gets a fixed narrow column
+   instead of one that reflows into a second row every time a section is added.
+
+   `.shop-layout` is a grid with the rail in column 1 and the active section in column 2. Exactly one
+   section renders at a time (the goods block and the pack map are mutually exclusive), so column 2 always
+   holds precisely one item and no placeholder is needed. */
+.shop-layout {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr);
+  gap: 1.3rem;
+  /* `start`, not `stretch`: a stretched rail would grow to the shelf's height and float its buttons in
+     dead space. */
+  align-items: start;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
 .shop-categories {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.4rem;
-  padding-bottom: 0.2rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
 }
+
 
 .shop-category {
   display: inline-flex;
   align-items: center;
+  /* Label left, count hard right — a menu row, not a chip. Reverts to a chip's centred spacing in the
+     narrow-width fallback above. */
+  justify-content: space-between;
+  width: 100%;
   gap: 0.45rem;
   padding: 0.42rem 0.9rem;
   font-family: var(--font-caps);
@@ -1640,6 +1668,25 @@ optgroup {
   border-radius: 4px;
   cursor: pointer;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+/* NOTE: this block must stay BELOW the `.shop-category` rule above. It was written directly after
+   `.shop-categories` and its `width: auto` silently lost to the base rule's `width: 100%` — same
+   specificity, and the base came later in the file. The buttons stayed full-width and wrapped one per
+   row at 980px, which is what a measurement caught and reading the CSS did not. */
+/* Below ~1000px the rail's column costs the shelf more width than it can spare — five packs plus the
+   shelf's own furniture already sit against the floor of `--shelf-pack-w` there — so it goes back to a
+   wrapping row above the shelf. */
+@media (max-width: 1000px) {
+  .shop-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.8rem;
+  }
+  .shop-categories {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .shop-category { width: auto; justify-content: center; }
 }
 
 .shop-category:hover {

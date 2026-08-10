@@ -139,127 +139,133 @@ export default function Shop({ balance, onBuyPack, onBuyMaterial, packsNavRef, p
           )}
         </div>
 
-        <div className="shop-categories" role="tablist" aria-label="Pack categories">
-          {SECTIONS.map(section => (
-            <button
-              key={section.id}
-              role="tab"
-              aria-selected={activeSection === section.id}
-              className={`shop-category${activeSection === section.id ? ' shop-category--active' : ''}`}
-              onClick={() => setActiveSection(section.id)}
-            >
-              <span className="shop-category__label">{section.label}</span>
-              <span className="shop-category__count">{section.packIds.length}</span>
-            </button>
-          ))}
-        </div>
-
-        {activeSection === 'goods' && (
-          <div className="shop-section shop-section--goods">
-            <div className="shop-section-header">
-              <div className="shop-section-title-row">
-                <h3 className="shop-section-title">Goods</h3>
-                <span className="shop-section-tagline">Materials, delivered to your Bag</span>
-              </div>
-              <p className="shop-section-detail">
-                Bought at a premium over what they sell for — a shortcut when a forge is idle, not a way to
-                turn gold into more gold.
-              </p>
-            </div>
-
-            <ul className="goods-shelf">
-              {SHOP_MATERIALS.map(material => {
-                const affordable = balance >= material.cost;
-                return (
-                  <li key={material.id} className="goods-item">
-                    <span className="goods-item__qty">×{material.qty}</span>
-                    <span className="goods-item__label">{material.label}</span>
-                    <button
-                      type="button"
-                      className="goods-item__buy"
-                      disabled={!affordable}
-                      title={affordable ? undefined : 'Not enough gold'}
-                      onClick={() => onBuyMaterial?.(material.id)}
-                    >
-                      <Gold amount={material.cost} />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+        {/* Two columns: the section rail on the left, the shelf on the right.
+            It was a horizontal row of tabs above the shelf, which read as page navigation. Stacked down
+            the left it reads as a buy menu — the thing a shop counter actually has — and it also gives the
+            rail a fixed narrow column instead of one that reflows into two rows as sections are added. */}
+        <div className="shop-layout">
+          <div className="shop-categories" role="tablist" aria-label="Shop sections">
+            {SECTIONS.map(section => (
+              <button
+                key={section.id}
+                role="tab"
+                aria-selected={activeSection === section.id}
+                className={`shop-category${activeSection === section.id ? ' shop-category--active' : ''}`}
+                onClick={() => setActiveSection(section.id)}
+              >
+                <span className="shop-category__label">{section.label}</span>
+                <span className="shop-category__count">{section.packIds.length}</span>
+              </button>
+            ))}
           </div>
-        )}
 
-        {SECTIONS.filter(section => section.id === activeSection && section.id !== 'goods').map(section => {
-          const packs = section.packIds.map(id => PACK_TYPES[id]).filter(Boolean);
-          return (
-            <div key={section.id} className={`shop-section shop-section--${section.id}`}>
+          {activeSection === 'goods' && (
+            <div className="shop-section shop-section--goods">
               <div className="shop-section-header">
                 <div className="shop-section-title-row">
-                  <h3 className="shop-section-title">{section.label}</h3>
-                  <span className="shop-section-tagline">{section.tagline}</span>
+                  <h3 className="shop-section-title">Goods</h3>
+                  <span className="shop-section-tagline">Materials, delivered to your Bag</span>
                 </div>
-                <p className="shop-section-detail">{section.detail}</p>
+                <p className="shop-section-detail">
+                  Bought at a premium over what they sell for — a shortcut when a forge is idle, not a way to
+                  turn gold into more gold.
+                </p>
               </div>
 
-              {/* Shelf: packs stand on a plank, price tags hang off its front edge.
-                  The `shop-pack-card--{id}` modifier is kept on each pack so the
-                  existing per-pack glow and hover-colour rules still apply. */}
-              <div className="shop-shelf">
-                <div className="shop-shelf__plank" aria-hidden="true" />
-                <div className="shop-shelf__packs">
-                  {packs.map(pt => {
-                    // Same pure function App uses to charge, so the tag cannot show a price that is not
-                    // the one taken. See handleBuyPack.
-                    const price = discountedCost(pt.cost, discountById[pt.id] ?? 0);
-                    const canAfford = balance >= price;
-                    const blocked = !canAfford || packsFull;
-                    return (
-                      <div
-                        key={pt.id}
-                        className={`shelf-pack${blocked ? ' shelf-pack--unaffordable' : ''}`}
+              <ul className="goods-shelf">
+                {SHOP_MATERIALS.map(material => {
+                  const affordable = balance >= material.cost;
+                  return (
+                    <li key={material.id} className="goods-item">
+                      <span className="goods-item__qty">×{material.qty}</span>
+                      <span className="goods-item__label">{material.label}</span>
+                      <button
+                        type="button"
+                        className="goods-item__buy"
+                        disabled={!affordable}
+                        title={affordable ? undefined : 'Not enough gold'}
+                        onClick={() => onBuyMaterial?.(material.id)}
                       >
-                        <button
-                          ref={el => { buyBtnRefs.current[pt.id] = el; }}
-                          className={`shelf-pack__grab shop-pack-card--${pt.id}`}
-                          onClick={() => handleBuy(pt)}
-                          disabled={blocked}
-                          title={
-                            packsFull
-                              ? `Open some packs first — ${maxPacks} unopened is the limit`
-                              : canAfford
-                                ? `Buy ${pt.name} Pack — ${pt.description}`
-                                : `Not enough gold for ${pt.name} Pack`
-                          }
-                          aria-label={`Buy ${pt.name} Pack for ${price}. ${pt.description}`}
+                        <Gold amount={material.cost} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {SECTIONS.filter(section => section.id === activeSection && section.id !== 'goods').map(section => {
+            const packs = section.packIds.map(id => PACK_TYPES[id]).filter(Boolean);
+            return (
+              <div key={section.id} className={`shop-section shop-section--${section.id}`}>
+                <div className="shop-section-header">
+                  <div className="shop-section-title-row">
+                    <h3 className="shop-section-title">{section.label}</h3>
+                    <span className="shop-section-tagline">{section.tagline}</span>
+                  </div>
+                  <p className="shop-section-detail">{section.detail}</p>
+                </div>
+
+                {/* Shelf: packs stand on a plank, price tags hang off its front edge.
+                    The `shop-pack-card--{id}` modifier is kept on each pack so the
+                    existing per-pack glow and hover-colour rules still apply. */}
+                <div className="shop-shelf">
+                  <div className="shop-shelf__plank" aria-hidden="true" />
+                  <div className="shop-shelf__packs">
+                    {packs.map(pt => {
+                      // Same pure function App uses to charge, so the tag cannot show a price that is not
+                      // the one taken. See handleBuyPack.
+                      const price = discountedCost(pt.cost, discountById[pt.id] ?? 0);
+                      const canAfford = balance >= price;
+                      const blocked = !canAfford || packsFull;
+                      return (
+                        <div
+                          key={pt.id}
+                          className={`shelf-pack${blocked ? ' shelf-pack--unaffordable' : ''}`}
                         >
-                          <span className="shop-pack-preview">
-                            <PackCard size="shelf" packType={pt} />
-                          </span>
-                          <span className="shelf-pack__contact" aria-hidden="true" />
-                        </button>
+                          <button
+                            ref={el => { buyBtnRefs.current[pt.id] = el; }}
+                            className={`shelf-pack__grab shop-pack-card--${pt.id}`}
+                            onClick={() => handleBuy(pt)}
+                            disabled={blocked}
+                            title={
+                              packsFull
+                                ? `Open some packs first — ${maxPacks} unopened is the limit`
+                                : canAfford
+                                  ? `Buy ${pt.name} Pack — ${pt.description}`
+                                  : `Not enough gold for ${pt.name} Pack`
+                            }
+                            aria-label={`Buy ${pt.name} Pack for ${price}. ${pt.description}`}
+                          >
+                            <span className="shop-pack-preview">
+                              <PackCard size="shelf" packType={pt} />
+                            </span>
+                            <span className="shelf-pack__contact" aria-hidden="true" />
+                          </button>
 
-                        <div className="shelf-pack__tag">
-                          <span className="shelf-pack__tag-name">{pt.name}</span>
-                          <span className="shelf-pack__tag-price">
-                            {blocked
-                              ? <span className="shelf-pack__tag-short"><Gold amount={price} /></span>
-                              : <Gold amount={price} />}
-                            {discountById[pt.id] > 0 && (
-                              <span className="shelf-pack__discount">−{discountById[pt.id]}%</span>
-                            )}
-                          </span>
+                          <div className="shelf-pack__tag">
+                            <span className="shelf-pack__tag-name">{pt.name}</span>
+                            <span className="shelf-pack__tag-price">
+                              {blocked
+                                ? <span className="shelf-pack__tag-short"><Gold amount={price} /></span>
+                                : <Gold amount={price} />}
+                              {discountById[pt.id] > 0 && (
+                                <span className="shelf-pack__discount">−{discountById[pt.id]}%</span>
+                              )}
+                            </span>
+                          </div>
+
+                          <p className="shelf-pack__desc">{pt.description}</p>
                         </div>
-
-                        <p className="shelf-pack__desc">{pt.description}</p>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {flyingPacks.map(p => (
