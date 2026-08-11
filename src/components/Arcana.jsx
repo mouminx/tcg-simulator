@@ -218,9 +218,16 @@ export default function Arcana({
     if (!resourceId) return;
     const { elementId, tier } = parseElementResourceId(resourceId);
     const essence = ESSENCES_BY_ID[elementId];
-    if (!essence || (resources?.[resourceId] ?? 0) <= 0) return;
+    const isCarriedDrag = carriedResource?.source === 'arcana'
+      && carriedResource.id === resourceId
+      && carriedResource.count > 0;
+    // A Bag drag reserves the stack at dragstart, so its inventory count may be zero by the time it
+    // reaches the ring. The carried stack is authoritative for that path; the inventory count remains
+    // the guard for older/direct Arcana drags.
+    if (!essence || (!isCarriedDrag && (resources?.[resourceId] ?? 0) <= 0)) return;
     setRingSlots(prev => ({ ...prev, [slotId]: { elementId, tier, resourceId } }));
     setCraftResult(null);
+    if (isCarriedDrag) onPlaceCarriedResource?.({ source: 'arcana', id: resourceId });
   }
 
   function handlePlaceCarriedArcanaResource(slotId, event) {

@@ -138,13 +138,14 @@ own recipes. Each caller maps its own slots onto positions.
 "The UI briefly collapses when I collect" turned out to be **four independent layout dependencies**,
 all found by sampling element heights at 40ms through a collect rather than by reading the code:
 
-1. **`flyToTarget` re-pinned the original tile as `position: fixed`**, taking it out of flow — the
+1. **Collection code re-pinned original tiles as `position: fixed`**, taking them out of flow — the
    box it occupied vanished for the length of the animation. Measured as the output cell dropping
    154px → 48px at 241ms and springing back at 843ms (the 600ms callback timer plus a frame). It now
-   flies a **clone appended to `<body>`** and leaves the original in place at `visibility: hidden`,
-   which unlike `display: none` keeps the box. `clearFlyGhosts()` removes the clones and un-hides
-   anything still mounted; the unmount effect does the same, since ghosts live outside React's tree
-   and navigating away mid-flight would otherwise strand them.
+   flies a **clone appended to `<body>`** through `src/game/lootFlight.js` and leaves the original in place
+   at `visibility: hidden`, which unlike `display: none` keeps the box. This is also required for paint
+   order: z-index cannot escape the Foundry/Wilderness halves' overflow clipping. The shared cleanup
+   removes clones and un-hides anything still mounted; every consumer also cleans up on unmount, since
+   ghosts live outside React's tree and navigating away mid-flight would otherwise strand them.
 2. **`.foundry-queue-slots` collapses when its tiles unmount** — and a `min-height` reserve is the
    WRONG fix, which was tried and reverted. A grid distributes leftover space into its rows
    (`align-content` defaults to `normal`, i.e. `stretch`), so a single row of loot stretched to fill
@@ -190,8 +191,11 @@ Key rules:
 
 - fuel is per-row, not shared
 - coal must be loaded manually
-- forge outputs go to `ingotClaimQueue`
+- forge outputs go to `forgeOutputQueues[slotId]`; ownership is per row, even when two rows make the
+  same ingot. A row's Collect subtracts only its press-time snapshot, so output completed during the
+  flight remains waiting
 - extra rewards go to `forgeRewardQueue`
+- the Forge output button and Bonus Queue button are independent. Neither may collect the other's state
 - **the ingredient slot does not care about load order.** It used to require the row's ore to be
   loaded first, since that is what resolves the recipe and names the requirement — so reaching for
   the ingot first was silently refused and every recipe needing a secondary ingredient (silver,
@@ -227,6 +231,22 @@ Two things hold the fix:
 The forge fuel path was the only one at risk: mining, gathering and processing all spread `...slot`
 in their updaters, so those ids survive. **Anything that rebuilds a slot from a normalizer rather
 than spreading the slot needs this check.**
+
+### Mine and Gathering worker workspace
+
+Mine and Gathering cards share the same worker-slot treatment:
+
+- the old circular countdown is gone; `.station-cycle-progress` is a full-width, bottom-anchored bar
+  whose fill grows from elapsed progress, matching the Forge/Processing selector convention
+- the card's right-hand workspace is split vertically. The top half is a deliberately empty
+  `Tool / Buff` socket reserved for future roll-modifying equipment; the bottom half is `Loot`
+- a completed cycle creates a persisted per-slot staging event instead of writing directly into the
+  collection queue. Its loot and bonus rewards appear as one compact horizontal stack beside the card
+- near `releaseAt`, those rendered tiles are cloned into the body-level loot-flight layer and travel
+  downward to the queue. Only when the flight completes does GameApp merge the event into
+  `mineClaimQueue` / `mineRewardQueue` or `gatheringClaimQueue` / `gatheringRewardQueue`
+- staging is owned by GameApp, not the mounted page. It therefore settles while another tab is open,
+  and saved `mineLootStages` / `gatheringLootStages` make a reload during the hand-off lossless
 
 Foundry right rail shows:
 
@@ -315,6 +335,15 @@ Processed outputs currently include:
 - alkahest
 - mycelial extract
 - leather
+
+Pending processed output is stored in `processingOutputQueues[slotId]`, not one resource-wide map. Bench
+buttons collect only their own output; the Processing Bonus Queue has its own callback and cannot be swept
+up by a bench-level Collect. Loading a different recipe into a row is refused while that row still owns a
+different output type, keeping the single output tile truthful.
+
+Material sockets display their live load as `placed / required`, using the selected recipe's actual cost.
+Forge ore, required secondary ingots (including `0 / required` while empty), and Processing inputs all use
+the same compact counter treatment. Inventory and output cards continue to show a plain owned count.
 
 Wilderness right rail shows:
 

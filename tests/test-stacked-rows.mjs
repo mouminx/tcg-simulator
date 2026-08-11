@@ -79,6 +79,34 @@ for (const [tab, sel, label] of [['Foundry','.foundry-half--mine','mine'],['Wild
   check(`${label}: the queue is ONE tile tall (${m.rowH}px), not the 308px a 5-column grid needed`,
     m.rowH <= 90, `${m.rowH}px`);
   console.log(`      (half scroll ${m.halfScroll}px — dominated by the forced 2x2 slots, not the queue)`);
+
+  // A large z-index does not escape an overflow-clipping station panel. Collection visuals therefore have
+  // to leave the station's DOM subtree altogether. Assert the actual paint-layer contract while the flight
+  // is alive, then let it finish before moving to the next station.
+  const collect = page.locator(`${sel} .foundry-collect-btn`, { hasText:'Collect' }).first();
+  await collect.click(); await page.waitForTimeout(35);
+  const flight = await page.evaluate(()=>{
+    const ghosts=[...document.querySelectorAll('body > .loot-flight-ghost')];
+    return { count:ghosts.length,
+      allDirectBody:ghosts.every(g=>g.parentElement===document.body),
+      allFixed:ghosts.every(g=>getComputedStyle(g).position==='fixed'),
+      minZ:Math.min(...ghosts.map(g=>Number(getComputedStyle(g).zIndex)||0)),
+      destinationsInsideViewport:ghosts.every(g=>{
+        const end=new DOMMatrix(g.style.transform);
+        // Use the declared start box. getBoundingClientRect() is already part-way through the transition,
+        // and adding the full destination delta to it would count that movement twice.
+        const x=parseFloat(g.style.left)+parseFloat(g.style.width)/2+end.e;
+        return x>=0 && x<=window.innerWidth;
+      }),
+      sourcesHidden:[...document.querySelectorAll('.foundry-queue-slots > *')]
+        .some(el=>getComputedStyle(el).visibility==='hidden') };
+  });
+  check(`${label}: collected loot flies in the viewport layer, outside the clipped station panel`,
+    flight.count>0 && flight.allDirectBody && flight.allFixed && flight.minZ>9998 && flight.destinationsInsideViewport,
+    JSON.stringify(flight));
+  check(`${label}: its source stays hidden in flow while the clone flies`, flight.sourcesHidden,
+    `hidden=${flight.sourcesHidden}`);
+  await page.waitForTimeout(1100);
 }
 
 // ── The collection queue must be ON SCREEN, and the card must not shrink to achieve it ──
@@ -210,6 +238,28 @@ check('the reveal row fits 1-20 cards on a single line with no scroll',
 check('...and the step shrinks monotonically as the count grows (the overlap is doing the work)',
   twenty.filter(r=>r.step!==null).every((r,i,a)=>i===0||r.step<=a[i-1].step),
   twenty.filter(r=>r.step!==null).map(r=>`${r.n}:${r.step}px`).join(' '));
+
+// The altar clips both axes in normal play. Claiming must clone the complete rendered card (including its
+// artwork) into the same viewport-level flight layer used by production queues.
+const claim=page.locator('.collect-btn',{hasText:'Claim Summon'}).first();
+await claim.click(); await page.waitForTimeout(35);
+const summonFlight=await page.evaluate(()=>{
+  const ghosts=[...document.querySelectorAll('body > .loot-flight-ghost')];
+  return { count:ghosts.length,
+    allDirectBody:ghosts.every(g=>g.parentElement===document.body),
+    allFixed:ghosts.every(g=>getComputedStyle(g).position==='fixed'),
+    withArtwork:ghosts.filter(g=>g.querySelector('img')).length,
+    minZ:Math.min(...ghosts.map(g=>Number(getComputedStyle(g).zIndex)||0)) };
+});
+check('claimed summon cards fly above, rather than inside, the clipped altar',
+  summonFlight.count===rev.cards && summonFlight.allDirectBody && summonFlight.allFixed && summonFlight.minZ>9998,
+  JSON.stringify(summonFlight));
+check('summon flight clones retain the rendered card artwork',
+  summonFlight.withArtwork===summonFlight.count,
+  `${summonFlight.withArtwork}/${summonFlight.count}`);
+await page.waitForTimeout(1200);
+check('viewport flight ghosts are removed after landing',
+  await page.locator('body > .loot-flight-ghost').count()===0);
 
 check('no console errors', errors.length===0, errors.slice(0,3).join(' | '));
 await browser.close();

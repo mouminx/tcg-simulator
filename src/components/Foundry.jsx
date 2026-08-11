@@ -1,6 +1,9 @@
 import { fmt } from '../game/cards';
 import { audioEngine } from '../game/audio/audioEngine';
 import { SOUND_IDS } from '../game/audio/audioLibrary';
+import { clearLootFlightGhosts, flyLootElement } from '../game/lootFlight';
+import { hasProductionOutput } from '../game/productionOutputQueues';
+import { aggregateStagedCounts, LOOT_STAGE_FLIGHT_MS } from '../game/stagedLoot';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -36,7 +39,6 @@ import {
   SMELT_RECIPES,
   getForgeFuelChargeFraction,
   getMiningAffixBonusPercent,
-  getMiningDurationSeconds,
   hasQueuedOre,
 } from '../game/foundry';
 
@@ -186,7 +188,7 @@ function getForgeRowProgress(forgeFuelSlot, now) {
  * `needs` is the reason a row is NOT ready, which is what the selector has to show: with two rows hidden,
  * "row II is waiting for coal" has nowhere else to be said.
  */
-function forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, ingotClaimQueue = {}, now }) {
+function forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, outputQueue = {}, now }) {
   const recipe = oreSlot?.oreType ? SMELT_RECIPES[oreSlot.oreType] : null;
   const oreRequired = recipe?.oreCount ?? 4;
   const ingredientRequired = recipe?.ingredient ?? null;
@@ -201,10 +203,7 @@ function forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, ingotClaimQue
   const running = progress > 0 && progress < 1;
   const ready = hasCard && oreOk && ingredientOk && fuelOk;
 
-  const ingotId = oreSlot?.oreType
-    ? (ORE_TYPES.find(o => o.id === oreSlot.oreType)?.ingotId ?? null)
-    : null;
-  const hasOutput = ingotId ? (ingotClaimQueue[ingotId] ?? 0) > 0 : false;
+  const hasOutput = hasProductionOutput(outputQueue);
 
   // Ordered by what the player has to do first, so the label names one next action rather than listing
   // everything missing at once.
@@ -216,7 +215,7 @@ function forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, ingotClaimQue
 
   return {
     recipe, oreRequired, ingredientRequired, ingredientOk, oreOk, fuelOk, hasCard,
-    progress, running, ready, ingotId, hasOutput, needs,
+    progress, running, ready, hasOutput, needs,
   };
 }
 
@@ -224,6 +223,7 @@ function SquareResourceCard({
   name,
   artSrc,
   count,
+  requiredCount = null,
   description = '',
   className = '',
   tileRef = null,
@@ -234,6 +234,7 @@ function SquareResourceCard({
   onClick = null,
   dataDropTarget = null,
 }) {
+  const showsRequirement = Number.isFinite(requiredCount) && requiredCount > 0;
   const [tipPos, setTipPos] = useState(null);
   const [clampedPos, setClampedPos] = useState(null);
   const tipRef = useRef(null);
@@ -273,7 +274,13 @@ function SquareResourceCard({
         <div className="card-face-inner">
           <div className="card-face-front foundry-square-resource__front">
             <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
-              <span className="foundry-square-resource__count">{fmtCount(count)}</span>
+              <span
+                className={`foundry-square-resource__count${showsRequirement ? ' foundry-square-resource__count--requirement' : ''}`}
+                data-material-requirement={showsRequirement ? `${count ?? 0}/${requiredCount}` : undefined}
+                aria-label={showsRequirement ? `${fmtCount(count)} of ${fmtCount(requiredCount)} required` : undefined}
+              >
+                {showsRequirement ? `${fmtCount(count)} / ${fmtCount(requiredCount)}` : fmtCount(count)}
+              </span>
             </div>
             <div className="foundry-square-resource__art-wrap">
               {artSrc ? <img src={artSrc} alt={name} className="foundry-square-resource__art" /> : null}
@@ -298,6 +305,8 @@ function SquareResourceCard({
 
 function MineSlot({
   slot,
+  stagedLoot = [],
+  stageTargetRef = null,
   isDragOver,
   onDragOver,
   onDragLeave,
@@ -308,13 +317,46 @@ function MineSlot({
   onPreviewEnter,
   onPreviewLeave,
 }) {
+  const stagedTileRefs = useRef({});
+  const stagedFlightsRef = useRef([]);
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
   const running = Boolean(slot.startedAt && slot.endsAt && remainingMs > 0);
   const bonusPercent = slot.card ? getMiningAffixBonusPercent(slot.card) : 0;
-  const durationSeconds = slot.card ? getMiningDurationSeconds(slot.card) : null;
-  const progress = running && durationSeconds ? Math.max(0, Math.min(1, remainingMs / (durationSeconds * 1000))) : 0;
+  const durationMs = slot.startedAt && slot.endsAt ? Math.max(1, slot.endsAt - slot.startedAt) : 0;
+  const progress = running && durationMs ? Math.max(0, Math.min(1, (now - slot.startedAt) / durationMs)) : 0;
   const clearTitle = returnsToPocket ? 'Remove and return to pocket' : 'Remove and return to collection';
+  const stagedOre = aggregateStagedCounts(stagedLoot, 'loot');
+  const stagedRewards = aggregateStagedCounts(stagedLoot, 'rewards');
+  const stagedOreEntries = ORE_TYPES.filter(ore => (stagedOre[ore.id] ?? 0) > 0);
+  const stagedRewardEntries = buildBonusRewardEntries(stagedRewards);
+  const hasStagedLoot = stagedOreEntries.length > 0 || stagedRewardEntries.length > 0;
+  const stagedKey = stagedLoot.map(event => event.id).join('|');
+  const nextReleaseAt = stagedLoot.length > 0 ? Math.min(...stagedLoot.map(event => event.releaseAt)) : null;
+
+  useEffect(() => {
+    clearLootFlightGhosts(stagedFlightsRef.current);
+    if (!stagedKey || !nextReleaseAt) return undefined;
+    const timeout = window.setTimeout(() => {
+      const target = stageTargetRef?.current;
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      Object.values(stagedTileRefs.current).filter(Boolean).forEach((source, index) => {
+        const flight = flyLootElement(source, {
+          x: rect.left + rect.width / 2,
+          y: rect.top + 24,
+          index,
+          durationMs: 500,
+          delayStepMs: 45,
+        });
+        if (flight) stagedFlightsRef.current.push(flight);
+      });
+    }, Math.max(0, nextReleaseAt - Date.now() - LOOT_STAGE_FLIGHT_MS));
+    return () => {
+      window.clearTimeout(timeout);
+      clearLootFlightGhosts(stagedFlightsRef.current);
+    };
+  }, [nextReleaseAt, stagedKey, stageTargetRef]);
 
   return (
     <div
@@ -351,19 +393,53 @@ function MineSlot({
             <CardFace card={slot.card} visualMode="compact" className="foundry-mine-slot__card-face no-twirl" />
           </div>
           <div className="foundry-mine-slot__right">
-            <div
-              className={`foundry-mine-slot__timer${running ? ' foundry-mine-slot__timer--running' : ''}`}
-              style={{ '--mine-progress': progress }}
-              aria-hidden="true"
-              title={running ? `${formatCountdown(remainingSeconds)} remaining` : 'Cycle ready'}
-            >
-              <span className="foundry-mine-slot__timer-core" />
+            <div className="station-tool-slot" aria-label="Mining tool or buff slot">
+              <span className="station-tool-slot__speed">+{bonusPercent}% Speed</span>
+              <div className="station-tool-slot__socket">
+                <span>Tool/Buff</span>
+              </div>
             </div>
-            <div className="foundry-mine-slot__meta">
-              <span className="foundry-mine-slot__meta-line foundry-mine-slot__meta-line--accent">
-                +{bonusPercent}% Speed
-              </span>
+            <div className={`station-loot-stage${hasStagedLoot ? ' station-loot-stage--active' : ''}`}>
+              <div className="station-loot-stage__stack" aria-live="polite">
+                {stagedOreEntries.map(ore => (
+                  <div key={`mine-stage-${ore.id}`} className="station-loot-stage__item">
+                    <SquareResourceCard
+                      name={ore.name}
+                      artSrc={ORE_ART[ore.id]}
+                      count={stagedOre[ore.id]}
+                      description={ore.description}
+                      tileRef={element => { stagedTileRefs.current[`ore-${ore.id}`] = element; }}
+                      className="station-loot-stage__card"
+                    />
+                  </div>
+                ))}
+                {stagedRewardEntries.map(entry => (
+                  <div key={`mine-stage-reward-${entry.id}`} className="station-loot-stage__item">
+                    <SquareResourceCard
+                      name={entry.name}
+                      artSrc={entry.artSrc}
+                      count={entry.count}
+                      description={entry.description}
+                      tileRef={element => { stagedTileRefs.current[`reward-${entry.id}`] = element; }}
+                      className="station-loot-stage__card"
+                    />
+                  </div>
+                ))}
+                {!hasStagedLoot ? <span className="station-loot-stage__empty">Loot</span> : null}
+              </div>
             </div>
+          </div>
+          <div
+            className={`station-cycle-progress${running ? ' station-cycle-progress--running' : ''}`}
+            style={{ '--station-progress': progress }}
+            role="progressbar"
+            aria-label="Mining cycle progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.round(progress * 100)}
+            title={running ? `${formatCountdown(remainingSeconds)} remaining` : 'Cycle ready'}
+          >
+            <span className="station-cycle-progress__fill" />
           </div>
         </>
       ) : (
@@ -426,6 +502,7 @@ function ForgeCardSlot({
 function ForgeOreSlot({ slot, isDragOver, onDragOver, onDragLeave, onDrop, onClear, onLoadFromCarry, onPickUp, carriedResource }) {
   const [pickUpPopover, setPickUpPopover] = useState(null);
   const ore = slot.oreType ? ORE_TYPES.find(entry => entry.id === slot.oreType) : null;
+  const requiredCount = slot.oreType ? SMELT_RECIPES[slot.oreType]?.oreCount ?? null : null;
 
   return (
     <>
@@ -461,6 +538,7 @@ function ForgeOreSlot({ slot, isDragOver, onDragOver, onDragLeave, onDrop, onCle
             name={ore.name}
             artSrc={ORE_ART[ore.id]}
             count={slot.count ?? 0}
+            requiredCount={requiredCount}
             description={ore.description}
             className="foundry-forge-ore-slot__resource"
           />
@@ -614,12 +692,20 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
               name={loadedIngot.name}
               artSrc={INGOT_ART[loadedIngot.id]}
               count={ingredientSlot.count ?? 0}
+              requiredCount={required?.count ?? null}
               description={loadedIngot.description}
               className="foundry-forge-ingredient-slot__resource"
             />
           </div>
         ) : required ? (
           <div className="foundry-forge-ingredient-slot__placeholder">
+            <span
+              className="foundry-crafting-requirement"
+              data-material-requirement={`0/${required.count}`}
+              aria-label={`0 of ${fmtCount(required.count)} required`}
+            >
+              0 / {fmtCount(required.count)}
+            </span>
             <span className="foundry-forge-ingredient-slot__placeholder-rune" aria-hidden="true">ᚲ</span>
             <span className="foundry-forge-ingredient-slot__placeholder-text">
               {INGOT_RESOURCES[required.type]?.name ?? required.type}
@@ -650,10 +736,12 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
   );
 }
 
-function ForgeOutputSlot({ oreSlot, ingotClaimQueue, queueGainByIngot, tileRef = null }) {
+function ForgeOutputSlot({ oreSlot, outputQueue, queueGain, tileRef = null }) {
   const ore = oreSlot?.oreType ? ORE_TYPES.find(entry => entry.id === oreSlot.oreType) : null;
-  const ingot = ore?.ingotId ? INGOT_RESOURCES[ore.ingotId] : null;
-  if (!ore || !ingot) {
+  const queuedEntries = Object.entries(outputQueue ?? {}).filter(([, count]) => count > 0);
+  const outputId = queuedEntries[0]?.[0] ?? ore?.ingotId ?? null;
+  const ingot = outputId ? INGOT_RESOURCES[outputId] : null;
+  if (!ingot) {
     return (
       <div className="foundry-forge-row__output-placeholder">
         <span className="foundry-forge-ore-slot__placeholder-rune" aria-hidden="true">⬢</span>
@@ -666,10 +754,10 @@ function ForgeOutputSlot({ oreSlot, ingotClaimQueue, queueGainByIngot, tileRef =
     <SquareResourceCard
       tileRef={tileRef}
       name={ingot.name}
-      artSrc={INGOT_ART[ore.ingotId]}
-      count={ingotClaimQueue[ore.ingotId] ?? 0}
+      artSrc={INGOT_ART[outputId]}
+      count={queuedEntries.reduce((sum, [, count]) => sum + count, 0)}
       description={ingot.description}
-      gainLabel={queueGainByIngot[ore.ingotId] ? `+ ${queueGainByIngot[ore.ingotId]} ingot` : null}
+      gainLabel={queueGain ? `+ ${queueGain} ingot` : null}
       className="foundry-forge-row__output-card"
     />
   );
@@ -681,8 +769,8 @@ function ForgeSmeltingRow({
   ingredientSlot,
   fuelSlot,
   now,
-  ingotClaimQueue,
-  queueGainByIngot,
+  outputQueue,
+  queueGain,
   outputTileRef,
   dragOverForgeCardSlotId,
   dragOverForgeOreSlotId,
@@ -707,7 +795,7 @@ function ForgeSmeltingRow({
 }) {
   const {
     progress, running, ready, ingredientRequired, ingredientOk, oreOk, hasOutput,
-  } = forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, ingotClaimQueue, now });
+  } = forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, outputQueue, now });
 
   /**
    * Which of the three smelt inputs is actually feeding this cycle.
@@ -815,8 +903,8 @@ function ForgeSmeltingRow({
         <div className="foundry-forge-row__rail foundry-forge-row__rail--single">
           <ForgeOutputSlot
             oreSlot={oreSlot}
-            ingotClaimQueue={ingotClaimQueue}
-            queueGainByIngot={queueGainByIngot}
+            outputQueue={outputQueue}
+            queueGain={queueGain}
             tileRef={outputTileRef}
           />
           <button
@@ -887,11 +975,12 @@ export default function Foundry({
   mineSlotCapacity = 1,
   mineClaimQueue = {},
   mineRewardQueue = {},
+  mineLootStages = [],
   forgeCardSlots = [],
   forgeOreSlots = [],
   forgeIngredientSlots = [],
   forgeFuelSlots = [],
-  ingotClaimQueue = {},
+  forgeOutputQueues = {},
   forgeRewardQueue = {},
   returnsMineCardsToPocket = true,
   nextMineSlotCost = null,
@@ -912,7 +1001,8 @@ export default function Foundry({
   onPickUpForgeFuel,
   onPickUpForgeOre,
   onPickUpForgeIngredient,
-  onCollectIngots,
+  onCollectIngotOutput,
+  onCollectForgeRewards,
   carriedResource = null,
   onPlaceCarriedResource,
 }) {
@@ -921,7 +1011,7 @@ export default function Foundry({
   const [dragOverForgeCardSlotId, setDragOverForgeCardSlotId] = useState(null);
   const [dragOverForgeOreSlotId, setDragOverForgeOreSlotId] = useState(null);
   const [queueGainByOre, setQueueGainByOre] = useState({});
-  const [queueGainByIngot, setQueueGainByIngot] = useState({});
+  const [queueGainByForgeOutput, setQueueGainByForgeOutput] = useState({});
   const [queueGainByMineReward, setQueueGainByMineReward] = useState({});
   const [queueGainByForgeReward, setQueueGainByForgeReward] = useState({});
   const [isCollecting, setIsCollecting] = useState(false);
@@ -935,12 +1025,13 @@ export default function Foundry({
    */
   const [activeForgeRow, setActiveForgeRow] = useState(0);
   const previousQueueRef = useRef(mineClaimQueue);
-  const previousIngotQueueRef = useRef(ingotClaimQueue);
+  const previousForgeOutputQueuesRef = useRef(forgeOutputQueues);
   const previousMineRewardQueueRef = useRef(mineRewardQueue);
   const previousForgeRewardQueueRef = useRef(forgeRewardQueue);
   const queueSlotRefs = useRef({});
   const ingotOutputRefs = useRef({});
   const mineRewardRefs = useRef({});
+  const mineStageTargetRef = useRef(null);
   const forgeRewardRefs = useRef({});
   const collectTimeoutRef = useRef(null);
   // Ghost clones currently in flight, paired with the tile each was cloned from.
@@ -955,11 +1046,7 @@ export default function Foundry({
     if (collectTimeoutRef.current) window.clearTimeout(collectTimeoutRef.current);
     // Ghosts live on <body>, outside this component's tree, so React will not remove them when
     // Foundry unmounts — navigating away mid-flight would otherwise leave them stuck on screen.
-    flyGhostsRef.current.forEach(({ ghost, source }) => {
-      ghost.remove();
-      if (source?.isConnected) source.style.visibility = '';
-    });
-    flyGhostsRef.current = [];
+    clearLootFlightGhosts(flyGhostsRef.current);
   }, []);
 
   useEffect(() => {
@@ -1009,30 +1096,31 @@ export default function Foundry({
   }, [mineRewardQueue]);
 
   useEffect(() => {
-    const previousQueue = previousIngotQueueRef.current ?? {};
+    const previousQueues = previousForgeOutputQueuesRef.current ?? {};
     const nextGains = {};
 
-    for (const ore of ORE_TYPES) {
-      const ingotId = ore.ingotId;
-      const currentCount = ingotClaimQueue[ingotId] ?? 0;
-      const previousCount = previousQueue[ingotId] ?? 0;
-      if (currentCount > previousCount) nextGains[ingotId] = currentCount - previousCount;
-    }
+    Object.entries(forgeOutputQueues).forEach(([slotId, outputs]) => {
+      const previousOutputs = previousQueues[slotId] ?? {};
+      const gained = Object.entries(outputs ?? {}).reduce((sum, [outputId, count]) => (
+        sum + Math.max(0, count - (previousOutputs[outputId] ?? 0))
+      ), 0);
+      if (gained > 0) nextGains[slotId] = gained;
+    });
 
-    previousIngotQueueRef.current = ingotClaimQueue;
+    previousForgeOutputQueuesRef.current = forgeOutputQueues;
     if (Object.keys(nextGains).length === 0) return;
 
-    setQueueGainByIngot(prev => ({ ...prev, ...nextGains }));
+    setQueueGainByForgeOutput(prev => ({ ...prev, ...nextGains }));
     const timeout = window.setTimeout(() => {
-      setQueueGainByIngot(prev => {
+      setQueueGainByForgeOutput(prev => {
         const next = { ...prev };
-        for (const ingotId of Object.keys(nextGains)) delete next[ingotId];
+        for (const slotId of Object.keys(nextGains)) delete next[slotId];
         return next;
       });
     }, 1400);
 
     return () => window.clearTimeout(timeout);
-  }, [ingotClaimQueue]);
+  }, [forgeOutputQueues]);
 
   useEffect(() => {
     const previousQueue = previousForgeRewardQueueRef.current ?? {};
@@ -1071,7 +1159,6 @@ export default function Foundry({
   );
   const forgeRewardEntries = useMemo(() => buildBonusRewardEntries(forgeRewardQueue), [forgeRewardQueue]);
   const queueHasOre = hasQueuedOre(mineClaimQueue) || hasQueuedBonusRewards(mineRewardQueue);
-  const queueHasIngots = ORE_TYPES.some(ore => (ingotClaimQueue[ore.ingotId] ?? 0) > 0);
   const queueHasForgeRewards = hasQueuedBonusRewards(forgeRewardQueue);
   /**
    * Every row's state, for the selector and the readiness hint alike.
@@ -1085,7 +1172,7 @@ export default function Foundry({
     oreSlot: forgeOreSlots[index],
     ingredientSlot: forgeIngredientSlots[index],
     fuelSlot: forgeFuelSlots[index],
-    ingotClaimQueue,
+    outputQueue: forgeOutputQueues[String(slot.slotId)] ?? {},
     now,
   }));
   const forgeReadyCount = forgeStatuses.filter(s => s.ready).length;
@@ -1144,45 +1231,20 @@ export default function Foundry({
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
-      const ghost = el.cloneNode(true);
-      ghost.setAttribute('aria-hidden', 'true');
-      ghost.style.cssText = [
-        'position:fixed',
-        `left:${rect.left}px`,
-        `top:${rect.top}px`,
-        `width:${rect.width}px`,
-        `height:${rect.height}px`,
-        'margin:0',
-        'z-index:99999',
-        'pointer-events:none',
-        'animation:none',
-      ].join(';');
-      document.body.appendChild(ghost);
-
-      // The original keeps its box, so the layout around it never changes.
-      el.style.visibility = 'hidden';
-      flyGhostsRef.current.push({ ghost, source: el });
-
-      ghost.getBoundingClientRect(); // force reflow before transitioning
-      const dx = tx - (rect.left + rect.width / 2);
-      const dy = ty - (rect.top + rect.height / 2);
-      ghost.style.transition = `transform 0.5s ease ${count * 0.07}s, opacity 0.4s ease ${count * 0.07 + 0.1}s`;
-      ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
-      ghost.style.opacity = '0';
-      count++;
+      const flight = flyLootElement(el, { x: tx, y: ty, index: count });
+      if (flight) {
+        flyGhostsRef.current.push(flight);
+        count++;
+      }
     });
     return count;
   }
 
   /** Removes every ghost and un-hides the tiles it flew for. Safe to call more than once. */
   function clearFlyGhosts() {
-    flyGhostsRef.current.forEach(({ ghost, source }) => {
-      ghost.remove();
-      // A tile whose queue emptied has unmounted by now; one that persists (a forge row's output
-      // stays put and just reads zero) has to be made visible again.
-      if (source?.isConnected) source.style.visibility = '';
-    });
-    flyGhostsRef.current = [];
+    // A tile whose queue emptied has unmounted by now; one that persists (a forge row's output
+    // stays put and just reads zero) is restored by the shared cleanup helper.
+    clearLootFlightGhosts(flyGhostsRef.current);
   }
 
   function handleCollectQueue() {
@@ -1207,17 +1269,31 @@ export default function Foundry({
     }, 600);
   }
 
-  function handleCollectIngots() {
-    if (typeof onCollectIngots !== 'function' || !queueHasIngots) return;
+  function handleCollectIngotOutput(slotId) {
+    const outputQueue = forgeOutputQueues[String(slotId)] ?? {};
+    if (typeof onCollectIngotOutput !== 'function' || !hasProductionOutput(outputQueue) || flyGhostsRef.current.length > 0) return;
+    audioEngine.play(SOUND_IDS.rewardClaim);
+    const activeRefs = { [slotId]: ingotOutputRefs.current[String(slotId)] };
+    flyToTarget(activeRefs, collectTargetRef?.current ?? null);
+    collectTimeoutRef.current = window.setTimeout(() => {
+      collectTimeoutRef.current = null;
+      onCollectIngotOutput(slotId);
+      // No rAF and no `cssText = ''` reset any more: `flyToTarget` no longer touches the originals'
+      // geometry, so there is nothing to rebuild — just drop the ghosts and un-hide the tiles.
+      clearFlyGhosts();
+    }, 600);
+  }
+
+  function handleCollectForgeRewards() {
+    if (typeof onCollectForgeRewards !== 'function' || !queueHasForgeRewards || flyGhostsRef.current.length > 0) return;
     audioEngine.play(SOUND_IDS.rewardClaim);
     const activeRefs = Object.fromEntries(
-      Object.entries(ingotOutputRefs.current).filter(([, el]) => el !== null && el !== undefined),
+      Object.entries(forgeRewardRefs.current).filter(([id, el]) => (forgeRewardQueue[id] ?? 0) > 0 && el),
     );
     flyToTarget(activeRefs, collectTargetRef?.current ?? null);
     collectTimeoutRef.current = window.setTimeout(() => {
-      onCollectIngots();
-      // No rAF and no `cssText = ''` reset any more: `flyToTarget` no longer touches the originals'
-      // geometry, so there is nothing to rebuild — just drop the ghosts and un-hide the tiles.
+      collectTimeoutRef.current = null;
+      onCollectForgeRewards();
       clearFlyGhosts();
     }, 600);
   }
@@ -1244,6 +1320,8 @@ export default function Foundry({
                   <MineSlot
                     key={slot.slotId}
                     slot={slot}
+                    stagedLoot={mineLootStages.filter(event => event.slotId === slot.slotId)}
+                    stageTargetRef={mineStageTargetRef}
                     now={now}
                     isDragOver={dragOverMineSlotId === slot.slotId}
                     onDragOver={event => {
@@ -1280,7 +1358,7 @@ export default function Foundry({
                 </div>
               )}
 
-              <div className="foundry-queue">
+              <div ref={mineStageTargetRef} className="foundry-queue">
                 <div className="foundry-inventory__head">
                   <p className="foundry-inventory__label">Collection Queue</p>
                   <button
@@ -1408,9 +1486,9 @@ export default function Foundry({
                     ingredientSlot={forgeIngredientSlots[activeForgeRowIndex]}
                     fuelSlot={forgeFuelSlots[activeForgeRowIndex]}
                     now={now}
-                    ingotClaimQueue={ingotClaimQueue}
-                    queueGainByIngot={queueGainByIngot}
-                    outputTileRef={el => { ingotOutputRefs.current[activeForgeRowIndex] = el; }}
+                    outputQueue={forgeOutputQueues[String(activeForgeSlot.slotId)] ?? {}}
+                    queueGain={queueGainByForgeOutput[String(activeForgeSlot.slotId)] ?? 0}
+                    outputTileRef={el => { ingotOutputRefs.current[String(activeForgeSlot.slotId)] = el; }}
                     dragOverForgeCardSlotId={dragOverForgeCardSlotId}
                     dragOverForgeOreSlotId={dragOverForgeOreSlotId}
                     setDragOverForgeCardSlotId={setDragOverForgeCardSlotId}
@@ -1430,7 +1508,7 @@ export default function Foundry({
                     carriedResource={carriedResource}
                     onPreviewEnter={(element, card) => setHoverPreview(buildHoverCardPreview(element, card))}
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
-                    onCollect={handleCollectIngots}
+                    onCollect={() => handleCollectIngotOutput(activeForgeSlot.slotId)}
                   />
                 ) : null}
               </div>
@@ -1441,11 +1519,8 @@ export default function Foundry({
                     <p className="foundry-inventory__label">Bonus Queue</p>
                     <button
                       className="foundry-collect-btn"
-                      disabled={!queueHasIngots && !queueHasForgeRewards}
-                      onClick={() => {
-                        audioEngine.play(SOUND_IDS.rewardClaim);
-                        onCollectIngots();
-                      }}
+                      disabled={!queueHasForgeRewards}
+                      onClick={handleCollectForgeRewards}
                     >
                       Collect
                     </button>

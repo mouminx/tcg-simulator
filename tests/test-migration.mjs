@@ -1,5 +1,5 @@
 /**
- * Save-23 migration test.
+ * Save-25 migration test.
  *
  * The migration's whole job is a CONSISTENT rename: one legacy id maps to exactly one UUID
  * everywhere it appears. A migration that merely produced valid UUIDs — but a different one per
@@ -36,7 +36,11 @@ await enterGame(page);   // slots: no save is written until one is opened
 await page.waitForTimeout(2600);
 
 const fresh = await page.evaluate(() => JSON.parse(localStorage.getItem('tcg-sim')));
-check('fresh save is at version 23', fresh.version === 23, `got ${fresh.version}`);
+check('fresh save is at version 25', fresh.version === 25, `got ${fresh.version}`);
+check('fresh save has empty staged-loot arrays',
+  Array.isArray(fresh.mineLootStages) && fresh.mineLootStages.length === 0
+    && Array.isArray(fresh.gatheringLootStages) && fresh.gatheringLootStages.length === 0,
+  `mine=${JSON.stringify(fresh.mineLootStages)} gathering=${JSON.stringify(fresh.gatheringLootStages)}`);
 check('fresh save has real slot arrays', Array.isArray(fresh.mineSlots) && fresh.mineSlots.length > 0,
   `mineSlots=${fresh.mineSlots?.length} forge=${fresh.forgeCardSlots?.length} gather=${fresh.gatheringSlots?.length} proc=${fresh.processingSlots?.length} exped=${fresh.expeditionUnitSlots?.length}`);
 
@@ -65,6 +69,13 @@ const seeded = await page.evaluate(() => {
   save.gatheringSlots = save.gatheringSlots.map((s, i) => (i === 0 ? { ...s, card: { ...B } } : s));
   save.forgeCardSlots = save.forgeCardSlots.map((s, i) => (i === 0 ? { ...s, card: { ...C } } : s));
   save.processingSlots = save.processingSlots.map((s, i) => (i === 0 ? { ...s, card: { ...C } } : s));
+  // v23 and older stored production output globally by resource type. v24 attributes it to rows.
+  delete save.forgeOutputQueues;
+  save.ingotClaimQueue = { ...(save.ingotClaimQueue ?? {}), steel: 3 };
+  save.forgeOreSlots = save.forgeOreSlots.map((s, i) => (i === 0 ? { ...s, oreType: 'iron', count: 4 } : s));
+  delete save.processingOutputQueues;
+  save.processedClaimQueue = { ...(save.processedClaimQueue ?? {}), timber: 2 };
+  save.processingSlots = save.processingSlots.map((s, i) => (i === 0 ? { ...s, outputId: 'timber' } : s));
   save.expeditionUnitSlots = save.expeditionUnitSlots.map((s, i) => (i === 0 ? { ...s, card: { ...D } } : s));
 
   // A run mid-reveal carries a third and fourth copy of the same card.
@@ -88,7 +99,15 @@ await enterGame(page);
 
 const after = await page.evaluate(() => JSON.parse(localStorage.getItem('tcg-sim')));
 
-check('migrated save is at version 23', after.version === 23, `got ${after.version}`);
+check('migrated save is at version 25', after.version === 25, `got ${after.version}`);
+check('older saves receive empty staged-loot arrays without disturbing their queues',
+  Array.isArray(after.mineLootStages) && after.mineLootStages.length === 0
+    && Array.isArray(after.gatheringLootStages) && after.gatheringLootStages.length === 0,
+  `mine=${JSON.stringify(after.mineLootStages)} gathering=${JSON.stringify(after.gatheringLootStages)}`);
+check('legacy Forge output migrated onto its matching row',
+  after.forgeOutputQueues?.['1']?.steel === 3, JSON.stringify(after.forgeOutputQueues));
+check('legacy Processing output migrated onto its matching bench',
+  after.processingOutputQueues?.['1']?.timber === 2, JSON.stringify(after.processingOutputQueues));
 check('collection kept all 4 cards', after.collection.length === 4, `got ${after.collection.length}`);
 
 const ids = after.collection.map(c => c.id);

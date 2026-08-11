@@ -322,6 +322,11 @@ and differently depending on whether you used the ✕ or picked it up.
 
 Important interactions:
 
+- every owned Bag tile supports both **click-to-carry** and native **drag-and-drop**. Native drags reserve
+  the stack through the same `handleBeginCarry` path, then `App.jsx` routes the drop to the existing station
+  placement handlers; a rejected/cancelled drag restores the reservation exactly once
+- `RESOURCE_DRAG_MIME` distinguishes Bag drags from card drags. The browser drag ghost is transparent;
+  `carried-resource-cursor` is the single held visual and resolves the same artwork as the source tile
 - right-click split-stack / carry flow is implemented for resource inventories
 - Arcana resources and Arcana crafted items use the same split-stack carry flow
 - counts animate upward when collected amounts increase
@@ -363,6 +368,11 @@ so it inherits `currentColor`), a "Bag" label, and the total item count.
 Contents are not mounted while collapsed — the panel holds ~80 resource icons.
 
 The older separate `resource pocket` gameplay is removed from the main app flow. Carry placement is now direct from inventory into valid targets.
+
+The Bag's `inventoryRef` is attached to the always-visible **Bag tab**, not the drawer header. The closed
+drawer translates its header completely beyond the viewport; using that hidden header as a collection-flight
+target sent gathered cards through the Wilderness panel's right edge and offscreen. The tab stays onscreen in
+both drawer states and is the stable landing point for Foundry, Wilderness and summon resource flights.
 
 ---
 

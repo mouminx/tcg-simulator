@@ -15,6 +15,11 @@ for (const vp of [{w:1366,h:768},{w:1280,h:800},{w:1440,h:900}]) {
   await page.evaluate(s=>{ const v=JSON.parse(localStorage.getItem('tcg-sim'));
     v.collection=s; v.pocket=s; v.pocketCapacity=6; v.balance=500;
     v.gatheredInventory={wood:40,fiber:40,hide:20}; v.graphicsSettings={quality:'low'};
+    v.processingSlots=[
+      {slotId:1,card:null,inputId:'wood',inputCount:2,startedAt:null,endsAt:null,outputId:'timber'},
+      {slotId:2,card:null,inputId:'resin',inputCount:1,startedAt:null,endsAt:null,outputId:'sealant'},
+      {slotId:3,card:null,inputId:'hide',inputCount:6,startedAt:null,endsAt:null,outputId:'leather'},
+    ];
     localStorage.setItem('tcg-sim', JSON.stringify(v)); }, cards);
   await page.reload({waitUntil:'networkidle'}); await page.waitForTimeout(2000); await enterGame(page);
   const sp = page.locator('.splash button',{hasText:/^(Enter|Resume)$/}).first();
@@ -41,9 +46,13 @@ for (const vp of [{w:1366,h:768},{w:1280,h:800},{w:1440,h:900}]) {
     check(`${tag}: every tab names a next action`, m.states.every(s=>/Empty|Needs|Ready|%/.test(s)), m.states.join(' | '));
     console.log(`      half ${m.halfH}px, inner scroll ${m.scroll}px`);
     if (label==='processing') {
+      check(`${tag}: wood shows its placed / required amount`,
+        (await page.locator('[data-material-requirement="2/4"]').count())===1);
       await page.locator('.forge-selector__tab').nth(1).click(); await page.waitForTimeout(400);
       const sw = await page.evaluate(()=>({ active:[...document.querySelectorAll('.forge-selector__tab')].map(t=>t.getAttribute('aria-selected')==='true'), rows:document.querySelectorAll('.foundry-forge-row').length }));
       check(`${tag}: switching benches shows exactly one row`, sw.active[1]&&!sw.active[0]&&sw.rows===1, JSON.stringify(sw));
+      check(`${tag}: resin switches to its different recipe requirement`,
+        (await page.locator('[data-material-requirement="1/3"]').count())===1);
     }
   }
   await page.close();

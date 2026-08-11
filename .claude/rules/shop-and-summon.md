@@ -336,6 +336,12 @@ at once rather than a single flip. It also scrolls the queue strip into view —
 past the fold on a short window, which would defeat a button whose whole job is showing you
 everything at once.
 
+**Claim Summon flies viewport-level clones, not the queued originals.** The altar deliberately uses
+overflow clipping, so no z-index on a descendant can keep a travelling card visible once it crosses that
+box. `src/game/lootFlight.js` clones each complete card (artwork included) directly under `<body>`, hides the
+source with `visibility: hidden` so the queue keeps its size, and removes the transient clone after landing
+or when the opening unmounts. Foundry and Wilderness collection flights use the same helper and contract.
+
 ### The altar's group tabs
 
 `PACK_GROUPS` in cards.js; tabs rendered by `UnpackPage`. **Packs** is the default; **Treasure** is separate

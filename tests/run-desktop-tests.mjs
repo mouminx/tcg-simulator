@@ -69,7 +69,7 @@ check('creating an SSF save mounted the game', r.mounted === true && r.booting =
   `opened=${r.openedSlot} picked=${r.pickedMode} mounted=${r.mounted}`);
 check('a new SSF save starts at 25', r.headerBalance === 25, `balance=${r.headerBalance}`);
 check('save-1.json was created', fs.existsSync(slotFile(1)));
-check('it is valid JSON at version 23', readJson(slotFile(1))?.version === 23,
+check('it is valid JSON at version 25', readJson(slotFile(1))?.version === 25,
   `version=${readJson(slotFile(1))?.version}`);
 check('no other slot files exist yet',
   !fs.existsSync(slotFile(2)) && !fs.existsSync(slotFile(3)));

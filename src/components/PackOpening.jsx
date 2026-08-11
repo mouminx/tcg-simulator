@@ -6,6 +6,7 @@ import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId }
 import { PACK_TYPES, getPackGroup } from '../game/cards';
 import { audioEngine } from '../game/audio/audioEngine';
 import { SOUND_IDS } from '../game/audio/audioLibrary';
+import { clearLootFlightGhosts, flyLootElement } from '../game/lootFlight';
 
 const PHASES = { INTRO: 'intro', SPLITTING: 'splitting', REVEALING: 'revealing', ESSENCE: 'essence', DONE: 'done' };
 
@@ -464,6 +465,7 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
   const queueRefs = useRef([]);
   const queueStripRef = useRef(null);
   const essenceRefs = useRef([]);
+  const flyGhostsRef = useRef([]);
   const revealCards = cards.length > 0 ? cards : resourceCards;
   const isResourceReveal = cards.length === 0 && resourceCards.length > 0;
   /**
@@ -472,6 +474,12 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
    * it, so a future card pack that happened to yield resources would not accidentally get the chest.
    */
   const isTreasure = getPackGroup(packType?.id) === 'treasure';
+
+  useEffect(() => () => {
+    // Flight ghosts live under <body>, outside React's tree. Claiming normally unmounts this component,
+    // and navigating away mid-flight must clean them up too.
+    clearLootFlightGhosts(flyGhostsRef.current);
+  }, []);
 
   function startEssenceRewardSequence() {
     if (isResourceReveal || essenceDrops.length === 0) {
@@ -594,14 +602,8 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
       const ty = targetRect.top + targetRect.height / 2;
       queueRefs.current.forEach((el, i) => {
         if (!el) return;
-        el.style.animation = 'none';
-        el.getBoundingClientRect(); // force reflow
-        const rect = el.getBoundingClientRect();
-        const dx = tx - (rect.left + rect.width / 2);
-        const dy = ty - (rect.top + rect.height / 2);
-        el.style.transition = `transform 0.5s ease ${i * 0.07}s, opacity 0.4s ease ${i * 0.07 + 0.1}s`;
-        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
-        el.style.opacity = '0';
+        const flight = flyLootElement(el, { x: tx, y: ty, index: i });
+        if (flight) flyGhostsRef.current.push(flight);
       });
     }
 
@@ -612,19 +614,21 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
       const ty = targetRect.top + targetRect.height / 2;
       essenceRefs.current.forEach((el, i) => {
         if (!el || i >= visibleEssenceCards) return;
-        el.style.animation = 'none';
-        el.getBoundingClientRect();
-        const rect = el.getBoundingClientRect();
-        const dx = tx - (rect.left + rect.width / 2);
-        const dy = ty - (rect.top + rect.height / 2);
-        el.style.transition = `transform 0.52s ease ${i * 0.07}s, opacity 0.4s ease ${i * 0.07 + 0.1}s`;
-        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
-        el.style.opacity = '0';
+        const flight = flyLootElement(el, {
+          x: tx,
+          y: ty,
+          index: i,
+          durationMs: 520,
+        });
+        if (flight) flyGhostsRef.current.push(flight);
       });
     }
 
     const longestFlight = Math.max(queueRefs.current.length, visibleEssenceCards) * 70;
-    setTimeout(onDone, 750 + longestFlight);
+    setTimeout(() => {
+      onDone();
+      clearLootFlightGhosts(flyGhostsRef.current);
+    }, 750 + longestFlight);
   }
 
   useEffect(() => {
@@ -774,9 +778,8 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
           {queuedCards.map((card, i) => (
             /* The wrapper is not decoration, it is REQUIRED. `queue-enter` animates `transform` on the card
                with `fill: both`, and a finished animation's transform beats a plain declaration — so the
-               stack's hover lift had to live on a different element or it would never apply. The wrapper
-               also carries the flight transform on collect, which for the same reason no longer has to
-               cancel the entry animation first. */
+               stack's hover lift had to live on a different element or it would never apply. It also gives
+               the viewport-level collection clone one exact, stable card-sized box to copy. */
             <div
               key={card.id}
               ref={el => { queueRefs.current[i] = el; }}

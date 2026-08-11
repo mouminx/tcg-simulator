@@ -62,6 +62,16 @@ for (const vp of [{ w: 1366, h: 768 }, { w: 1280, h: 800 }, { w: 1512, h: 982 }]
   await boot(page, {
     collection: smiths, pocket: smiths, pocketCapacity: 6, balance: 500,
     oreInventory: { coal: 40, iron: 40, stone: 20 },
+    forgeOreSlots: [
+      { slotId: 1, oreType: 'iron', count: 2 },
+      { slotId: 2, oreType: 'gold', count: 5 },
+      { slotId: 3, oreType: 'starlit', count: 9 },
+    ],
+    forgeIngredientSlots: [
+      { slotId: 1, ingotType: null, count: 0 },
+      { slotId: 2, ingotType: null, count: 0 },
+      { slotId: 3, ingotType: 'platinum', count: 1 },
+    ],
     graphicsSettings: { quality: 'low' },
   });
 
@@ -94,6 +104,8 @@ for (const vp of [{ w: 1366, h: 768 }, { w: 1280, h: 800 }, { w: 1512, h: 982 }]
   check(`${label}: no horizontal page overflow`, m.overflowX === 0, `${m.overflowX}px`);
   check(`${label}: the selector tabs clear the Bag's tab rail`, m.railLeft === null || m.tabsRight <= m.railLeft,
     `tabs right ${m.tabsRight} vs rail left ${m.railLeft}`);
+  check(`${label}: the active iron slot shows its recipe-specific placed / required amount`,
+    (await page.locator('[data-material-requirement="2/4"]').count()) === 1);
   console.log(`      forge half ${m.halfH}px, inner scroll ${m.halfScroll}px`);
 
   if (vp.w === 1366) {
@@ -123,6 +135,12 @@ for (const vp of [{ w: 1366, h: 768 }, { w: 1280, h: 800 }, { w: 1512, h: 982 }]
       (await page.locator('.foundry-forge-row').count()) === 1);
     check('1366: the now-hidden row I still reports its state on its tab',
       /Empty|Needs|Ready|%/.test(after[0].state), `"${after[0].state}"`);
+    const goldRequirements = await page.locator('[data-material-requirement]').evaluateAll(nodes =>
+      nodes.map(node => ({ value: node.dataset.materialRequirement, text: node.textContent.trim() })));
+    check('1366: a different Forge recipe shows its own ore cost and its empty ingredient cost',
+      goldRequirements.some(entry => entry.value === '5/6' && entry.text === '5 / 6')
+        && goldRequirements.some(entry => entry.value === '0/1' && entry.text === '0 / 1'),
+      JSON.stringify(goldRequirements));
 
     // A running row's progress must be legible from its tab while hidden.
     await page.evaluate(() => {
@@ -130,7 +148,7 @@ for (const vp of [{ w: 1366, h: 768 }, { w: 1280, h: 800 }, { w: 1512, h: 982 }]
       const now = Date.now();
       // Row 0 mid-smelt; row 1 holding finished output.
       save.forgeFuelSlots[0] = { ...save.forgeFuelSlots[0], loadedCoal: 3, startedAt: now - 10000, endsAt: now + 10000 };
-      save.ingotClaimQueue = { ...(save.ingotClaimQueue ?? {}), steel: 4 };
+      save.forgeOutputQueues = { ...(save.forgeOutputQueues ?? {}), 2: { steel: 4 } };
       save.forgeOreSlots[1] = { ...save.forgeOreSlots[1], oreType: 'iron', count: 8 };
       localStorage.setItem('tcg-sim', JSON.stringify(save));
     });

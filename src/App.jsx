@@ -10,12 +10,18 @@ import Wilderness from './components/Wilderness';
 import Expedition from './components/Expedition';
 import CardPocket from './components/CardPocket';
 import GoldBurst, { streamSizeForAmount } from './components/GoldBurst';
-import Inventory from './components/Inventory';
+import Inventory, { RESOURCE_DRAG_MIME } from './components/Inventory';
 import SceneBackdrop from './components/SceneBackdrop';
 import SplashScreen from './components/SplashScreen';
 import AudioSettings from './components/AudioSettings';
 import AccountMenu from './components/AccountMenu';
 import { ARCANA_ITEMS_BY_ID, DEFAULT_RESOURCES } from './game/arcana';
+import {
+  getArcanaResourceArt,
+  getIngotArt,
+  getOreArt,
+  getResourceArt,
+} from './game/resourceArt';
 import { openBlankSlatePack } from './game/arcanaPackOpening';
 import {
   ORE_TYPES,
@@ -61,7 +67,6 @@ import {
   createGatheringSlots,
   createProcessingSlots,
   hasQueuedGatheredResources,
-  hasQueuedProcessedResources,
   normalizeProcessingSlots,
   PROCESSING_RECIPES,
   normalizeGatheringSlots,
@@ -88,6 +93,21 @@ import {
 } from './game/expedition';
 import { getStorage, setStorage } from './game/storage';
 import { SHOP_MATERIALS, discountedCost, findUnsellableMaterials, getRotationOffers } from './game/shop';
+import {
+  addProductionOutput,
+  createProductionOutputQueues,
+  hasProductionOutput,
+  mergeProductionOutputs,
+  normalizeProductionOutputQueues,
+  subtractProductionOutputs,
+  totalProductionOutputs,
+} from './game/productionOutputQueues';
+import {
+  aggregateStagedCounts,
+  createStagedLootEvents,
+  normalizeStagedLootEvents,
+  partitionStagedLoot,
+} from './game/stagedLoot';
 import { getClient, getProfile, getSession, isOnlineConfigured, signOut } from './game/account';
 import { SLOT_MODES, adapterForSlot, deleteSlot, listSlots } from './game/slots';
 import LoginPage from './components/LoginPage';
@@ -191,7 +211,35 @@ const TAB_ACCENTS = {
 // still gets a scrolling pane, which is the pre-existing behaviour.
 const FIT_VIEWS = new Set([VIEWS.SHOP, VIEWS.COLLECTION, VIEWS.FOUNDRY, VIEWS.WILDERNESS]);
 
-const SAVE_VERSION = 23;
+const SAVE_VERSION = 25;
+const FORGE_OUTPUT_IDS = Object.keys(DEFAULT_INGOT_INVENTORY);
+const PROCESSING_OUTPUT_IDS = Object.keys(DEFAULT_PROCESSED_INVENTORY);
+const FORGE_SLOT_IDS = createForgeCardSlots().map(slot => slot.slotId);
+const PROCESSING_SLOT_IDS = createProcessingSlots().map(slot => slot.slotId);
+
+function normalizeSavedForgeOutputs(savedState) {
+  const oreSlots = normalizeForgeOreSlots(savedState.forgeOreSlots);
+  return normalizeProductionOutputQueues({
+    // `withDefaults` adds the new empty map to every old save before GameApp mounts. Trust it only
+    // when the save version could actually have written it, otherwise it would mask the legacy queue.
+    savedQueues: (savedState.version ?? 0) >= 24 ? savedState.forgeOutputQueues : null,
+    slotIds: FORGE_SLOT_IDS,
+    validOutputIds: FORGE_OUTPUT_IDS,
+    legacyQueue: savedState.ingotClaimQueue,
+    legacySlotOutputs: Object.fromEntries(oreSlots.map(slot => [slot.slotId, ORE_TO_INGOT[slot.oreType] ?? null])),
+  });
+}
+
+function normalizeSavedProcessingOutputs(savedState) {
+  const slots = normalizeProcessingSlots(savedState.processingSlots);
+  return normalizeProductionOutputQueues({
+    savedQueues: (savedState.version ?? 0) >= 24 ? savedState.processingOutputQueues : null,
+    slotIds: PROCESSING_SLOT_IDS,
+    validOutputIds: PROCESSING_OUTPUT_IDS,
+    legacyQueue: savedState.processedClaimQueue,
+    legacySlotOutputs: Object.fromEntries(slots.map(slot => [slot.slotId, slot.outputId ?? null])),
+  });
+}
 const POCKET_SYSTEM_VERSION = 1;
 const DEFAULT_MARKET = { legendarySlots: 0, mythicSlots: 0 };
 const DEFAULT_POCKET_CAPACITY = 3;
@@ -206,6 +254,20 @@ const POCKET_SLOT_COSTS = {
 
 function sameCardId(left, right) {
   return String(left) === String(right);
+}
+
+/** Resolve the same artwork the Bag tile uses for the stack currently under the pointer. */
+function getCarriedStackArt(stack) {
+  if (!stack) return null;
+  if (stack.source === 'ore') return getOreArt(stack.id);
+  if (stack.source === 'ingot') return getIngotArt(INGOT_RESOURCES[stack.id]?.artKey ?? stack.id);
+  if (stack.source === 'arcana') return getArcanaResourceArt(stack.id);
+  if (stack.source === 'arcana-item') return getResourceArt(ARCANA_ITEMS_BY_ID[stack.id]?.artKey ?? stack.id);
+  if (stack.source === 'gathered') {
+    const resource = ALL_GATHERING_RESOURCES.find(entry => entry.id === stack.id);
+    return getResourceArt(resource?.artKey ?? stack.id);
+  }
+  return getResourceArt(stack.id);
 }
 
 function clampPocketCapacity(capacity) {
@@ -235,6 +297,14 @@ function mergeBonusRewardQueue(left = DEFAULT_BONUS_REWARD_QUEUE, right = {}) {
   Object.entries(right).forEach(([key, amount]) => {
     if (!amount) return;
     next[key] = (next[key] ?? 0) + amount;
+  });
+  return next;
+}
+
+function subtractQueuedCounts(current = {}, collected = {}) {
+  const next = { ...current };
+  Object.entries(collected).forEach(([key, amount]) => {
+    next[key] = Math.max(0, (current[key] ?? 0) - (amount ?? 0));
   });
   return next;
 }
@@ -537,19 +607,21 @@ function freshSave() {
     mineSlotCapacity: DEFAULT_MINE_SLOT_CAPACITY,
     mineClaimQueue: DEFAULT_ORE_INVENTORY,
     mineRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
+    mineLootStages: [],
     forgeCardSlots: createForgeCardSlots(),
     forgeOreSlots: createForgeOreSlots(),
     forgeIngredientSlots: createForgeIngredientSlots(),
     forgeFuelSlots: createForgeFuelSlots(),
-    ingotClaimQueue: DEFAULT_INGOT_INVENTORY,
+    forgeOutputQueues: createProductionOutputQueues(FORGE_SLOT_IDS),
     forgeRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
     gatheredInventory: DEFAULT_GATHERING_INVENTORY,
     processedInventory: DEFAULT_PROCESSED_INVENTORY,
     gatheringSlots: createGatheringSlots(),
     gatheringClaimQueue: DEFAULT_GATHERING_INVENTORY,
     gatheringRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
+    gatheringLootStages: [],
     processingSlots: createProcessingSlots(),
-    processedClaimQueue: DEFAULT_PROCESSED_INVENTORY,
+    processingOutputQueues: createProductionOutputQueues(PROCESSING_SLOT_IDS),
     processingRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
     expeditionDifficultyId: EXPEDITION_DIFFICULTIES[0].id,
     expeditionUnitSlots: createExpeditionUnitSlots(),
@@ -652,11 +724,12 @@ function GameApp({ savedState, account }) {
   const [mineSlots, setMineSlots] = useState(() => normalizeMiningSlots(savedState.mineSlots, savedState.mineSlotCapacity));
   const [mineClaimQueue, setMineClaimQueue] = useState(() => ({ ...DEFAULT_ORE_INVENTORY, ...(savedState.mineClaimQueue ?? {}) }));
   const [mineRewardQueue, setMineRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.mineRewardQueue ?? {}) }));
+  const [mineLootStages, setMineLootStages] = useState(() => normalizeStagedLootEvents(savedState.mineLootStages));
   const [forgeCardSlots, setForgeCardSlots] = useState(() => normalizeForgeCardSlots(savedState.forgeCardSlots));
   const [forgeOreSlots, setForgeOreSlots] = useState(() => normalizeForgeOreSlots(savedState.forgeOreSlots));
   const [forgeIngredientSlots, setForgeIngredientSlots] = useState(() => normalizeForgeIngredientSlots(savedState.forgeIngredientSlots));
   const [forgeFuelSlots, setForgeFuelSlots] = useState(() => normalizeForgeFuelSlots(savedState.forgeFuelSlots, undefined, savedState.forgeFuel));
-  const [ingotClaimQueue, setIngotClaimQueue] = useState(() => ({ ...DEFAULT_INGOT_INVENTORY, ...(savedState.ingotClaimQueue ?? {}) }));
+  const [forgeOutputQueues, setForgeOutputQueues] = useState(() => normalizeSavedForgeOutputs(savedState));
   const [forgeRewardQueue, setForgeRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.forgeRewardQueue ?? {}) }));
 
 
@@ -665,9 +738,18 @@ function GameApp({ savedState, account }) {
   const [gatheringSlots, setGatheringSlots] = useState(() => normalizeGatheringSlots(savedState.gatheringSlots));
   const [gatheringClaimQueue, setGatheringClaimQueue] = useState(() => ({ ...DEFAULT_GATHERING_INVENTORY, ...(savedState.gatheringClaimQueue ?? {}) }));
   const [gatheringRewardQueue, setGatheringRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.gatheringRewardQueue ?? {}) }));
+  const [gatheringLootStages, setGatheringLootStages] = useState(() => normalizeStagedLootEvents(savedState.gatheringLootStages));
   const [processingSlots, setProcessingSlots] = useState(() => normalizeProcessingSlots(savedState.processingSlots));
-  const [processedClaimQueue, setProcessedClaimQueue] = useState(() => ({ ...DEFAULT_PROCESSED_INVENTORY, ...(savedState.processedClaimQueue ?? {}) }));
+  const [processingOutputQueues, setProcessingOutputQueues] = useState(() => normalizeSavedProcessingOutputs(savedState));
   const [processingRewardQueue, setProcessingRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.processingRewardQueue ?? {}) }));
+  const pendingIngotOutputs = useMemo(
+    () => totalProductionOutputs(forgeOutputQueues, FORGE_OUTPUT_IDS),
+    [forgeOutputQueues],
+  );
+  const pendingProcessedOutputs = useMemo(
+    () => totalProductionOutputs(processingOutputQueues, PROCESSING_OUTPUT_IDS),
+    [processingOutputQueues],
+  );
   const [lootSeen, setLootSeen] = useState(() => ({ ...DEFAULT_LOOT_SEEN, ...(savedState.lootSeen ?? {}) }));
   /**
    * Collection size as of the last visit to the Collection.
@@ -720,6 +802,9 @@ function GameApp({ savedState, account }) {
   });
   const [carriedResource, setCarriedResource] = useState(null);
   const [carriedResourceCursor, setCarriedResourceCursor] = useState({ x: 0, y: 0 });
+  const resourceDragInFlightRef = useRef(false);
+  const resourceDragResolvedRef = useRef(false);
+  const resourceDragTargetRef = useRef(null);
   const [pocketCapacity, setPocketCapacity] = useState(() => migratedPocketCapacity);
   // Persisted: whether the pocket drawer is slid out. Kept in the save so the choice
   // survives a reload, matching how a player expects a HUD panel to behave.
@@ -935,19 +1020,21 @@ function GameApp({ savedState, account }) {
       mineSlotCapacity,
       mineClaimQueue,
       mineRewardQueue,
+      mineLootStages,
       forgeCardSlots,
       forgeOreSlots,
       forgeIngredientSlots,
       forgeFuelSlots,
-      ingotClaimQueue,
+      forgeOutputQueues,
       forgeRewardQueue,
       gatheredInventory,
       processedInventory,
       gatheringSlots,
       gatheringClaimQueue,
       gatheringRewardQueue,
+      gatheringLootStages,
       processingSlots,
-      processedClaimQueue,
+      processingOutputQueues,
       processingRewardQueue,
       expeditionDifficultyId,
       expeditionUnitSlots,
@@ -970,7 +1057,7 @@ function GameApp({ savedState, account }) {
       saveState(pendingSaveRef.current);
       pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
-  }, [balance, collection, packs, market, resources, arcanaInventory, oreInventory, ingotInventory, mineSlots, mineSlotCapacity, mineClaimQueue, mineRewardQueue, forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots, ingotClaimQueue, forgeRewardQueue, gatheredInventory, processedInventory, gatheringSlots, gatheringClaimQueue, gatheringRewardQueue, processingSlots, processedClaimQueue, processingRewardQueue, expeditionDifficultyId, expeditionUnitSlots, expeditionSupplySlots, expeditionArcanaSlots, expeditionRun, packsOpened, audioSettings, graphicsSettings, pocket, pocketCapacity, pocketExpanded, lootSeen, collectionSeen]);
+  }, [balance, collection, packs, market, resources, arcanaInventory, oreInventory, ingotInventory, mineSlots, mineSlotCapacity, mineClaimQueue, mineRewardQueue, mineLootStages, forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots, forgeOutputQueues, forgeRewardQueue, gatheredInventory, processedInventory, gatheringSlots, gatheringClaimQueue, gatheringRewardQueue, gatheringLootStages, processingSlots, processingOutputQueues, processingRewardQueue, expeditionDifficultyId, expeditionUnitSlots, expeditionSupplySlots, expeditionArcanaSlots, expeditionRun, packsOpened, audioSettings, graphicsSettings, pocket, pocketCapacity, pocketExpanded, lootSeen, collectionSeen]);
 
   // Drives every CSS quality override in App.css. Set on <html> rather than a
   // wrapper div so fixed/portaled elements (tooltips, hover previews, the carried
@@ -1321,9 +1408,9 @@ function GameApp({ savedState, account }) {
   // Totals rather than booleans, so a second batch arriving while the first is still
   // uncollected still counts as new loot and re-lights the glow.
   const lootPending = useMemo(() => ({
-    [VIEWS.FOUNDRY]: queueTotal(mineClaimQueue, mineRewardQueue, ingotClaimQueue, forgeRewardQueue),
+    [VIEWS.FOUNDRY]: queueTotal(mineClaimQueue, mineRewardQueue, pendingIngotOutputs, forgeRewardQueue),
     [VIEWS.WILDERNESS]: queueTotal(
-      gatheringClaimQueue, gatheringRewardQueue, processedClaimQueue, processingRewardQueue,
+      gatheringClaimQueue, gatheringRewardQueue, pendingProcessedOutputs, processingRewardQueue,
     ),
     // Cards gained since the Collection was last opened. Clamped at zero so selling cards — which
     // shrinks the collection below the seen count — cannot produce a negative "pending".
@@ -1333,8 +1420,8 @@ function GameApp({ savedState, account }) {
     // and disappears when the last one is opened.
     [VIEWS.SHOP]: packs.length,
   }), [
-    mineClaimQueue, mineRewardQueue, ingotClaimQueue, forgeRewardQueue,
-    gatheringClaimQueue, gatheringRewardQueue, processedClaimQueue, processingRewardQueue,
+    mineClaimQueue, mineRewardQueue, pendingIngotOutputs, forgeRewardQueue,
+    gatheringClaimQueue, gatheringRewardQueue, pendingProcessedOutputs, processingRewardQueue,
     collection.length, collectionSeen, packs.length,
   ]);
 
@@ -1406,32 +1493,125 @@ function GameApp({ savedState, account }) {
       setCarriedResourceCursor({ x: event.clientX, y: event.clientY });
     }
 
-    function handlePointerDown(event) {
-      const target = event.target instanceof Element ? event.target.closest('[data-resource-drop-target]') : null;
+    function getDropTarget(event) {
+      return event.target instanceof Element
+        ? event.target.closest('[data-resource-drop-target]')
+        : null;
+    }
+
+    function acceptsCarriedResource(target) {
+      if (!target) return false;
+      const targetKey = target.getAttribute('data-resource-drop-target');
       const expectedTarget = `${carriedResource.source}:${carriedResource.id}`;
-      const targetKey = target?.getAttribute('data-resource-drop-target');
-      const isExactMatch = targetKey === expectedTarget;
-      const isArcanaRingTarget = targetKey === 'arcana-ring-slot' && carriedResource.source === 'arcana';
-      const isForgeFuelTarget = targetKey === 'forge-fuel-slot' && carriedResource.id === FORGE_FUEL_TYPE;
-      const isForgeOreTarget = targetKey === 'forge-ore-slot' && carriedResource.source === 'ore';
-      const isForgeIngredientTarget = targetKey === 'forge-ingredient-slot' && carriedResource.source === 'ingot';
-      const isWildernessProcessingTarget = targetKey === 'wilderness-processing-input-slot' && carriedResource.source === 'gathered';
-      const isExpeditionSupplyTarget = targetKey === 'expedition-supply-slot' && ['gathered', 'processed'].includes(carriedResource.source);
-      const isExpeditionArcanaTarget = targetKey === 'expedition-arcana-slot' && carriedResource.source === 'arcana-item';
+
+      if (targetKey === expectedTarget) return true;
+      if (targetKey === 'arcana-ring-slot') return carriedResource.source === 'arcana';
+      if (targetKey === 'forge-fuel-slot') return carriedResource.id === FORGE_FUEL_TYPE;
+      if (targetKey === 'forge-ore-slot') return carriedResource.source === 'ore' && Boolean(SMELT_RECIPES[carriedResource.id]);
+      if (targetKey === 'forge-ingredient-slot') return carriedResource.source === 'ingot';
+      if (targetKey === 'wilderness-processing-input-slot') return carriedResource.source === 'gathered' && Boolean(PROCESSING_RECIPES[carriedResource.id]);
+      if (targetKey === 'expedition-supply-slot') {
+        return !target.classList.contains('expedition-resource-slot--locked')
+          && ['gathered', 'processed'].includes(carriedResource.source);
+      }
+      if (targetKey === 'expedition-arcana-slot') {
+        return !target.classList.contains('expedition-resource-slot--locked')
+          && carriedResource.source === 'arcana-item';
+      }
+      return false;
+    }
+
+    function showResourceDropTarget(target) {
+      if (resourceDragTargetRef.current === target) return;
+      resourceDragTargetRef.current?.classList.remove('resource-drop-target--drag-over');
+      resourceDragTargetRef.current = target;
+      target?.classList.add('resource-drop-target--drag-over');
+    }
+
+    function placeDraggedResource(target) {
+      const targetKey = target.getAttribute('data-resource-drop-target');
+      const numericForgeSlotId = Number(target.dataset.forgeSlotId);
+      const numericProcessingSlotId = Number(target.dataset.processingSlotId);
+      if (targetKey === `${carriedResource.source}:${carriedResource.id}`) {
+        return handlePlaceCarriedResource({ source: carriedResource.source, id: carriedResource.id });
+      }
+      // Arcana owns its ring-slot state and handles the target's drop event before this window
+      // backstop. Returning true here tells dragend not to restore the same carried stack twice.
+      if (targetKey === 'arcana-ring-slot') return true;
+      if (targetKey === 'forge-fuel-slot') return handleLoadForgeFuelFromCarry(numericForgeSlotId);
+      if (targetKey === 'forge-ore-slot') return handleLoadForgeOreFromCarry(numericForgeSlotId);
+      if (targetKey === 'forge-ingredient-slot') return handleLoadForgeIngredientFromCarry(numericForgeSlotId);
+      // Wilderness already owns a native drop handler for this slot. It runs target-first before this
+      // window backstop; calling the loader again here would add the same carried stack twice.
+      if (targetKey === 'wilderness-processing-input-slot') return Number.isFinite(numericProcessingSlotId);
+      if (targetKey === 'expedition-supply-slot') return handleLoadExpeditionSupplyFromCarry(target.dataset.expeditionSlotId);
+      if (targetKey === 'expedition-arcana-slot') return handleLoadExpeditionArcanaFromCarry(target.dataset.expeditionSlotId);
+      return false;
+    }
+
+    function handlePointerDown(event) {
+      const target = getDropTarget(event);
       // Allow the event through — the slot's onPointerDown will handle placement
-      if (isExactMatch || isArcanaRingTarget || isForgeFuelTarget || isForgeOreTarget || isForgeIngredientTarget || isWildernessProcessingTarget || isExpeditionSupplyTarget || isExpeditionArcanaTarget) return;
+      if (acceptsCarriedResource(target)) return;
       // Clicked elsewhere — cancel carry
+      restoreCarriedStack(carriedResource);
+      setCarriedResource(null);
+    }
+
+    function handleResourceDragOver(event) {
+      if (!resourceDragInFlightRef.current || !event.dataTransfer?.types.includes(RESOURCE_DRAG_MIME)) return;
+      setCarriedResourceCursor({ x: event.clientX, y: event.clientY });
+      const target = getDropTarget(event);
+      if (!acceptsCarriedResource(target)) {
+        showResourceDropTarget(null);
+        event.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      showResourceDropTarget(target);
+    }
+
+    function handleResourceDrop(event) {
+      if (!resourceDragInFlightRef.current || !event.dataTransfer?.types.includes(RESOURCE_DRAG_MIME)) return;
+      event.preventDefault();
+      const target = getDropTarget(event);
+      const placed = acceptsCarriedResource(target) && placeDraggedResource(target);
+      showResourceDropTarget(null);
+      resourceDragResolvedRef.current = true;
+      resourceDragInFlightRef.current = false;
+      if (!placed) {
+        restoreCarriedStack(carriedResource);
+        setCarriedResource(null);
+      }
+    }
+
+    function handleResourceDragEnd() {
+      if (!resourceDragInFlightRef.current) return;
+      resourceDragInFlightRef.current = false;
+      showResourceDropTarget(null);
+      if (resourceDragResolvedRef.current) return;
       restoreCarriedStack(carriedResource);
       setCarriedResource(null);
     }
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('dragover', handleResourceDragOver);
+    window.addEventListener('drop', handleResourceDrop);
+    window.addEventListener('dragend', handleResourceDragEnd);
     return () => {
+      resourceDragTargetRef.current?.classList.remove('resource-drop-target--drag-over');
+      resourceDragTargetRef.current = null;
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('dragover', handleResourceDragOver);
+      window.removeEventListener('drop', handleResourceDrop);
+      window.removeEventListener('dragend', handleResourceDragEnd);
     };
-  }, [carriedResource, arcanaInventory, gatheredInventory, ingotInventory, oreInventory, processedInventory]);
+  // Placement helpers are function declarations owned by this component. The carried/inventory state
+  // dependencies above refresh their closures without tearing listeners down on every unrelated render.
+  }, [carriedResource, arcanaInventory, gatheredInventory, ingotInventory, oreInventory, processedInventory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setMineSlots(prev =>
@@ -1566,6 +1746,38 @@ function GameApp({ savedState, account }) {
     });
   }, [forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots]);
 
+  // Mine and Gathering rewards pause in their worker's slot before joining the shared queue. These
+  // timers live in GameApp rather than the station components, so rewards still settle while the player
+  // is on another tab. The staged events themselves are saved, which also makes a reload during this
+  // brief hand-off lossless.
+  useEffect(() => {
+    if (mineLootStages.length === 0) return undefined;
+    const nextReleaseAt = Math.min(...mineLootStages.map(event => event.releaseAt));
+    const timeout = window.setTimeout(() => {
+      const { due } = partitionStagedLoot(mineLootStages, Date.now());
+      if (due.length === 0) return;
+      const dueIds = new Set(due.map(event => event.id));
+      setMineClaimQueue(current => addOreCounts(current, aggregateStagedCounts(due, 'loot')));
+      setMineRewardQueue(current => mergeBonusRewardQueue(current, aggregateStagedCounts(due, 'rewards')));
+      setMineLootStages(current => current.filter(event => !dueIds.has(event.id)));
+    }, Math.max(0, nextReleaseAt - Date.now()) + 16);
+    return () => window.clearTimeout(timeout);
+  }, [mineLootStages]);
+
+  useEffect(() => {
+    if (gatheringLootStages.length === 0) return undefined;
+    const nextReleaseAt = Math.min(...gatheringLootStages.map(event => event.releaseAt));
+    const timeout = window.setTimeout(() => {
+      const { due } = partitionStagedLoot(gatheringLootStages, Date.now());
+      if (due.length === 0) return;
+      const dueIds = new Set(due.map(event => event.id));
+      setGatheringClaimQueue(current => addGatheredCounts(current, aggregateStagedCounts(due, 'loot')));
+      setGatheringRewardQueue(current => mergeBonusRewardQueue(current, aggregateStagedCounts(due, 'rewards')));
+      setGatheringLootStages(current => current.filter(event => !dueIds.has(event.id)));
+    }, Math.max(0, nextReleaseAt - Date.now()) + 16);
+    return () => window.clearTimeout(timeout);
+  }, [gatheringLootStages]);
+
   useEffect(() => {
     function tickForge(now) {
       forgeCardSlotsRef.current.forEach((cardSlot, slotIndex) => {
@@ -1608,7 +1820,12 @@ function GameApp({ savedState, account }) {
           }));
         }
 
-        setIngotClaimQueue(prev => ({ ...prev, [ingotId]: (prev[ingotId] ?? 0) + 1 + attunementBonus }));
+        setForgeOutputQueues(prev => addProductionOutput(
+          prev,
+          cardSlot.slotId,
+          ingotId,
+          1 + attunementBonus,
+        ));
         audioEngine.play(SOUND_IDS.smeltComplete);
 
         setForgeFuelSlots(prev =>
@@ -1633,14 +1850,14 @@ function GameApp({ savedState, account }) {
 
     function tickMining(now) {
       if (!anyDue(mineSlotsRef.current, now)) return;
-      const { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops } = resolveCompletedMiningSlots(mineSlotsRef.current, now);
+      const { nextSlots, completedBySlot, completedCount } = resolveCompletedMiningSlots(mineSlotsRef.current, now);
       if (!completedCount) return;
       setMineSlots(nextSlots);
       audioEngine.play(SOUND_IDS.mineComplete);
-      setMineClaimQueue(prev => addOreCounts(prev, completedQueue));
-      if (goldEarned > 0 || Object.values(elementalDrops).some(amount => amount > 0)) {
-        setMineRewardQueue(prev => mergeBonusRewardQueue(prev, { coins: goldEarned, ...elementalDrops }));
-      }
+      setMineLootStages(current => [
+        ...current,
+        ...createStagedLootEvents(completedBySlot, now, 'mine'),
+      ]);
     }
 
     function tickGathering(now) {
@@ -1649,26 +1866,26 @@ function GameApp({ savedState, account }) {
       const completedCards = gatheringSlotsRef.current
         .filter(slot => slot?.card && slot.endsAt && slot.endsAt <= now)
         .map(slot => slot.card);
-      const { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops } = resolveCompletedGatheringSlots(gatheringSlotsRef.current, now);
+      const { nextSlots, completedBySlot, completedCount } = resolveCompletedGatheringSlots(gatheringSlotsRef.current, now);
       if (!completedCount) return;
       setGatheringSlots(nextSlots);
       // Lumberjacks chop, everyone else rustles. `completedCards` tells us which classes
       // finished this tick, so the Wilderness sounds like the work actually being done.
       const chopped = completedCards.some(card => card?.classType === 'lumberjack');
       audioEngine.play(chopped ? SOUND_IDS.gatherChop : SOUND_IDS.gatherComplete);
-      setGatheringClaimQueue(prev => addGatheredCounts(prev, completedQueue));
-      if (goldEarned > 0 || Object.values(elementalDrops).some(amount => amount > 0)) {
-        setGatheringRewardQueue(prev => mergeBonusRewardQueue(prev, { coins: goldEarned, ...elementalDrops }));
-      }
+      setGatheringLootStages(current => [
+        ...current,
+        ...createStagedLootEvents(completedBySlot, now, 'gather'),
+      ]);
     }
 
     function tickProcessing(now) {
       if (!anyDue(processingSlotsRef.current, now)) return;
-      const { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops } = resolveCompletedProcessingSlots(processingSlotsRef.current, now);
+      const { nextSlots, completedBySlot, completedCount, goldEarned, elementalDrops } = resolveCompletedProcessingSlots(processingSlotsRef.current, now);
       if (!completedCount) return;
       setProcessingSlots(nextSlots);
       audioEngine.play(SOUND_IDS.smeltComplete);
-      setProcessedClaimQueue(prev => addProcessedCounts(prev, completedQueue));
+      setProcessingOutputQueues(prev => mergeProductionOutputs(prev, completedBySlot));
       if (goldEarned > 0 || Object.values(elementalDrops).some(amount => amount > 0)) {
         setProcessingRewardQueue(prev => mergeBonusRewardQueue(prev, { coins: goldEarned, ...elementalDrops }));
       }
@@ -2072,10 +2289,15 @@ function GameApp({ savedState, account }) {
     );
   }
 
-  function handleBeginCarry({ source, id, name, amount }) {
+  function handleBeginCarry({ source, id, name, amount, cursor = null, dragging = false }) {
     const requested = Math.max(1, Math.floor(Number(amount) || 0));
     const available = getAvailableResourceCount(source, id);
     if (!requested || available < requested) return false;
+    if (cursor) setCarriedResourceCursor(cursor);
+    if (dragging) {
+      resourceDragInFlightRef.current = true;
+      resourceDragResolvedRef.current = false;
+    }
     if (source === 'arcana-item') {
       const matchingEntries = arcanaInventory.filter(item => item.itemId === id);
       const selectedEntries = matchingEntries.slice(0, requested);
@@ -2434,6 +2656,8 @@ function GameApp({ savedState, account }) {
 
   function handleSocketForgeOre(oreType, slotId) {
     if (!ORE_TO_INGOT[oreType]) return false;
+    const pending = forgeOutputQueues[String(slotId)] ?? {};
+    if (Object.entries(pending).some(([ingotId, count]) => count > 0 && ingotId !== ORE_TO_INGOT[oreType])) return false;
     let changed = false;
     setForgeOreSlots(prev =>
       prev.map(slot => {
@@ -2451,6 +2675,8 @@ function GameApp({ savedState, account }) {
     const slot = forgeOreSlots.find(s => s.slotId === slotId);
     if (!slot) return false;
     if (slot.oreType && slot.oreType !== carriedResource.id) return false;
+    const pending = forgeOutputQueues[String(slotId)] ?? {};
+    if (Object.entries(pending).some(([ingotId, count]) => count > 0 && ingotId !== ORE_TO_INGOT[carriedResource.id])) return false;
     setForgeOreSlots(prev =>
       prev.map(s =>
         s.slotId === slotId
@@ -2491,24 +2717,30 @@ function GameApp({ savedState, account }) {
     return true;
   }
 
-  function handleCollectIngots() {
-    const hasQueuedIngots = Object.values(ingotClaimQueue).some(count => (count ?? 0) > 0);
-    if (!hasQueuedIngots && !hasQueuedBonusRewards(forgeRewardQueue)) return;
-    setIngotInventory(prev => Object.fromEntries(
-      Object.keys({ ...DEFAULT_INGOT_INVENTORY, ...ingotClaimQueue }).map(key => [
-        key,
-        (prev[key] ?? 0) + (ingotClaimQueue[key] ?? 0),
-      ]),
-    ));
-    if (hasQueuedBonusRewards(forgeRewardQueue)) {
-      const { coins = 0, ...elementalDrops } = forgeRewardQueue;
-      if (coins > 0) {
-        applyGoldDelta('forge:coinProc', coins);
-      }
-      setResources(prev => mergeResourceCounts(prev, elementalDrops));
-    }
-    setIngotClaimQueue({ ...DEFAULT_INGOT_INVENTORY });
-    setForgeRewardQueue({ ...DEFAULT_BONUS_REWARD_QUEUE });
+  function handleCollectIngotOutput(slotId) {
+    const collected = { ...(forgeOutputQueues[String(slotId)] ?? {}) };
+    if (!hasProductionOutput(collected)) return false;
+    setIngotInventory(prev => {
+      const next = { ...prev };
+      Object.entries(collected).forEach(([ingotId, count]) => {
+        next[ingotId] = (next[ingotId] ?? 0) + count;
+      });
+      return next;
+    });
+    // Subtract the press-time snapshot rather than clearing the row. A cycle that finishes during the
+    // flight belongs to the next collection and must remain waiting on this same output.
+    setForgeOutputQueues(prev => subtractProductionOutputs(prev, slotId, collected));
+    return true;
+  }
+
+  function handleCollectForgeRewards() {
+    const collected = { ...forgeRewardQueue };
+    if (!hasQueuedBonusRewards(collected)) return false;
+    const { coins = 0, ...elementalDrops } = collected;
+    if (coins > 0) applyGoldDelta('forge:coinProc', coins);
+    setResources(prev => mergeResourceCounts(prev, elementalDrops));
+    setForgeRewardQueue(prev => subtractQueuedCounts(prev, collected));
+    return true;
   }
 
   function handleSocketPocketCardToGathering(cardId, slotId) {
@@ -2653,6 +2885,9 @@ function GameApp({ savedState, account }) {
     const slot = processingSlots.find(entry => entry.slotId === slotId);
     if (!slot) return false;
     if (slot.inputId && slot.inputId !== carriedResource.id) return false;
+    const nextOutputId = PROCESSING_RECIPES[carriedResource.id]?.outputId;
+    const pending = processingOutputQueues[String(slotId)] ?? {};
+    if (Object.entries(pending).some(([outputId, count]) => count > 0 && outputId !== nextOutputId)) return false;
     setProcessingSlots(prev =>
       prev.map(entry =>
         entry.slotId === slotId
@@ -2710,18 +2945,21 @@ function GameApp({ savedState, account }) {
     return true;
   }
 
-  function handleCollectProcessedResources() {
-    if (!hasQueuedProcessedResources(processedClaimQueue) && !hasQueuedBonusRewards(processingRewardQueue)) return false;
-    setProcessedInventory(prev => addProcessedCounts(prev, processedClaimQueue));
-    if (hasQueuedBonusRewards(processingRewardQueue)) {
-      const { coins = 0, ...elementalDrops } = processingRewardQueue;
-      if (coins > 0) {
-        applyGoldDelta('processing:coinProc', coins);
-      }
-      setResources(prev => mergeResourceCounts(prev, elementalDrops));
-    }
-    setProcessedClaimQueue({ ...DEFAULT_PROCESSED_INVENTORY });
-    setProcessingRewardQueue({ ...DEFAULT_BONUS_REWARD_QUEUE });
+  function handleCollectProcessedOutput(slotId) {
+    const collected = { ...(processingOutputQueues[String(slotId)] ?? {}) };
+    if (!hasProductionOutput(collected)) return false;
+    setProcessedInventory(prev => addProcessedCounts(prev, collected));
+    setProcessingOutputQueues(prev => subtractProductionOutputs(prev, slotId, collected));
+    return true;
+  }
+
+  function handleCollectProcessingRewards() {
+    const collected = { ...processingRewardQueue };
+    if (!hasQueuedBonusRewards(collected)) return false;
+    const { coins = 0, ...elementalDrops } = collected;
+    if (coins > 0) applyGoldDelta('processing:coinProc', coins);
+    setResources(prev => mergeResourceCounts(prev, elementalDrops));
+    setProcessingRewardQueue(prev => subtractQueuedCounts(prev, collected));
     return true;
   }
 
@@ -3374,11 +3612,12 @@ function GameApp({ savedState, account }) {
             mineSlotCapacity={mineSlotCapacity}
             mineClaimQueue={mineClaimQueue}
             mineRewardQueue={mineRewardQueue}
+            mineLootStages={mineLootStages}
             forgeCardSlots={forgeCardSlots}
             forgeOreSlots={forgeOreSlots}
             forgeIngredientSlots={forgeIngredientSlots}
             forgeFuelSlots={forgeFuelSlots}
-            ingotClaimQueue={ingotClaimQueue}
+            forgeOutputQueues={forgeOutputQueues}
             forgeRewardQueue={forgeRewardQueue}
             returnsMineCardsToPocket={pocket.length < pocketCapacity}
             nextMineSlotCost={getMineSlotUpgradeCost(mineSlotCapacity)}
@@ -3399,7 +3638,8 @@ function GameApp({ savedState, account }) {
             onPickUpForgeFuel={handlePickUpForgeFuel}
             onPickUpForgeOre={handlePickUpForgeOre}
             onPickUpForgeIngredient={handlePickUpForgeIngredient}
-            onCollectIngots={handleCollectIngots}
+            onCollectIngotOutput={handleCollectIngotOutput}
+            onCollectForgeRewards={handleCollectForgeRewards}
             carriedResource={carriedResource}
             onPlaceCarriedResource={handlePlaceCarriedResource}
           />
@@ -3411,8 +3651,9 @@ function GameApp({ savedState, account }) {
             gatheringSlots={gatheringSlots}
             gatheringClaimQueue={gatheringClaimQueue}
             gatheringRewardQueue={gatheringRewardQueue}
+            gatheringLootStages={gatheringLootStages}
             processingSlots={processingSlots}
-            processedClaimQueue={processedClaimQueue}
+            processingOutputQueues={processingOutputQueues}
             processingRewardQueue={processingRewardQueue}
             returnsGatheringCardsToPocket={pocket.length < pocketCapacity}
             returnsProcessingCardsToPocket={pocket.length < pocketCapacity}
@@ -3426,7 +3667,8 @@ function GameApp({ savedState, account }) {
             onLoadProcessingInput={handleLoadProcessingInputFromCarry}
             onUnsocketProcessingInput={handleUnsocketProcessingInput}
             onPickUpProcessingInput={handlePickUpProcessingInput}
-            onCollectProcessedResources={handleCollectProcessedResources}
+            onCollectProcessedOutput={handleCollectProcessedOutput}
+            onCollectProcessingRewards={handleCollectProcessingRewards}
             carriedResource={carriedResource}
             onPlaceCarriedResource={handlePlaceCarriedResource}
           />
@@ -3511,13 +3753,24 @@ function GameApp({ savedState, account }) {
         <div
           className="carried-resource-cursor card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned"
           style={{ left: carriedResourceCursor.x + 18, top: carriedResourceCursor.y + 18 }}
+          role="status"
+          aria-label={`Holding ${carriedResource.count} ${carriedResource.name}`}
         >
           <div className="card-face-inner">
             <div className="card-face-front foundry-square-resource__front">
-              <div className="foundry-square-resource__header">
-                <span className="foundry-square-resource__name">{carriedResource.name}</span>
+              <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
                 <span className="foundry-square-resource__count">{carriedResource.count}</span>
               </div>
+              <div className="foundry-square-resource__art-wrap">
+                {getCarriedStackArt(carriedResource) ? (
+                  <img
+                    src={getCarriedStackArt(carriedResource)}
+                    alt=""
+                    className="foundry-square-resource__art"
+                  />
+                ) : null}
+              </div>
+              <span className="carried-resource-cursor__name">{carriedResource.name}</span>
             </div>
           </div>
         </div>
