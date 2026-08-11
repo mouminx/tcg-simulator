@@ -286,10 +286,26 @@ processing 206 -> 145. At 1512x982 the **Wilderness processing half now fits wit
 1512x982 against 551px at 1366x768. A bigger monitor gains 60px from this change and spends 67px of it on
 bigger slots, which is why the loot row sits 237px below the fold at 1512 and 360px at 1366.
 
-A 270x270 slot holds a 112x162 card beside the speed dial, so ~108px of it is vertical dead space. If the
-queue needs to be on screen, the lever is the slot's HEIGHT — capping it near 200px (and dropping the
-aspect-ratio) models out at 551 -> ~410px, which fits the whole mine half at 1512x982. That makes the slots
-wide rectangles rather than squares, which is a look to approve rather than assume.
+**`aspect-ratio: 1` is gone from `.foundry-mine-slot`, and that is what got the queue on screen.** A 270x270
+slot held a 112x162 card beside the speed dial, so ~108px of every slot was empty — and because the slot was
+square and fluid-width, a wider half made it taller. Height is now
+`calc(var(--station-card-h) + 1.1rem)`: the card plus exactly the slot's own padding, with no spare band.
+
+**The card did not shrink to pay for it** — still 133x192 at 1512x982 and 112x162 at 1366x768, verified
+identical before and after. Only the dead space went. `test-stacked-rows` asserts both together, because
+buying height by shrinking the card is the tempting wrong fix and has been explicitly rejected.
+
+The last ~33px came from chrome, as one budget: `.foundry-half` gap 1.1 -> 0.7rem and bottom padding
+1.5 -> 1rem, `.foundry-queue` gap 0.65 -> 0.45rem and padding 0.9 -> 0.6rem.
+
+Result at 1366x768, against 460/474 at the start of this work: **mine 178px, gathering 192px** of inner
+scroll, forge 256px, processing 265px. At **1512x982 the mine's collection queue is fully on screen.** At
+1366x768 the loot row is still ~130px under: 2x2 slots plus a queue need ~620px in a 456px half, and closing
+that would mean shrinking something that has to stay readable.
+
+Also removed: the redundant "N slots mining" / "N slots gathering" line. The row renders **only when nothing
+is running**, so the empty-state instruction (which is not inferable from an empty slot) survives and the
+space is reclaimed exactly when there is loot to show.
 
 ## Navigation
 

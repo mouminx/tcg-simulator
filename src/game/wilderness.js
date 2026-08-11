@@ -61,7 +61,9 @@ export const GATHERING_POOLS = {
 export const TREASURE_PACK_RESOURCE = Object.freeze({
   id: 'treasurePack',
   name: 'Treasure Pack',
-  artKey: 'treasure pack',
+  // `treasure_chest.webp`. The previous key was `treasure pack`, for which no art has ever existed — it
+  // resolved to null, which is why this rendered as a pack mock-up in the queue instead of a loot tile.
+  artKey: 'treasure_chest',
   weight: 0,
   minRarity: 'common',
   color: '#d9ab2b',

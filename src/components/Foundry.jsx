@@ -1268,15 +1268,17 @@ export default function Foundry({
                 )}
               </div>
 
-              <div className="foundry-action-row">
-                <p className="foundry-action-hint">
-                  {miningRunningCount > 0
-                    ? `${miningRunningCount} slot${miningRunningCount === 1 ? '' : 's'} mining`
-                    : pocket.length > 0
+              {/* Only while nothing is mining — see the matching note in Wilderness.jsx. The running count
+                  restated what the slots already show; the empty-state instruction does not. */}
+              {miningRunningCount === 0 && (
+                <div className="foundry-action-row">
+                  <p className="foundry-action-hint">
+                    {pocket.length > 0
                       ? 'Drag a card from Pocket into an open mine slot'
                       : 'Pocket a card first, then socket it into the mine'}
-                </p>
-              </div>
+                  </p>
+                </div>
+              )}
 
               <div className="foundry-queue">
                 <div className="foundry-inventory__head">

@@ -7,10 +7,8 @@ import CardFace from './CardFace';
 import { socketedCardDragProps } from './CardPocket';
 import StationMerge from './StationMerge';
 import HoverCardPreview, { buildHoverCardPreview } from './HoverCardPreview';
-import PackCard from './PackCard';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
 import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
-import { getPackTypeById } from '../game/cards';
 import {
   ALL_GATHERING_RESOURCES,
   PROCESSING_SLOT_COUNT,
@@ -167,55 +165,6 @@ function SquareResourceCard({ resource, count = 0, className = '', tileRef = nul
           style={{ left: (clampedPos ?? tipPos).x, top: (clampedPos ?? tipPos).y }}
         >
           <span className="resource-tooltip__name">{name}</span>
-          {description && <span className="resource-tooltip__desc">{description}</span>}
-        </div>,
-        document.body,
-      )}
-    </>
-  );
-}
-
-function QueuePackCard({ packTypeId, count = 0, description = '', gainLabel = null, tileRef = null }) {
-  const packType = getPackTypeById(packTypeId);
-  const [tipPos, setTipPos] = useState(null);
-  const [clampedPos, setClampedPos] = useState(null);
-  const tipRef = useRef(null);
-
-  useLayoutEffect(() => {
-    if (!tipPos || !tipRef.current) { setClampedPos(null); return; }
-    const { width, height } = tipRef.current.getBoundingClientRect();
-    const OFFSET = 14;
-    let x = tipPos.x + OFFSET;
-    let y = tipPos.y + OFFSET;
-    if (x + width > window.innerWidth - 8) x = tipPos.x - width - OFFSET;
-    if (y + height > window.innerHeight - 8) y = tipPos.y - height - OFFSET;
-    setClampedPos({ x, y });
-  }, [tipPos]);
-
-  function handleMouseMove(e) {
-    setTipPos({ x: e.clientX, y: e.clientY });
-  }
-
-  return (
-    <>
-      <div
-        ref={tileRef}
-        className="foundry-queue-pack"
-        onMouseEnter={handleMouseMove}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setTipPos(null)}
-      >
-        {gainLabel ? <span className="foundry-square-resource__gain">{gainLabel}</span> : null}
-        <span className="foundry-queue-pack__count">{fmtCount(count)}</span>
-        <PackCard size="sm" packType={packType} />
-      </div>
-      {tipPos && createPortal(
-        <div
-          ref={tipRef}
-          className="resource-tooltip"
-          style={{ left: (clampedPos ?? tipPos).x, top: (clampedPos ?? tipPos).y }}
-        >
-          <span className="resource-tooltip__name">{packType.name}</span>
           {description && <span className="resource-tooltip__desc">{description}</span>}
         </div>,
         document.body,
@@ -931,15 +880,19 @@ export default function Wilderness({
                 ))}
               </div>
 
-              <div className="foundry-action-row wilderness-action-row">
-                <p className="foundry-action-hint wilderness-action-hint">
-                  {gatheringRunningCount > 0
-                    ? `${gatheringRunningCount} slot${gatheringRunningCount === 1 ? '' : 's'} gathering`
-                    : pocket.length > 0
+              {/* Only while nothing is gathering. "3 slots gathering" restated what the slots themselves
+                  show — a card in a slot with a spinning dial is not ambiguous — and it cost a row in the
+                  half with the least room, at exactly the moment loot exists to display. The empty-state
+                  instruction stays, because that one is not inferable from an empty slot. */}
+              {gatheringRunningCount === 0 && (
+                <div className="foundry-action-row wilderness-action-row">
+                  <p className="foundry-action-hint wilderness-action-hint">
+                    {pocket.length > 0
                       ? 'Drag a card from Pocket into an open gathering slot'
                       : 'Pocket a card first, then socket it here'}
-                </p>
-              </div>
+                  </p>
+                </div>
+              )}
 
               <div className="foundry-queue wilderness-queue">
                 <div className="foundry-inventory__head">
@@ -959,13 +912,17 @@ export default function Wilderness({
                   style={{ '--stack-gaps': Math.max(1,
                     (queuedTreasurePacks > 0 ? 1 : 0) + queueResources.length + gatheringRewardEntries.length - 1) }}
                 >
+                  {/* A loot tile like everything else beside it, not a miniature pack. It sits in a row of
+                      resource cards, and rendering it as a pack made it the odd one out at a different size
+                      and shape — and it also has to fit the stacked row's 72px box. It is still a real pack
+                      once claimed; this is only how the pending reward is drawn. */}
                   {queuedTreasurePacks > 0 ? (
-                    <QueuePackCard
-                      packTypeId="treasure"
+                    <SquareResourceCard
+                      resource={TREASURE_PACK_RESOURCE}
                       count={queuedTreasurePacks}
-                      description={TREASURE_PACK_RESOURCE.description}
                       gainLabel={queueGainByResource[TREASURE_PACK_RESOURCE.id] ? `+ ${queueGainByResource[TREASURE_PACK_RESOURCE.id]} pack` : null}
                       tileRef={el => { treasurePackRefs.current[TREASURE_PACK_RESOURCE.id] = el; }}
+                      className="foundry-queue-slot wilderness-queue-slot"
                     />
                   ) : null}
                   {queueResources.length > 0 ? queueResources.map(resource => (

@@ -9354,8 +9354,11 @@ optgroup {
   scrollbar-color: rgba(180, 130, 40, 0.3) transparent;
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  padding: 1.4rem 1.5rem 1.5rem;
+  /* Rhythm tightened to get the collection queue on screen: gap 1.1rem -> 0.7rem and the bottom padding
+     1.5rem -> 1rem. Worth ~17px between them, and the last 33px at 1512x982 came from exactly this kind of
+     chrome rather than from anything the player looks at. */
+  gap: 0.7rem;
+  padding: 1.4rem 1.5rem 1rem;
 }
 
 .foundry-half__header {
@@ -9460,7 +9463,6 @@ optgroup {
 }
 
 .foundry-queue-slots.stack-line > .foundry-queue-slot,
-.foundry-queue-slots.stack-line > .foundry-queue-pack,
 .foundry-queue-slots.stack-line > .card-face-wrapper {
   width: var(--stack-w);
   /* Square at 72px, the same box `.inventory-tile` uses.
@@ -9492,9 +9494,19 @@ optgroup {
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
+/* Height sized to the card it holds, NOT square.
+   `aspect-ratio: 1` made the slot's height follow its width, so a wider half produced a taller slot —
+   measured 618px of slot grid at 1512x982 against 551px at 1366x768. A bigger monitor therefore spent its
+   extra height on bigger slots and the collection queue stayed below the fold either way.
+
+   The squareness was never carrying content: a 270x270 slot holds a 112x162 card beside the speed dial, so
+   ~108px of every slot was empty. This removes that dead space and NOTHING ELSE — the card is still
+   `--station-card-w` (112px at 1366x768, 133px at 1512x982), unchanged. Only the gap underneath it goes.
+
+   `min-height` is the card plus EXACTLY the slot's own padding (0.55rem x 2 = 1.1rem), so there is no spare
+   band under the card and it cannot fall out of step if the card size changes. */
 .foundry-mine-slot {
-  aspect-ratio: 1;
-  min-height: 148px;
+  min-height: calc(var(--station-card-h) + 1.1rem);
 }
 
 .foundry-mine-slot--filled {
@@ -9507,36 +9519,9 @@ optgroup {
   border-style: solid;
 }
 
-.foundry-queue-pack {
-  position: relative;
-  grid-column: 1 / -1;
-  justify-self: start;
-  display: inline-flex;
-  align-items: flex-start;
-  width: 110px;
-}
-
-.foundry-queue-pack .pack-display {
-  width: 110px;
-  height: 160px;
-}
-
-.foundry-queue-pack__count {
-  position: absolute;
-  top: 8px;
-  left: 0;
-  z-index: 3;
-  font-family: var(--font-display);
-  font-size: 1.05rem;
-  font-weight: 800;
-  line-height: 1;
-  color: #f4e4b1;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.55);
-}
-
-.foundry-queue-pack .foundry-square-resource__gain {
-  top: -18px;
-}
+/* `.foundry-queue-pack` and its `__count` are gone with `QueuePackCard`. A pending Treasure Pack now draws
+   as a normal loot tile (see TREASURE_PACK_RESOURCE's `artKey`), so nothing renders a 110x160 pack mock-up
+   inside a queue any more. */
 
 .foundry-mine-slot--drag-over {
   border-color: rgba(212,168,80,0.65);
@@ -9759,8 +9744,10 @@ optgroup {
 .foundry-queue {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.9rem;
+  /* Part of the same budget as `.foundry-half`'s rhythm above: gap 0.65 -> 0.45rem, padding 0.9 -> 0.6rem.
+     The queue's own frame was ~31px of the 143px it occupied, against a 72px tile row. */
+  gap: 0.45rem;
+  padding: 0.6rem;
   border: 1px solid rgba(180,130,40,0.16);
   background: rgba(18,12,5,0.44);
 }
