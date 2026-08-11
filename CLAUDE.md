@@ -2,14 +2,14 @@
 
 React 18 + Vite 5 collectible card game simulator. Persistent state in `localStorage` (web), a JSON file
 (desktop) or a Supabase row (online); nearly all orchestration and state mutation flows through
-`src/App.jsx`. Version `0.7.5` beta, `SAVE_VERSION` 23 — both live in source, never trust this file for them.
+`src/App.jsx`. Version `0.7.5` beta, `SAVE_VERSION` 25 — both live in source, never trust this file for them.
 
 ```bash
 npm run dev              # vite
 npm run build            # web  → Vercel (dev/playtest channel)
 npm run build:desktop    # THE STEAM RELEASE — online-capable
 npm run build:ssf        # online compiled out; kept for a "cannot phone home" build
-npm test                 # 21 suites, ~380 assertions — see tests/README.md
+npm test                 # 23 suites, ~410 assertions — see tests/README.md
 npm run optimize-assets  # src/assets-original → sized WebP in src/assets
 npm run encode-audio     # WAV masters → Opus/WebM  (needs ffmpeg)
 npm run verify-audio     # asserts the synthesised specs are audible and click-free

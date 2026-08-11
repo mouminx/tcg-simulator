@@ -81,7 +81,7 @@ run_suite() {
 echo "############ LOCAL-PATH SUITES (online NOT configured) ############"
 rm -f "$ROOT/.env.local"
 start_vite
-for t in test-storage-web test-migration test-gold-seam test-drag-identity test-write-failure test-account-menu test-arc-and-collection test-echo-scope test-shop-rotation test-goods test-forge-selector test-processing-selector test-merge test-upgrades test-shop-summon test-stacked-rows test-treasure; do
+for t in test-storage-web test-migration test-gold-seam test-drag-identity test-write-failure test-account-menu test-arc-and-collection test-echo-scope test-shop-rotation test-goods test-forge-selector test-processing-selector test-output-collection test-staged-loot test-merge test-upgrades test-shop-summon test-stacked-rows test-treasure; do
   run_suite "$t" "$t.mjs" || exit 1
 done
 

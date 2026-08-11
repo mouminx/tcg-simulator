@@ -1,6 +1,6 @@
 # Tests
 
-21 suites, ~380 assertions, driven through a real browser with Playwright. `npm test` runs all of them.
+23 suites, ~410 assertions, driven through a real browser with Playwright. `npm test` runs all of them.
 
 These are **behavioural** suites, not unit tests: they boot the app, seed a save, click through it and measure
 the DOM. That is deliberate — nearly every bug this project has had was a layout or wiring fault that a unit

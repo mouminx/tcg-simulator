@@ -21,6 +21,9 @@ import {
   getResourceArt,
 } from '../game/resourceArt';
 
+/** Identifies native drags that belong to the Bag's carried-stack workflow. */
+export const RESOURCE_DRAG_MIME = 'application/x-cards-of-arcana-resource';
+
 /**
  * Drawstring sack — the tab's identity marker. Inline rather than an asset so it
  * inherits `currentColor` from the tab's hover/active states.
@@ -149,6 +152,7 @@ function ResourceTile({ name, artSrc, count, description = '', onContextMenu, on
         onContextMenu={onContextMenu}
         onClick={onClick}
         data-resource-drop-target={dataDropTarget}
+        title={`${name} — click to pick up or drag to a compatible slot`}
         className={`card-face-wrapper no-twirl foundry-square-resource inventory-tile${count > 0 ? ' foundry-square-resource--owned' : ' foundry-square-resource--empty'}`}
       >
         <div className="card-face-inner">
@@ -207,8 +211,44 @@ export default function Inventory({
 }) {
   const [carryPopover, setCarryPopover] = useState(null);
 
-  const ores = ORE_TYPES.filter(ore => (oreInventory[ore.id] ?? 0) > 0);
-  const ingots = ORE_TYPES.filter(ore => (ingotInventory[ore.ingotId] ?? 0) > 0);
+  const isCarried = (source, id) => carriedResource?.source === source && carriedResource?.id === id;
+
+  /**
+   * Native dragging is an alternate gesture over the existing carried-stack state machine. Starting a
+   * drag reserves the same stack a click would pick up; App resolves the eventual native drop through the
+   * exact same placement handlers. A transparent browser drag image leaves our artwork-backed held card as
+   * the one visual following the pointer instead of drawing two cards on top of each other.
+   */
+  function beginResourceDrag(event, resource) {
+    const began = onBeginCarry?.({
+      ...resource,
+      cursor: { x: event.clientX, y: event.clientY },
+      dragging: true,
+    });
+    if (!began) {
+      event.preventDefault();
+      return;
+    }
+
+    setCarryPopover(null);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(RESOURCE_DRAG_MIME, `${resource.source}:${resource.id}`);
+    // Keep the older Arcana ring drop path interoperable while all resource drops converge on the
+    // carried-stack workflow.
+    if (resource.source === 'arcana') {
+      event.dataTransfer.setData('arcana-resource-id', resource.id);
+    }
+
+    const ghost = document.createElement('span');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+    document.body.appendChild(ghost);
+    event.dataTransfer.setDragImage(ghost, 0, 0);
+    requestAnimationFrame(() => ghost.remove());
+  }
+
+  const ores = ORE_TYPES.filter(ore => (oreInventory[ore.id] ?? 0) > 0 || isCarried('ore', ore.id));
+  const ingots = ORE_TYPES.filter(ore => (ingotInventory[ore.ingotId] ?? 0) > 0 || isCarried('ingot', ore.ingotId));
   /**
    * `GATHERED_ONLY_RESOURCES`, not `ALL_GATHERING_RESOURCES`. The gathering pools duplicate every ore
    * and ingot under their own ids, so the full list made this section a catch-all that showed Steel
@@ -217,10 +257,10 @@ export default function Inventory({
    * filtering here keeps a stale save from re-displaying them in the wrong place before its migration
    * has been written back.
    */
-  const gathered = GATHERED_ONLY_RESOURCES.filter(r => (gatheredInventory[r.id] ?? 0) > 0);
-  const processed = PROCESSED_RESOURCES.filter(r => (processedInventory[r.id] ?? 0) > 0);
+  const gathered = GATHERED_ONLY_RESOURCES.filter(r => (gatheredInventory[r.id] ?? 0) > 0 || isCarried('gathered', r.id));
+  const processed = PROCESSED_RESOURCES.filter(r => (processedInventory[r.id] ?? 0) > 0 || isCarried('processed', r.id));
   const arcanaResources = Object.entries(resources)
-    .filter(([, count]) => (count ?? 0) > 0)
+    .filter(([resourceId, count]) => (count ?? 0) > 0 || isCarried('arcana', resourceId))
     .map(([resourceId, count]) => {
       const { elementId, tier } = parseElementResourceId(resourceId);
       const essence = ESSENCES_BY_ID[elementId];
@@ -247,13 +287,14 @@ export default function Inventory({
     return acc;
   }, {});
   const ALL_ARCANA_ITEMS = [...CHARMS, ...CATALYSTS, ...SIGILS];
-  const arcanaItems = ALL_ARCANA_ITEMS.filter(item => (arcanaCounts[item.id] ?? 0) > 0);
+  const arcanaItems = ALL_ARCANA_ITEMS.filter(item => (arcanaCounts[item.id] ?? 0) > 0 || isCarried('arcana-item', item.id));
   const arcanaTotal = arcanaResourceTotal + arcanaItems.reduce((sum, item) => sum + (arcanaCounts[item.id] ?? 0), 0);
 
   return (
     <>
       <div className={`inventory-panel${open ? ' inventory-panel--open' : ''}`}>
         <button
+          ref={inventoryRef}
           className="drawer-tab inventory-toggle"
           onClick={onToggle}
           title={open ? 'Close bag' : 'Open bag'}
@@ -270,7 +311,7 @@ export default function Inventory({
         </button>
 
         <div className="inventory-panel__body">
-          <div ref={inventoryRef} className="inventory-panel__head">
+          <div className="inventory-panel__head">
             <span className="inventory-panel__title">Inventory</span>
             <span className="inventory-panel__total">{grandTotal}</span>
           </div>
@@ -294,12 +335,16 @@ export default function Inventory({
                     if ((oreInventory[ore.id] ?? 0) <= 0) return;
                     setCarryPopover({ source: 'ore', id: ore.id, name: ore.name, max: oreInventory[ore.id] ?? 0, position: { x: e.clientX + 10, y: e.clientY + 10 } });
                   }}
-                  onClick={() => {
+                  onClick={event => {
                     const count = oreInventory[ore.id] ?? 0;
                     if (carriedResource) { onPlaceCarriedResource?.({ source: 'ore', id: ore.id }); }
-                    else if (count > 0) { onBeginCarry?.({ source: 'ore', id: ore.id, name: ore.name, amount: count }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'ore', id: ore.id, name: ore.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
                   }}
                   dataDropTarget={`ore:${ore.id}`}
+                  draggable
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'ore', id: ore.id, name: ore.name, amount: oreInventory[ore.id] ?? 0,
+                  })}
                 />
               )) : <p className="inventory-empty">No ores collected</p>}
             </InventorySection>
@@ -319,12 +364,16 @@ export default function Inventory({
                       if ((ingotInventory[ore.ingotId] ?? 0) <= 0) return;
                       setCarryPopover({ source: 'ingot', id: ore.ingotId, name: ingot.name, max: ingotInventory[ore.ingotId] ?? 0, position: { x: e.clientX + 10, y: e.clientY + 10 } });
                     }}
-                    onClick={() => {
+                    onClick={event => {
                       const count = ingotInventory[ore.ingotId] ?? 0;
                       if (carriedResource) { onPlaceCarriedResource?.({ source: 'ingot', id: ore.ingotId }); }
-                      else if (count > 0) { onBeginCarry?.({ source: 'ingot', id: ore.ingotId, name: ingot.name, amount: count }); }
+                      else if (count > 0) { onBeginCarry?.({ source: 'ingot', id: ore.ingotId, name: ingot.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
                     }}
                     dataDropTarget={`ingot:${ore.ingotId}`}
+                    draggable
+                    onDragStart={event => beginResourceDrag(event, {
+                      source: 'ingot', id: ore.ingotId, name: ingot.name, amount: ingotInventory[ore.ingotId] ?? 0,
+                    })}
                   />
                 );
               }) : <p className="inventory-empty">No ingots smelted</p>}
@@ -343,12 +392,16 @@ export default function Inventory({
                     if ((gatheredInventory[resource.id] ?? 0) <= 0) return;
                     setCarryPopover({ source: 'gathered', id: resource.id, name: resource.name, max: gatheredInventory[resource.id] ?? 0, position: { x: e.clientX + 10, y: e.clientY + 10 } });
                   }}
-                  onClick={() => {
+                  onClick={event => {
                     const count = gatheredInventory[resource.id] ?? 0;
                     if (carriedResource) { onPlaceCarriedResource?.({ source: 'gathered', id: resource.id }); }
-                    else if (count > 0) { onBeginCarry?.({ source: 'gathered', id: resource.id, name: resource.name, amount: count }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'gathered', id: resource.id, name: resource.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
                   }}
                   dataDropTarget={`gathered:${resource.id}`}
+                  draggable
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'gathered', id: resource.id, name: resource.name, amount: gatheredInventory[resource.id] ?? 0,
+                  })}
                 />
               )) : <p className="inventory-empty">No resources gathered</p>}
             </InventorySection>
@@ -366,12 +419,16 @@ export default function Inventory({
                     if ((processedInventory[resource.id] ?? 0) <= 0) return;
                     setCarryPopover({ source: 'processed', id: resource.id, name: resource.name, max: processedInventory[resource.id] ?? 0, position: { x: e.clientX + 10, y: e.clientY + 10 } });
                   }}
-                  onClick={() => {
+                  onClick={event => {
                     const count = processedInventory[resource.id] ?? 0;
                     if (carriedResource) { onPlaceCarriedResource?.({ source: 'processed', id: resource.id }); }
-                    else if (count > 0) { onBeginCarry?.({ source: 'processed', id: resource.id, name: resource.name, amount: count }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'processed', id: resource.id, name: resource.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
                   }}
                   dataDropTarget={`processed:${resource.id}`}
+                  draggable
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'processed', id: resource.id, name: resource.name, amount: processedInventory[resource.id] ?? 0,
+                  })}
                 />
               )) : <p className="inventory-empty">Nothing processed yet</p>}
             </InventorySection>
@@ -395,17 +452,16 @@ export default function Inventory({
                       position: { x: e.clientX + 10, y: e.clientY + 10 },
                     });
                   }}
-                  onClick={() => {
+                  onClick={event => {
                     const count = resource.count ?? 0;
                     if (carriedResource) { onPlaceCarriedResource?.({ source: 'arcana', id: resource.resourceId }); }
-                    else if (count > 0) { onBeginCarry?.({ source: 'arcana', id: resource.resourceId, name: resource.name, amount: count }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'arcana', id: resource.resourceId, name: resource.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
                   }}
                   dataDropTarget={`arcana:${resource.resourceId}`}
                   draggable
-                  onDragStart={event => {
-                    event.dataTransfer.effectAllowed = 'copy';
-                    event.dataTransfer.setData('arcana-resource-id', resource.resourceId);
-                  }}
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'arcana', id: resource.resourceId, name: resource.name, amount: resource.count,
+                  })}
                 />
               )) : null}
               {arcanaItems.length > 0 ? arcanaItems.map(item => (
@@ -426,12 +482,16 @@ export default function Inventory({
                       position: { x: e.clientX + 10, y: e.clientY + 10 },
                     });
                   }}
-                  onClick={() => {
+                  onClick={event => {
                     const count = arcanaCounts[item.id] ?? 0;
                     if (carriedResource) { onPlaceCarriedResource?.({ source: 'arcana-item', id: item.id }); }
-                    else if (count > 0) { onBeginCarry?.({ source: 'arcana-item', id: item.id, name: item.name, amount: count }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'arcana-item', id: item.id, name: item.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
                   }}
                   dataDropTarget={`arcana-item:${item.id}`}
+                  draggable
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'arcana-item', id: item.id, name: item.name, amount: arcanaCounts[item.id] ?? 0,
+                  })}
                 />
               )) : null}
               {arcanaResources.length === 0 && arcanaItems.length === 0 ? <p className="inventory-empty">No Arcana resources or crafted items</p> : null}

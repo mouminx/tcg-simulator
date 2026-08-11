@@ -17,7 +17,7 @@ history, which is not derivable from the code once a migration has run.
 - `localStorage` key: `tcg-sim` on the web; a `save.json` file in the desktop shell — see
   **Where the save lives** below. `App.jsx` owns the save's *shape*, `src/game/storage.js` owns its
   *location*, and neither knows about the other
-- current save version: `23`
+- current save version: `25`
 
 Current persisted state includes:
 
@@ -35,19 +35,21 @@ Current persisted state includes:
   mineSlotCapacity,
   mineClaimQueue,
   mineRewardQueue,
+  mineLootStages,
   forgeCardSlots,
   forgeOreSlots,
   forgeIngredientSlots,
   forgeFuelSlots,
-  ingotClaimQueue,
+  forgeOutputQueues,
   forgeRewardQueue,
   gatheredInventory,
   processedInventory,
   gatheringSlots,
   gatheringClaimQueue,
   gatheringRewardQueue,
+  gatheringLootStages,
   processingSlots,
-  processedClaimQueue,
+  processingOutputQueues,
   processingRewardQueue,
   expeditionDifficultyId,
   expeditionUnitSlots,
@@ -71,6 +73,15 @@ Important details:
 - active resource pocket state is gone from the save shape
 - `resources` stores all Arcana element tiers using Arcana resource ids
 - `audioSettings` is persisted but there is not yet a UI to edit it
+- **25** added `mineLootStages` and `gatheringLootStages`. Each entry owns one completed card cycle's
+  `loot`, bonus `rewards`, source `slotId`, and `releaseAt`. Rewards remain here briefly while the worker
+  slot displays them, then GameApp promotes them into the existing claim/reward queues. The arrays are
+  persisted so reloading during that hand-off cannot lose a roll; older saves default to empty arrays
+- **24** replaced the resource-wide `ingotClaimQueue` / `processedClaimQueue` maps with
+  per-slot `forgeOutputQueues` / `processingOutputQueues`. The old maps made every row producing the
+  same resource mirror one count, and a row-level Collect cleared every row. Missing per-slot maps are
+  normalized from the legacy aggregate without losing pending output; a currently matching recipe is
+  used to attribute each old stack where possible
 - **23** re-keyed every card onto a UUID — see Card Identity. Nothing was added to the save shape;
   `id` changed type from number to string. `migrateCardIdsToUuid` in `App.jsx` is the migration, and
   it sits **above** the `< 18` branch in `loadState` because that branch *returns*, so anything below

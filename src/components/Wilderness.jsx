@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { audioEngine } from '../game/audio/audioEngine';
 import { SOUND_IDS } from '../game/audio/audioLibrary';
+import { clearLootFlightGhosts, flyLootElement } from '../game/lootFlight';
+import { hasProductionOutput } from '../game/productionOutputQueues';
+import { aggregateStagedCounts, LOOT_STAGE_FLIGHT_MS } from '../game/stagedLoot';
 import { createPortal } from 'react-dom';
 
 import CardFace from './CardFace';
@@ -11,16 +14,13 @@ import ResourceQuantityPopover from './ResourceQuantityPopover';
 import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
 import {
   ALL_GATHERING_RESOURCES,
-  PROCESSING_SLOT_COUNT,
   PROCESSING_RECIPES,
   PROCESSED_RESOURCES_BY_ID,
   TREASURE_PACK_RESOURCE,
   getGatheringAffixBonusPercent,
-  getGatheringDurationSeconds,
   getProcessingAffixBonusPercent,
   getProcessingDurationSeconds,
   hasQueuedGatheredResources,
-  hasQueuedProcessedResources,
 } from '../game/wilderness';
 
 /** Processing row names. "Bench" rather than "Row" — it names the thing rather than its position, the
@@ -109,10 +109,11 @@ function buildBonusRewardEntries(queue = {}) {
   return entries;
 }
 
-function SquareResourceCard({ resource, count = 0, className = '', tileRef = null, gainLabel = null, onContextMenu = null, onClick = null, dataDropTarget = null }) {
+function SquareResourceCard({ resource, count = 0, requiredCount = null, className = '', tileRef = null, gainLabel = null, onContextMenu = null, onClick = null, dataDropTarget = null }) {
   const artSrc = getResourceArt(resource);
   const name = typeof resource === 'string' ? resource : resource.name;
   const description = typeof resource === 'object' ? (resource.description ?? '') : '';
+  const showsRequirement = Number.isFinite(requiredCount) && requiredCount > 0;
   const [tipPos, setTipPos] = useState(null);
   const [clampedPos, setClampedPos] = useState(null);
   const tipRef = useRef(null);
@@ -150,7 +151,13 @@ function SquareResourceCard({ resource, count = 0, className = '', tileRef = nul
         <div className="card-face-inner">
           <div className="card-face-front foundry-square-resource__front">
             <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
-              <span className="foundry-square-resource__count">{fmtCount(count)}</span>
+              <span
+                className={`foundry-square-resource__count${showsRequirement ? ' foundry-square-resource__count--requirement' : ''}`}
+                data-material-requirement={showsRequirement ? `${count ?? 0}/${requiredCount}` : undefined}
+                aria-label={showsRequirement ? `${fmtCount(count)} of ${fmtCount(requiredCount)} required` : undefined}
+              >
+                {showsRequirement ? `${fmtCount(count)} / ${fmtCount(requiredCount)}` : fmtCount(count)}
+              </span>
             </div>
             <div className="foundry-square-resource__art-wrap">
               {artSrc ? <img src={artSrc} alt={name} className="foundry-square-resource__art" /> : null}
@@ -175,6 +182,8 @@ function SquareResourceCard({ resource, count = 0, className = '', tileRef = nul
 
 function GatheringSlot({
   slot,
+  stagedLoot = [],
+  stageTargetRef = null,
   isDragOver,
   onDragOver,
   onDragLeave,
@@ -185,13 +194,46 @@ function GatheringSlot({
   onPreviewEnter,
   onPreviewLeave,
 }) {
+  const stagedTileRefs = useRef({});
+  const stagedFlightsRef = useRef([]);
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
   const running = Boolean(slot.startedAt && slot.endsAt && remainingMs > 0);
   const bonusPercent = slot.card ? getGatheringAffixBonusPercent(slot.card) : 0;
-  const durationSeconds = slot.card ? getGatheringDurationSeconds(slot.card) : null;
-  const progress = running && durationSeconds ? Math.max(0, Math.min(1, remainingMs / (durationSeconds * 1000))) : 0;
+  const durationMs = slot.startedAt && slot.endsAt ? Math.max(1, slot.endsAt - slot.startedAt) : 0;
+  const progress = running && durationMs ? Math.max(0, Math.min(1, (now - slot.startedAt) / durationMs)) : 0;
   const clearTitle = returnsToPocket ? 'Remove and return to pocket' : 'Remove and return to collection';
+  const stagedResources = aggregateStagedCounts(stagedLoot, 'loot');
+  const stagedRewards = aggregateStagedCounts(stagedLoot, 'rewards');
+  const stagedResourceEntries = ALL_GATHERING_RESOURCES.filter(resource => (stagedResources[resource.id] ?? 0) > 0);
+  const stagedRewardEntries = buildBonusRewardEntries(stagedRewards);
+  const hasStagedLoot = stagedResourceEntries.length > 0 || stagedRewardEntries.length > 0;
+  const stagedKey = stagedLoot.map(event => event.id).join('|');
+  const nextReleaseAt = stagedLoot.length > 0 ? Math.min(...stagedLoot.map(event => event.releaseAt)) : null;
+
+  useEffect(() => {
+    clearLootFlightGhosts(stagedFlightsRef.current);
+    if (!stagedKey || !nextReleaseAt) return undefined;
+    const timeout = window.setTimeout(() => {
+      const target = stageTargetRef?.current;
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      Object.values(stagedTileRefs.current).filter(Boolean).forEach((source, index) => {
+        const flight = flyLootElement(source, {
+          x: rect.left + rect.width / 2,
+          y: rect.top + 24,
+          index,
+          durationMs: 500,
+          delayStepMs: 45,
+        });
+        if (flight) stagedFlightsRef.current.push(flight);
+      });
+    }, Math.max(0, nextReleaseAt - Date.now() - LOOT_STAGE_FLIGHT_MS));
+    return () => {
+      window.clearTimeout(timeout);
+      clearLootFlightGhosts(stagedFlightsRef.current);
+    };
+  }, [nextReleaseAt, stagedKey, stageTargetRef]);
 
   return (
     <div
@@ -229,19 +271,49 @@ function GatheringSlot({
             <CardFace card={slot.card} visualMode="compact" className="foundry-mine-slot__card-face no-twirl" />
           </div>
           <div className="foundry-mine-slot__right">
-            <div
-              className={`foundry-mine-slot__timer${running ? ' foundry-mine-slot__timer--running' : ''}`}
-              style={{ '--mine-progress': progress }}
-              aria-hidden="true"
-              title={running ? `${formatCountdown(remainingSeconds)} remaining` : 'Cycle ready'}
-            >
-              <span className="foundry-mine-slot__timer-core" />
+            <div className="station-tool-slot" aria-label="Gathering tool or buff slot">
+              <span className="station-tool-slot__speed">+{bonusPercent}% Speed</span>
+              <div className="station-tool-slot__socket">
+                <span>Tool/Buff</span>
+              </div>
             </div>
-            <div className="foundry-mine-slot__meta">
-              <span className="foundry-mine-slot__meta-line foundry-mine-slot__meta-line--accent">
-                +{bonusPercent}% Speed
-              </span>
+            <div className={`station-loot-stage${hasStagedLoot ? ' station-loot-stage--active' : ''}`}>
+              <div className="station-loot-stage__stack" aria-live="polite">
+                {stagedResourceEntries.map(resource => (
+                  <div key={`gather-stage-${resource.id}`} className="station-loot-stage__item">
+                    <SquareResourceCard
+                      resource={resource}
+                      count={stagedResources[resource.id]}
+                      tileRef={element => { stagedTileRefs.current[`resource-${resource.id}`] = element; }}
+                      className="station-loot-stage__card"
+                    />
+                  </div>
+                ))}
+                {stagedRewardEntries.map(entry => (
+                  <div key={`gather-stage-reward-${entry.id}`} className="station-loot-stage__item">
+                    <SquareResourceCard
+                      resource={{ name: entry.name, artKey: entry.artKey, description: entry.description }}
+                      count={entry.count}
+                      tileRef={element => { stagedTileRefs.current[`reward-${entry.id}`] = element; }}
+                      className="station-loot-stage__card"
+                    />
+                  </div>
+                ))}
+                {!hasStagedLoot ? <span className="station-loot-stage__empty">Loot</span> : null}
+              </div>
             </div>
+          </div>
+          <div
+            className={`station-cycle-progress station-cycle-progress--wilderness${running ? ' station-cycle-progress--running' : ''}`}
+            style={{ '--station-progress': progress }}
+            role="progressbar"
+            aria-label="Gathering cycle progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.round(progress * 100)}
+            title={running ? `${formatCountdown(remainingSeconds)} remaining` : 'Cycle ready'}
+          >
+            <span className="station-cycle-progress__fill" />
           </div>
         </>
       ) : (
@@ -322,6 +394,7 @@ function ProcessingInputSlot({
 }) {
   const [pickUpPopover, setPickUpPopover] = useState(null);
   const resource = slot.inputId ? ALL_GATHERING_RESOURCES.find(entry => entry.id === slot.inputId) : null;
+  const recipe = slot.inputId ? PROCESSING_RECIPES[slot.inputId] : null;
 
   return (
     <>
@@ -356,6 +429,7 @@ function ProcessingInputSlot({
             <SquareResourceCard
               resource={resource}
               count={slot.inputCount ?? 0}
+              requiredCount={recipe?.inputCount ?? null}
               className="foundry-forge-ore-slot__resource wilderness-square-resource"
             />
           </div>
@@ -382,8 +456,10 @@ function ProcessingInputSlot({
   );
 }
 
-function ProcessingOutputSlot({ slot, processedClaimQueue, queueGainByProcessed, tileRef = null }) {
-  const output = slot.outputId ? PROCESSED_RESOURCES_BY_ID[slot.outputId] : null;
+function ProcessingOutputSlot({ slot, outputQueue, queueGain, tileRef = null }) {
+  const queuedEntries = Object.entries(outputQueue ?? {}).filter(([, count]) => count > 0);
+  const outputId = queuedEntries[0]?.[0] ?? slot.outputId ?? null;
+  const output = outputId ? PROCESSED_RESOURCES_BY_ID[outputId] : null;
   if (!output) {
     return (
       <div className="foundry-forge-row__output-placeholder">
@@ -397,8 +473,8 @@ function ProcessingOutputSlot({ slot, processedClaimQueue, queueGainByProcessed,
     <SquareResourceCard
       tileRef={tileRef}
       resource={output}
-      count={processedClaimQueue[output.id] ?? 0}
-      gainLabel={queueGainByProcessed[output.id] ? `+ ${queueGainByProcessed[output.id]} crafted` : null}
+      count={queuedEntries.reduce((sum, [, count]) => sum + count, 0)}
+      gainLabel={queueGain ? `+ ${queueGain} crafted` : null}
       className="foundry-forge-row__output-card wilderness-square-resource wilderness-square-resource--processed"
     />
   );
@@ -407,8 +483,8 @@ function ProcessingOutputSlot({ slot, processedClaimQueue, queueGainByProcessed,
 function ProcessingRow({
   slot,
   now,
-  processedClaimQueue,
-  queueGainByProcessed,
+  outputQueue,
+  queueGain,
   outputTileRef,
   dragOverCardSlotId,
   dragOverInputSlotId,
@@ -428,7 +504,7 @@ function ProcessingRow({
   const progress = getProcessingRowProgress(slot, now);
   const running = progress > 0 && progress < 1;
   const recipe = slot.inputId ? PROCESSING_RECIPES[slot.inputId] : null;
-  const hasOutput = slot.outputId ? (processedClaimQueue[slot.outputId] ?? 0) > 0 : false;
+  const hasOutput = hasProductionOutput(outputQueue);
   const ready = Boolean(slot.card && recipe && (slot.inputCount ?? 0) >= recipe.inputCount);
   const durationSeconds = slot.card ? getProcessingDurationSeconds(slot.card) : null;
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
@@ -519,8 +595,8 @@ function ProcessingRow({
           <div className="foundry-forge-row__rail foundry-forge-row__rail--single">
             <ProcessingOutputSlot
               slot={slot}
-              processedClaimQueue={processedClaimQueue}
-              queueGainByProcessed={queueGainByProcessed}
+              outputQueue={outputQueue}
+              queueGain={queueGain}
               tileRef={outputTileRef}
             />
             <button
@@ -543,8 +619,9 @@ export default function Wilderness({
   gatheringSlots = [],
   gatheringClaimQueue = {},
   gatheringRewardQueue = {},
+  gatheringLootStages = [],
   processingSlots = [],
-  processedClaimQueue = {},
+  processingOutputQueues = {},
   processingRewardQueue = {},
   returnsGatheringCardsToPocket = true,
   returnsProcessingCardsToPocket = true,
@@ -558,7 +635,8 @@ export default function Wilderness({
   onLoadProcessingInput,
   onUnsocketProcessingInput,
   onPickUpProcessingInput,
-  onCollectProcessedResources,
+  onCollectProcessedOutput,
+  onCollectProcessingRewards,
   carriedResource = null,
   onPlaceCarriedResource,
 }) {
@@ -567,14 +645,14 @@ export default function Wilderness({
   const [dragOverProcessingCardSlotId, setDragOverProcessingCardSlotId] = useState(null);
   const [dragOverProcessingInputSlotId, setDragOverProcessingInputSlotId] = useState(null);
   const [queueGainByResource, setQueueGainByResource] = useState({});
-  const [queueGainByProcessed, setQueueGainByProcessed] = useState({});
+  const [queueGainByProcessingOutput, setQueueGainByProcessingOutput] = useState({});
   const [queueGainByGatheringReward, setQueueGainByGatheringReward] = useState({});
   const [queueGainByProcessingReward, setQueueGainByProcessingReward] = useState({});
   const [hoverPreview, setHoverPreview] = useState(null);
   /** Which processing bench is shown. Not persisted, and nothing auto-follows it — see the Forge. */
   const [activeProcessing, setActiveProcessing] = useState(0);
   const previousQueueRef = useRef(gatheringClaimQueue);
-  const previousProcessedQueueRef = useRef(processedClaimQueue);
+  const previousProcessingOutputQueuesRef = useRef(processingOutputQueues);
   const previousGatheringRewardQueueRef = useRef(gatheringRewardQueue);
   const previousProcessingRewardQueueRef = useRef(processingRewardQueue);
   const queueTileRefs = useRef({});
@@ -582,10 +660,18 @@ export default function Wilderness({
   const gatheringRewardRefs = useRef({});
   const processingRewardRefs = useRef({});
   const treasurePackRefs = useRef({});
+  const gatheringStageTargetRef = useRef(null);
+  const flyGhostsRef = useRef([]);
+  const collectTimeoutRef = useRef(null);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 100);
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => () => {
+    if (collectTimeoutRef.current) window.clearTimeout(collectTimeoutRef.current);
+    clearLootFlightGhosts(flyGhostsRef.current);
   }, []);
 
   useEffect(() => {
@@ -639,29 +725,31 @@ export default function Wilderness({
   }, [gatheringRewardQueue]);
 
   useEffect(() => {
-    const previousQueue = previousProcessedQueueRef.current ?? {};
+    const previousQueues = previousProcessingOutputQueuesRef.current ?? {};
     const nextGains = {};
 
-    for (const resourceId of Object.keys(PROCESSED_RESOURCES_BY_ID)) {
-      const currentCount = processedClaimQueue[resourceId] ?? 0;
-      const previousCount = previousQueue[resourceId] ?? 0;
-      if (currentCount > previousCount) nextGains[resourceId] = currentCount - previousCount;
-    }
+    Object.entries(processingOutputQueues).forEach(([slotId, outputs]) => {
+      const previousOutputs = previousQueues[slotId] ?? {};
+      const gained = Object.entries(outputs ?? {}).reduce((sum, [outputId, count]) => (
+        sum + Math.max(0, count - (previousOutputs[outputId] ?? 0))
+      ), 0);
+      if (gained > 0) nextGains[slotId] = gained;
+    });
 
-    previousProcessedQueueRef.current = processedClaimQueue;
+    previousProcessingOutputQueuesRef.current = processingOutputQueues;
     if (Object.keys(nextGains).length === 0) return;
 
-    setQueueGainByProcessed(prev => ({ ...prev, ...nextGains }));
+    setQueueGainByProcessingOutput(prev => ({ ...prev, ...nextGains }));
     const timeout = window.setTimeout(() => {
-      setQueueGainByProcessed(prev => {
+      setQueueGainByProcessingOutput(prev => {
         const next = { ...prev };
-        for (const resourceId of Object.keys(nextGains)) delete next[resourceId];
+        for (const slotId of Object.keys(nextGains)) delete next[slotId];
         return next;
       });
     }, 1400);
 
     return () => window.clearTimeout(timeout);
-  }, [processedClaimQueue]);
+  }, [processingOutputQueues]);
 
   useEffect(() => {
     const previousQueue = previousProcessingRewardQueueRef.current ?? {};
@@ -719,13 +807,13 @@ export default function Wilderness({
       running: progress > 0 && progress < 1,
       ready: hasCard && inputOk,
       hasCard,
-      hasOutput: slot.outputId ? (processedClaimQueue[slot.outputId] ?? 0) > 0 : false,
+      hasOutput: hasProductionOutput(processingOutputQueues[String(slot.slotId)] ?? {}),
       needs: !hasCard ? 'card' : !inputOk ? 'material' : null,
     };
   });
   const activeProcessingIndex = Math.min(activeProcessing, Math.max(0, processingSlots.length - 1));
   const activeProcessingSlot = processingSlots[activeProcessingIndex] ?? null;
-  const queueHasProcessed = hasQueuedProcessedResources(processedClaimQueue) || hasQueuedBonusRewards(processingRewardQueue);
+  const queueHasProcessingRewards = hasQueuedBonusRewards(processingRewardQueue);
 
   function handleGatheringSlotDrop(slotId, event) {
     event.preventDefault();
@@ -736,7 +824,7 @@ export default function Wilderness({
   }
 
   function handleCollectGathered() {
-    if (typeof onCollectGatheredResources !== 'function' || !queueHasResources) return;
+    if (typeof onCollectGatheredResources !== 'function' || !queueHasResources || flyGhostsRef.current.length > 0) return;
     // Played on the press, not in the App callback that runs when the fly animation lands.
     // That callback is behind a 600ms timer here (and 750ms + 70ms per item in Wilderness),
     // which is exactly the 1-2 second lag this was reported as: the sound was correct, it was
@@ -752,22 +840,11 @@ export default function Wilderness({
       let index = startIndex;
       elements.forEach(el => {
         if (!el) return;
-        el.style.animation = 'none';
-        const rect = el.getBoundingClientRect();
-        el.style.position = 'fixed';
-        el.style.left = `${rect.left}px`;
-        el.style.top = `${rect.top}px`;
-        el.style.width = `${rect.width}px`;
-        el.style.height = `${rect.height}px`;
-        el.style.margin = '0';
-        el.style.zIndex = '9999';
-        el.getBoundingClientRect();
-        const dx = tx - (rect.left + rect.width / 2);
-        const dy = ty - (rect.top + rect.height / 2);
-        el.style.transition = `transform 0.5s ease ${index * 0.07}s, opacity 0.4s ease ${index * 0.07 + 0.1}s`;
-        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
-        el.style.opacity = '0';
-        index++;
+        const flight = flyLootElement(el, { x: tx, y: ty, index });
+        if (flight) {
+          flyGhostsRef.current.push(flight);
+          index++;
+        }
       });
       return index;
     };
@@ -780,7 +857,11 @@ export default function Wilderness({
       const treasureElements = Object.values(treasurePackRefs.current).filter(Boolean);
       let count = animateGroup(inventoryElements, inventoryTarget, 0);
       count = animateGroup(treasureElements, summonTarget, count);
-      window.setTimeout(onCollectGatheredResources, 750 + count * 70);
+      collectTimeoutRef.current = window.setTimeout(() => {
+        collectTimeoutRef.current = null;
+        onCollectGatheredResources();
+        clearLootFlightGhosts(flyGhostsRef.current);
+      }, 750 + count * 70);
     } else {
       onCollectGatheredResources();
     }
@@ -801,44 +882,55 @@ export default function Wilderness({
     onLoadProcessingInput(slotId);
   }
 
-  function handleCollectProcessed() {
-    if (typeof onCollectProcessedResources !== 'function' || !queueHasProcessed) return;
-    audioEngine.play(SOUND_IDS.rewardClaim);
+  function flyElementsToCollectTarget(elements) {
     const targetEl = collectTargetRef?.current ?? null;
-    if (targetEl) {
-      const targetRect = targetEl.getBoundingClientRect();
-      const tx = targetRect.left + targetRect.width / 2;
-      const ty = targetRect.top + targetRect.height / 2;
-      let i = 0;
-      [
-        ...Object.values(processedOutputRefs.current),
-        ...Object.values(processingRewardRefs.current),
-      ].forEach(el => {
-        if (!el) return;
-        el.style.animation = 'none';
-        const rect = el.getBoundingClientRect();
-        el.style.position = 'fixed';
-        el.style.left = `${rect.left}px`;
-        el.style.top = `${rect.top}px`;
-        el.style.width = `${rect.width}px`;
-        el.style.height = `${rect.height}px`;
-        el.style.margin = '0';
-        el.style.zIndex = '9999';
-        el.getBoundingClientRect();
-        const dx = tx - (rect.left + rect.width / 2);
-        const dy = ty - (rect.top + rect.height / 2);
-        el.style.transition = `transform 0.5s ease ${i * 0.07}s, opacity 0.4s ease ${i * 0.07 + 0.1}s`;
-        el.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
-        el.style.opacity = '0';
-        i++;
-      });
-      const count = [
-        ...Object.values(processedOutputRefs.current),
-        ...Object.values(processingRewardRefs.current),
-      ].filter(Boolean).length;
-      window.setTimeout(onCollectProcessedResources, 750 + count * 70);
+    if (!targetEl) return 0;
+    const targetRect = targetEl.getBoundingClientRect();
+    const tx = targetRect.left + targetRect.width / 2;
+    const ty = targetRect.top + targetRect.height / 2;
+    let count = 0;
+    elements.forEach(el => {
+      if (!el) return;
+      const flight = flyLootElement(el, { x: tx, y: ty, index: count });
+      if (flight) {
+        flyGhostsRef.current.push(flight);
+        count++;
+      }
+    });
+    return count;
+  }
+
+  function handleCollectProcessedOutput(slotId) {
+    const outputQueue = processingOutputQueues[String(slotId)] ?? {};
+    if (typeof onCollectProcessedOutput !== 'function' || !hasProductionOutput(outputQueue) || flyGhostsRef.current.length > 0) return;
+    audioEngine.play(SOUND_IDS.rewardClaim);
+    const count = flyElementsToCollectTarget([processedOutputRefs.current[String(slotId)]]);
+    if (count > 0) {
+      collectTimeoutRef.current = window.setTimeout(() => {
+        collectTimeoutRef.current = null;
+        onCollectProcessedOutput(slotId);
+        clearLootFlightGhosts(flyGhostsRef.current);
+      }, 750 + count * 70);
     } else {
-      onCollectProcessedResources();
+      onCollectProcessedOutput(slotId);
+    }
+  }
+
+  function handleCollectProcessingRewards() {
+    if (typeof onCollectProcessingRewards !== 'function' || !queueHasProcessingRewards || flyGhostsRef.current.length > 0) return;
+    audioEngine.play(SOUND_IDS.rewardClaim);
+    const elements = Object.entries(processingRewardRefs.current)
+      .filter(([id, el]) => (processingRewardQueue[id] ?? 0) > 0 && el)
+      .map(([, el]) => el);
+    const count = flyElementsToCollectTarget(elements);
+    if (count > 0) {
+      collectTimeoutRef.current = window.setTimeout(() => {
+        collectTimeoutRef.current = null;
+        onCollectProcessingRewards();
+        clearLootFlightGhosts(flyGhostsRef.current);
+      }, 750 + count * 70);
+    } else {
+      onCollectProcessingRewards();
     }
   }
 
@@ -864,6 +956,8 @@ export default function Wilderness({
                   <GatheringSlot
                     key={slot.slotId}
                     slot={slot}
+                    stagedLoot={gatheringLootStages.filter(event => event.slotId === slot.slotId)}
+                    stageTargetRef={gatheringStageTargetRef}
                     now={now}
                     isDragOver={dragOverSlotId === slot.slotId}
                     onDragOver={event => {
@@ -894,7 +988,7 @@ export default function Wilderness({
                 </div>
               )}
 
-              <div className="foundry-queue wilderness-queue">
+              <div ref={gatheringStageTargetRef} className="foundry-queue wilderness-queue">
                 <div className="foundry-inventory__head">
                   <p className="foundry-inventory__label">Collection Queue</p>
                   <button
@@ -1030,9 +1124,9 @@ export default function Wilderness({
                     key={`processing-row-${activeProcessingSlot.slotId}`}
                     slot={activeProcessingSlot}
                     now={now}
-                    processedClaimQueue={processedClaimQueue}
-                    queueGainByProcessed={queueGainByProcessed}
-                    outputTileRef={el => { processedOutputRefs.current[activeProcessingSlot.slotId] = el; }}
+                    outputQueue={processingOutputQueues[String(activeProcessingSlot.slotId)] ?? {}}
+                    queueGain={queueGainByProcessingOutput[String(activeProcessingSlot.slotId)] ?? 0}
+                    outputTileRef={el => { processedOutputRefs.current[String(activeProcessingSlot.slotId)] = el; }}
                     dragOverCardSlotId={dragOverProcessingCardSlotId}
                     dragOverInputSlotId={dragOverProcessingInputSlotId}
                     setDragOverCardSlotId={setDragOverProcessingCardSlotId}
@@ -1046,7 +1140,7 @@ export default function Wilderness({
                     carriedResource={carriedResource}
                     onPreviewEnter={(element, card) => setHoverPreview(buildHoverCardPreview(element, card))}
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
-                    onCollect={handleCollectProcessed}
+                    onCollect={() => handleCollectProcessedOutput(activeProcessingSlot.slotId)}
                   />
                 ) : null}
               </div>
@@ -1057,8 +1151,8 @@ export default function Wilderness({
                     <p className="foundry-inventory__label">Bonus Queue</p>
                     <button
                       className="foundry-collect-btn wilderness-collect-btn"
-                      disabled={!queueHasProcessed}
-                      onClick={handleCollectProcessed}
+                      disabled={!queueHasProcessingRewards}
+                      onClick={handleCollectProcessingRewards}
                     >
                       Collect
                     </button>

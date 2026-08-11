@@ -289,35 +289,45 @@ export function startGatheringSlots(slots = [], now = Date.now()) {
 export function resolveCompletedGatheringSlots(slots = [], now = Date.now()) {
   const completedQueue = { ...DEFAULT_GATHERING_INVENTORY };
   const elementalDrops = { ...DEFAULT_RESOURCES };
+  const completedBySlot = [];
   let completedCount = 0;
   let goldEarned = 0;
 
   const nextSlots = slots.map(slot => {
     if (!slot?.card || !slot.endsAt || slot.endsAt > now || !slot.resourceId) return slot;
+    const slotLoot = {};
     if (completedQueue[slot.resourceId] !== undefined) {
       const attunementStat = CLASS_ATTUNEMENT_STAT[slot.card.classType];
       const attunementBonus = attunementStat ? rollAttunementBonus(slot.card, attunementStat) : 0;
       completedQueue[slot.resourceId] += 1 + attunementBonus;
+      slotLoot[slot.resourceId] = 1 + attunementBonus;
     }
     if (TREASURE_SENSE_CLASSES.has(slot.card.classType)) {
       const treasureSense = getCardAffixBonuses(slot.card)?.treasureSense ?? 0;
       if (rollAffixProcChance(treasureSense)) {
         completedQueue[TREASURE_PACK_RESOURCE.id] += 1;
+        slotLoot[TREASURE_PACK_RESOURCE.id] = (slotLoot[TREASURE_PACK_RESOURCE.id] ?? 0) + 1;
       }
     }
     const moteDrops = rollElementalAttunementDrops(slot.card);
     Object.entries(moteDrops).forEach(([resourceId, amount]) => {
       elementalDrops[resourceId] = (elementalDrops[resourceId] ?? 0) + amount;
     });
+    const coins = rollCoinGenerationReward(slot.card);
+    completedBySlot.push({
+      slotId: slot.slotId,
+      loot: slotLoot,
+      rewards: { coins, ...moteDrops },
+    });
     completedCount += 1;
-    goldEarned += rollCoinGenerationReward(slot.card);
+    goldEarned += coins;
     return startGatheringSlot(
       { ...slot, startedAt: null, endsAt: null, resourceId: null },
       now,
     );
   });
 
-  return { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops };
+  return { nextSlots, completedQueue, completedBySlot, completedCount, goldEarned, elementalDrops };
 }
 
 export function addGatheredCounts(left = {}, right = {}) {
@@ -395,6 +405,7 @@ export function startProcessingSlot(slot, now = Date.now()) {
 
 export function resolveCompletedProcessingSlots(slots = [], now = Date.now()) {
   const completedQueue = { ...DEFAULT_PROCESSED_INVENTORY };
+  const completedBySlot = {};
   const elementalDrops = { ...DEFAULT_RESOURCES };
   let completedCount = 0;
   let goldEarned = 0;
@@ -406,7 +417,12 @@ export function resolveCompletedProcessingSlots(slots = [], now = Date.now()) {
     }
 
     const attunementBonus = rollAttunementBonus(slot.card, 'smeltingAttunement');
-    completedQueue[recipe.outputId] += 1 + attunementBonus;
+    const outputCount = 1 + attunementBonus;
+    completedQueue[recipe.outputId] += outputCount;
+    completedBySlot[String(slot.slotId)] = {
+      ...(completedBySlot[String(slot.slotId)] ?? {}),
+      [recipe.outputId]: (completedBySlot[String(slot.slotId)]?.[recipe.outputId] ?? 0) + outputCount,
+    };
     const moteDrops = rollElementalAttunementDrops(slot.card);
     Object.entries(moteDrops).forEach(([resourceId, amount]) => {
       elementalDrops[resourceId] = (elementalDrops[resourceId] ?? 0) + amount;
@@ -428,7 +444,7 @@ export function resolveCompletedProcessingSlots(slots = [], now = Date.now()) {
     );
   });
 
-  return { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops };
+  return { nextSlots, completedQueue, completedBySlot, completedCount, goldEarned, elementalDrops };
 }
 
 export function addProcessedCounts(left = {}, right = {}) {

@@ -2806,11 +2806,20 @@ html[data-quality="medium"] .balance--pumping {
   padding: 22px 2px 4px;
 }
 
-/* The item wrapper is the card's own box, so the stack's margins and the flight transform both act on
-   something exactly card-sized. */
+/* The item wrapper is the card's own box, so the stack geometry and the viewport-level flight clone both
+   measure something exactly card-sized. */
 .queued-card-slot {
   width: 110px;
   height: 160px;
+}
+
+/* Collection flights are cloned into <body> so the cards can cross the overflow boundaries of the
+   Foundry/Wilderness panels and the summoning rail. Disable any entry/holo animation on that transient
+   copy: the outer ghost owns the one transform that matters while it is travelling. */
+.loot-flight-ghost,
+.loot-flight-ghost * {
+  animation: none !important;
+  pointer-events: none !important;
 }
 
 /* Queued card */
@@ -9632,10 +9641,11 @@ html[data-quality="medium"] .balance--pumping {
 .foundry-mine-slot__right {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   flex: 1;
-  gap: 0.45rem;
+  align-self: stretch;
+  gap: 0.38rem;
   min-width: 0;
 }
 
@@ -9650,56 +9660,114 @@ html[data-quality="medium"] .balance--pumping {
   aspect-ratio: 94 / 136;
 }
 
-.foundry-mine-slot__timer {
+/* The card's work area is deliberately split in half: future equipment above, the most recent roll
+   below. Neither section changes the slot's card-derived height. */
+.station-tool-slot,
+.station-loot-stage {
   position: relative;
-  width: min(54px, 100%);
-  height: auto;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(9,6,3,0.98) 56%, transparent 58%),
-    conic-gradient(from -90deg, rgba(228,188,104,0.9) 0turn calc(var(--mine-progress, 0) * 1turn), rgba(78,52,19,0.28) calc(var(--mine-progress, 0) * 1turn) 1turn);
-  box-shadow:
-    inset 0 0 0 1px rgba(233,196,120,0.14),
-    0 0 12px rgba(160,98,20,0.14);
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0.34rem 0.4rem;
+  border: 1px dashed rgba(180, 130, 40, 0.22);
+  background: linear-gradient(180deg, rgba(22, 14, 6, 0.56), rgba(10, 7, 3, 0.72));
+  overflow: hidden;
 }
 
-.foundry-mine-slot__timer--running {
-  box-shadow:
-    inset 0 0 0 1px rgba(233,196,120,0.18),
-    0 0 16px rgba(195,118,20,0.18);
-}
-
-.foundry-mine-slot__timer-core {
+.station-tool-slot__speed {
   position: absolute;
-  inset: 8px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255,224,160,0.16), transparent 52%),
-    linear-gradient(180deg, rgba(25,15,6,0.96), rgba(8,6,2,0.98));
-  border: 1px solid rgba(224,184,104,0.18);
-}
-
-.foundry-mine-slot__meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.16rem;
-  min-height: 1.6rem;
-  align-items: center;
-}
-
-.foundry-mine-slot__meta-line {
+  top: 0.3rem;
+  right: 0.38rem;
+  z-index: 2;
+  color: #e7c47f;
   font-family: var(--font-ui);
-  font-size: 0.68rem;
-  color: rgba(222,203,164,0.76);
-  line-height: 1.16;
-  text-align: center;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
-.foundry-mine-slot__meta-line--accent {
-  color: #f3cf88;
-  font-weight: 700;
+.station-tool-slot__socket {
+  position: absolute;
+  inset: 0.42rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  border: 1px dashed rgba(180, 130, 40, 0.18);
+  font-family: var(--font-caps);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.station-loot-stage__stack {
+  position: absolute;
+  inset: 0.3rem 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.station-loot-stage__empty {
+  color: rgba(132, 101, 54, 0.54);
+  font-family: var(--font-caps);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.station-loot-stage__item {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  animation: station-loot-arrive 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.station-loot-stage__item + .station-loot-stage__item {
+  margin-left: -22px;
+}
+
+.station-loot-stage__item:nth-child(1) { z-index: 1; }
+.station-loot-stage__item:nth-child(2) { z-index: 2; }
+.station-loot-stage__item:nth-child(3) { z-index: 3; }
+.station-loot-stage__item:nth-child(4) { z-index: 4; }
+
+.station-loot-stage__card.card-face-wrapper {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+}
+
+.station-loot-stage__card .foundry-square-resource__count {
+  font-size: 0.62rem;
+}
+
+.station-cycle-progress {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 4;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(78, 52, 19, 0.34);
+}
+
+.station-cycle-progress__fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(168, 98, 20, 0.92), rgba(232, 190, 101, 0.98));
+  box-shadow: 0 0 8px rgba(232, 190, 101, 0.4);
+  transform: scaleX(var(--station-progress, 0));
+  transform-origin: left center;
+}
+
+@keyframes station-loot-arrive {
+  from { opacity: 0; transform: translateY(-6px) scale(0.82); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .foundry-mine-slot__placeholder {
@@ -11353,6 +11421,29 @@ html[data-quality="medium"] .balance--pumping {
   color: #f4da98;
 }
 
+/* Material sockets use the card's existing count position for a recipe-aware placed/required value.
+   Keeping it inside the tile makes the number survive every compact station layout without adding a
+   second label over the artwork. */
+.foundry-square-resource__count--requirement,
+.foundry-crafting-requirement {
+  min-width: max-content;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #fff0bd;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.92);
+}
+
+/* Required secondary ingredients need a counter even while their card socket is empty. */
+.foundry-crafting-requirement {
+  position: absolute;
+  top: 0.42rem;
+  right: 0.42rem;
+  z-index: 3;
+  font-family: var(--font-display);
+  line-height: 1;
+}
+
 .foundry-square-resource__count--updating {
   animation: inventory-count-bump 0.62s cubic-bezier(0.16, 1, 0.3, 1);
   color: #fff2c6;
@@ -11688,34 +11779,32 @@ html[data-quality="medium"] .balance--pumping {
   color: #f4ffe0;
 }
 
-.wilderness-page .foundry-mine-slot__timer {
-  background:
-    radial-gradient(circle at 50% 50%, rgba(6,10,5,0.98) 56%, transparent 58%),
-    conic-gradient(from -90deg, rgba(196,224,142,0.9) 0turn calc(var(--mine-progress, 0) * 1turn), rgba(47,70,25,0.28) calc(var(--mine-progress, 0) * 1turn) 1turn);
-  box-shadow:
-    inset 0 0 0 1px rgba(196,224,142,0.14),
-    0 0 12px rgba(88,128,38,0.16);
+.wilderness-page .station-tool-slot,
+.wilderness-page .station-loot-stage {
+  border-color: rgba(126, 166, 92, 0.22);
+  background: linear-gradient(180deg, rgba(12, 20, 9, 0.58), rgba(7, 12, 5, 0.74));
 }
 
-.wilderness-page .foundry-mine-slot__timer--running {
-  box-shadow:
-    inset 0 0 0 1px rgba(196,224,142,0.18),
-    0 0 16px rgba(106,152,46,0.18);
-}
-
-.wilderness-page .foundry-mine-slot__timer-core {
-  background:
-    radial-gradient(circle at 35% 30%, rgba(236,252,210,0.16), transparent 52%),
-    linear-gradient(180deg, rgba(14,20,9,0.96), rgba(6,9,4,0.98));
-  border-color: rgba(196,224,142,0.18);
-}
-
-.wilderness-page .foundry-mine-slot__meta-line {
-  color: rgba(214, 231, 188, 0.76);
-}
-
-.wilderness-page .foundry-mine-slot__meta-line--accent {
+.wilderness-page .station-tool-slot__speed {
   color: #dff0b9;
+}
+
+.wilderness-page .station-tool-slot__socket {
+  border-color: rgba(126, 166, 92, 0.18);
+  color: rgba(124, 153, 94, 0.62);
+}
+
+.wilderness-page .station-loot-stage__empty {
+  color: rgba(112, 139, 85, 0.58);
+}
+
+.station-cycle-progress--wilderness {
+  background: rgba(47, 70, 25, 0.34);
+}
+
+.station-cycle-progress--wilderness .station-cycle-progress__fill {
+  background: linear-gradient(90deg, rgba(104, 151, 54, 0.94), rgba(196, 224, 142, 0.98));
+  box-shadow: 0 0 8px rgba(196, 224, 142, 0.38);
 }
 
 .wilderness-page .foundry-mine-slot__placeholder-rune,
@@ -13304,8 +13393,11 @@ html[data-quality="medium"] .balance--pumping {
   min-height: 112px;
   aspect-ratio: 1 / 1;
   pointer-events: none;
-  transform: rotate(-5deg);
+  /* A resource card is held square to the screen. Tilting made it look like a decorative hover
+     treatment instead of an object tracking the player's hand. */
+  transform: none;
   box-shadow: 0 16px 28px rgba(0,0,0,0.36);
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.34));
 }
 
 .card-face-wrapper.carried-resource-cursor .foundry-square-resource__front {
@@ -13318,10 +13410,46 @@ html[data-quality="medium"] .balance--pumping {
 
 .card-face-wrapper.carried-resource-cursor .foundry-square-resource__count {
   font-size: 0.9rem;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+
+.carried-resource-cursor__name {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1.45rem 0.42rem 0.38rem;
+  background: linear-gradient(0deg, rgba(10, 7, 4, 0.92), rgba(10, 7, 4, 0));
+  color: #f1e4c1;
+  font-family: var(--font-caps);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.12;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .foundry-square-resource[data-resource-drop-target] {
   cursor: pointer;
+}
+
+.inventory-tile.foundry-square-resource[data-resource-drop-target] {
+  cursor: grab;
+  user-select: none;
+}
+
+.inventory-tile.foundry-square-resource[data-resource-drop-target]:active {
+  cursor: grabbing;
+}
+
+/* Shared, static drop feedback for Bag drags. This cannot depend on animation because LOW and MEDIUM
+   quality disable blanket animations; the outline remains visible in every quality tier. */
+[data-resource-drop-target].resource-drop-target--drag-over {
+  outline: 2px solid rgba(244, 208, 120, 0.95);
+  outline-offset: 3px;
+  filter: brightness(1.16) drop-shadow(0 0 9px rgba(226, 174, 72, 0.5));
 }
 
 .foundry-square-resource[data-resource-drop-target]:hover {
@@ -15233,13 +15361,14 @@ html[data-quality="low"] .tab-rune-stream {
   height: 100%;
 }
 
-/* Meadow at golden hour — the fallback reads as the same place as the 3D scene. */
+/* Cool conifer valley — the fallback keeps the river diagonal and bright left meadow. */
 .scene-backdrop--wilderness .scene-backdrop__gradient {
   background:
-    radial-gradient(ellipse 70% 46% at 26% 34%, rgba(255, 214, 150, 0.42) 0%, transparent 64%),
-    radial-gradient(ellipse 120% 62% at 50% 112%, rgba(80, 106, 48, 0.80) 0%, transparent 60%),
-    linear-gradient(180deg, #8d7fa8 0%, #e2929a 22%, #f7b394 40%, #7d8a4e 66%, #3a4a26 100%);
-  background-color: #6f7a52;
+    linear-gradient(132deg, transparent 0 42%, rgba(72, 157, 166, 0.62) 45%, rgba(117, 194, 196, 0.74) 49%, rgba(49, 111, 123, 0.68) 53%, transparent 57%),
+    radial-gradient(ellipse 78% 74% at 8% 88%, rgba(135, 158, 73, 0.92) 0%, rgba(69, 102, 52, 0.72) 58%, transparent 76%),
+    radial-gradient(ellipse 82% 92% at 102% 48%, rgba(18, 55, 39, 0.96) 0%, rgba(28, 71, 49, 0.86) 66%, transparent 82%),
+    linear-gradient(180deg, #819d98 0%, #52746a 28%, #355a45 62%, #203d2d 100%);
+  background-color: #385e4d;
 }
 
 /* Dawn valley for the title card. */
@@ -15275,13 +15404,12 @@ html[data-quality="low"] .tab-rune-stream {
   opacity: 1;
 }
 
-/* Heavier than it was, because the orthographic bird's-eye framing shows far more sunlit
-   ground than the old view along the treeline did. Same reasoning as the cavern's lighter
-   veil in the opposite direction: the veil's job is to make UI contrast predictable, so it
-   tracks what the scene actually does. */
+/* Preserve the meadow/stream read while keeping the dense top and frame edges quiet enough
+   for navigation and station chrome. */
 .scene-backdrop--wilderness .scene-backdrop__veil {
   background:
-    linear-gradient(180deg, rgba(10, 6, 3, 0.64) 0%, rgba(10, 6, 3, 0.52) 17%, rgba(10, 6, 3, 0.30) 46%, rgba(10, 6, 3, 0.58) 100%);
+    radial-gradient(ellipse 62% 58% at 33% 58%, rgba(5, 15, 10, 0.08) 0%, rgba(5, 15, 10, 0.18) 76%, rgba(5, 15, 10, 0.28) 100%),
+    linear-gradient(180deg, rgba(5, 13, 11, 0.28) 0%, rgba(5, 13, 11, 0.12) 45%, rgba(5, 13, 11, 0.26) 100%);
 }
 
 /* Much lighter than the wilderness veil. That scene is a lit sunset and can afford to lose

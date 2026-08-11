@@ -180,6 +180,7 @@ export function startMiningSlots(slots = [], now = Date.now()) {
 export function resolveCompletedMiningSlots(slots = [], now = Date.now()) {
   const completedQueue = { ...DEFAULT_ORE_INVENTORY };
   const elementalDrops = { ...DEFAULT_RESOURCES };
+  const completedBySlot = [];
   let completedCount = 0;
   let goldEarned = 0;
 
@@ -191,8 +192,14 @@ export function resolveCompletedMiningSlots(slots = [], now = Date.now()) {
     Object.entries(moteDrops).forEach(([resourceId, amount]) => {
       elementalDrops[resourceId] = (elementalDrops[resourceId] ?? 0) + amount;
     });
+    const coins = rollCoinGenerationReward(slot.card);
+    completedBySlot.push({
+      slotId: slot.slotId,
+      loot: { [slot.oreType]: 1 + attunementBonus },
+      rewards: { coins, ...moteDrops },
+    });
     completedCount += 1;
-    goldEarned += rollCoinGenerationReward(slot.card);
+    goldEarned += coins;
     return startMiningSlot({
       ...slot,
       startedAt: null,
@@ -201,7 +208,7 @@ export function resolveCompletedMiningSlots(slots = [], now = Date.now()) {
     }, now);
   });
 
-  return { nextSlots, completedQueue, completedCount, goldEarned, elementalDrops };
+  return { nextSlots, completedQueue, completedBySlot, completedCount, goldEarned, elementalDrops };
 }
 
 export function addOreCounts(left = DEFAULT_ORE_INVENTORY, right = DEFAULT_ORE_INVENTORY) {
