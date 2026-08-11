@@ -270,6 +270,27 @@ missing. The diamond is **static, not animated** — the same rule the nav's loo
 The `foundry-action-row` under each half is **gone**, its summary folded into the half's existing header. It
 cost 32px of a half with none to spare and said less than the selector now says per row.
 
+### Foundry and Wilderness have no page title
+
+Both used to open with a big centred "FOUNDRY" / "WILDERNESS" and an instruction line. Removed: the tab bar
+already names the page, and each half carries its own heading and instruction ("The Mine" / "The Forge"), so
+it was the third label saying the same thing. Worth **~60px** — the band was 46px plus the page's 14.4px gap —
+handed straight to the halves, which is the scarcest space in the game. Arcana still renders a page title, so
+`.foundry-header` / `.foundry-title` / `.foundry-subtitle` stay; `.wilderness-title` / `-subtitle` are gone.
+
+Measured effect on inner scroll at 1366x768: mine 460 -> 399, forge 338 -> 277, gathering 474 -> 413,
+processing 206 -> 145. At 1512x982 the **Wilderness processing half now fits with no scroll at all** (27 -> 0).
+
+**It does not make the collection queue visible, and the reason is worth knowing.** The mine slots are square
+(`aspect-ratio: 1`) and fluid-width, so a wider half makes them wider *and therefore taller* — 618px at
+1512x982 against 551px at 1366x768. A bigger monitor gains 60px from this change and spends 67px of it on
+bigger slots, which is why the loot row sits 237px below the fold at 1512 and 360px at 1366.
+
+A 270x270 slot holds a 112x162 card beside the speed dial, so ~108px of it is vertical dead space. If the
+queue needs to be on screen, the lever is the slot's HEIGHT — capping it near 200px (and dropping the
+aspect-ratio) models out at 551 -> ~410px, which fits the whole mine half at 1512x982. That makes the slots
+wide rectangles rather than squares, which is a look to approve rather than assume.
+
 ## Navigation
 
 Current view order:

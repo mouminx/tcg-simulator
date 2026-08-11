@@ -11594,16 +11594,9 @@ optgroup {
   margin: 0 auto;
 }
 
-.wilderness-title {
-  background: linear-gradient(135deg, #d9e7b5 0%, #7fb86d 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.wilderness-subtitle {
-  color: #68804d;
-}
+/* `.wilderness-title` / `.wilderness-subtitle` are gone with the page's title band — the tab bar and the two
+   half headings already named the page. `.foundry-header` / `.foundry-title` / `.foundry-subtitle` stay,
+   because Arcana still renders a page title with them. */
 
 .wilderness-layout {
   display: grid;

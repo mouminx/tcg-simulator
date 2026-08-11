@@ -896,12 +896,8 @@ export default function Wilderness({
   return (
     <div className="wilderness-page">
       <HoverCardPreview preview={hoverPreview} />
-      <div className="foundry-header wilderness-header">
-        <h2 className="foundry-title wilderness-title">Wilderness</h2>
-        <p className="foundry-subtitle wilderness-subtitle">
-          Socket pocket cards to gather wild materials, then collect them into your resource stores.
-        </p>
-      </div>
+      {/* No page title — see the matching note in Foundry.jsx. The tab bar names the page and each half
+          has its own heading, so this was the third label saying the same thing. */}
 
       <div className="wilderness-layout">
         <div className="wilderness-main">

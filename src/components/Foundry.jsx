@@ -1225,10 +1225,10 @@ export default function Foundry({
   return (
     <div className="foundry-page">
       <HoverCardPreview preview={hoverPreview} />
-      <div className="foundry-header">
-        <h2 className="foundry-title">Foundry</h2>
-        <p className="foundry-subtitle">Socket pocket cards into the mine. Smelt collected ore into ingots.</p>
-      </div>
+      {/* No page title. The tab bar already says FOUNDRY, and each half carries its own heading and
+          instruction line ("The Mine" / "The Forge"), so a third label restated what two others said. It
+          cost 46px plus the page's 14.4rem gap — ~60px given straight back to the halves, which is the
+          scarcest space in the game. Arcana still uses `.foundry-header`, so those rules stay. */}
 
       <div className="foundry-layout">
         <div className="foundry-main">
