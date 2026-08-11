@@ -70,7 +70,7 @@ import {
   startProcessingSlot,
   startGatheringSlots,
 } from './game/wilderness';
-import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, RETIRED_PACK_REPLACEMENTS, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
+import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, getPackGroup, RETIRED_PACK_REPLACEMENTS, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
 import {
   EXPEDITION_STATES,
   EXPEDITION_DIFFICULTIES,
@@ -815,7 +815,17 @@ function GameApp({ savedState, account }) {
     // their cards sat — skips the stream. Streaming into the corner as well would show it twice.
     const skipStream = skipGoldStreamRef.current;
     skipGoldStreamRef.current = false;
-    const counter = skipStream ? null : spawnGoldStream(balance - prev);
+    const gained = balance - prev;
+    const streamed = skipStream ? null : spawnGoldStream(gained);
+    /**
+     * The counter bursts EITHER WAY.
+     *
+     * Suppressing the stream used to suppress this too, so treasure-pack gold — which pops where its cards
+     * sat — arrived at the total with no acknowledgement at all: the number just moved. The stream is what
+     * would have shown the gold twice; a burst at the destination is the thing that says it landed there, and
+     * that is worth having however the gold got there.
+     */
+    const counter = streamed ?? goldCounterPoint();
 
     /**
      * **The counter counts up when the gold gets there, not while it is in flight.** It used to start
@@ -829,8 +839,11 @@ function GameApp({ savedState, account }) {
     const arrival = skipStream ? 260 : GOLD_STREAM_ARRIVAL_MS;
 
     function startCountUp() {
-      // A flourish on the counter itself as the motes land, so the number and the effect agree.
-      if (counter) spawnGoldPop({ x: counter.x, y: counter.y, size: 'small' });
+      // A flourish on the counter itself as the gold lands, so the number and the effect agree. Sized off the
+      // amount for the same reason the stream is: a big payout should look like one.
+      if (counter) {
+        spawnGoldPop({ x: counter.x, y: counter.y, size: gained >= 100 ? 'large' : 'small' });
+      }
       const t0 = performance.now();
       setBalancePumping(true);
       function step(now) {
@@ -1232,12 +1245,23 @@ function GameApp({ savedState, account }) {
    * depends on the window, and a stale target would fling the motes at empty space. Returns the
    * counter's centre so the caller can pop a flourish there on arrival.
    */
-  function spawnGoldStream(amount) {
+  /**
+   * Where the gold counter is, measured now.
+   *
+   * Measured rather than stored, for the reason the stream's target always was: the counter lives in a sticky
+   * header whose position depends on the window, so a cached point would fling motes at empty space.
+   */
+  function goldCounterPoint() {
     const target = balanceTargetRef.current;
     if (!target) return null;
     const box = target.getBoundingClientRect();
     if (box.width === 0) return null;
-    const to = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  }
+
+  function spawnGoldStream(amount) {
+    const to = goldCounterPoint();
+    if (!to) return null;
     const press = lastPressRef.current;
     // Only a press from the last moment or so counts as the cause of this gold.
     const fresh = press && Date.now() - press.at < 1200;
@@ -1837,7 +1861,15 @@ function GameApp({ savedState, account }) {
     }
 
     setPacks(prev => prev.filter(p => p.id !== packId));
-    audioEngine.play(SOUND_IDS.packOpen);
+    /**
+     * A card pack's foil tears here, at the moment it is committed. A treasure cache is silent at this point
+     * on purpose: it does not tear, and its own sound belongs to the press that BREAKS it, which happens a
+     * beat later when the player clicks the chest — see `handleSplit` in PackOpening. Playing `pack.open`
+     * here too would give a cache a paper sound it has no business making, and then a second sound on top.
+     */
+    if (getPackGroup(pack.packTypeId) !== 'treasure') {
+      audioEngine.play(SOUND_IDS.packOpen);
+    }
     setPendingCards(cards);
     setPendingPackType(getPackTypeById(pack.packTypeId));
     setPacksOpened(n => n + 1);

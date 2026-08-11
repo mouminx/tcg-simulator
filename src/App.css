@@ -669,15 +669,42 @@ optgroup {
   transition: color 0.15s;
 }
 
+/* Gold is arriving. Both the pulse and a bright glow — the pulse alone was a 13% scale on a small number in
+   the corner, which is easy to miss when your attention is on whatever produced the gold.
+
+   The glow is a `text-shadow`, not a `filter`: the balance sits inside `.header`, and a filter creates a new
+   rendering context which in Chromium breaks `background-clip: text` mid-transition — the same fault that made
+   the wordmark flash a second title on hover. `text-shadow` is a plain repaint and cannot do that. */
 .balance--pumping {
-  color: #f0c96a;
+  color: #ffe6a3;
+  text-shadow:
+    0 0 6px rgba(255, 224, 140, 0.95),
+    0 0 16px rgba(255, 200, 80, 0.8),
+    0 0 34px rgba(255, 180, 50, 0.55);
   animation: balance-pump 0.22s ease-in-out infinite;
+}
+
+/* The coin icon beside the number lifts with it, or the glow looks like it belongs to the digits alone. */
+.balance--pumping .gold-coin {
+  filter: drop-shadow(0 0 8px rgba(255, 214, 120, 0.95));
 }
 
 @keyframes balance-pump {
   0%   { transform: scale(1); }
   45%  { transform: scale(1.13); }
   100% { transform: scale(1); }
+}
+
+/* The glow is the signal that gold arrived, so it must survive the blanket `animation: none` at low and
+   medium quality — it is a static property here, and the pulse is the bonus. Same reasoning as the nav's loot
+   diamond and the hand arc. */
+html[data-quality="low"] .balance--pumping,
+html[data-quality="medium"] .balance--pumping {
+  color: #ffe6a3;
+  text-shadow:
+    0 0 6px rgba(255, 224, 140, 0.95),
+    0 0 16px rgba(255, 200, 80, 0.8),
+    0 0 34px rgba(255, 180, 50, 0.55);
 }
 
 /* ── Tab bar (separate row below header) ── */
@@ -11193,7 +11220,9 @@ optgroup {
   gap: 0;
   height: 100%;
   padding: 0.38rem;
-  border-radius: 18px;
+  /* Named because the treasure shatter has to cut its fragments out of this exact shape — a rounded square,
+     not a square. Two copies of `18px` would eventually disagree and the break would grow square corners. */
+  border-radius: var(--loot-card-radius, 18px);
   overflow: hidden;
   background:
     linear-gradient(165deg, rgba(25,16,7,0.82), rgba(8,6,3,0.9));
@@ -16522,3 +16551,353 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
   width: 100%;
   text-align: center;
 }
+
+/* ── Altar tabs: Packs / Treasure ─────────────────────────────────────────────
+   One tab per group of openable things (see `PACK_GROUPS`). Every group is always listed, empty ones
+   included — a tab that vanished with its last item would take the only mention of Treasure with it. */
+.unpack-groups {
+  display: flex;
+  gap: 0.35rem;
+  width: 100%;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.unpack-group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.8rem;
+  font-family: var(--font-caps);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a7245;
+  background: linear-gradient(180deg, rgba(28, 21, 14, 0.72), rgba(18, 13, 9, 0.72));
+  border: 1px solid rgba(180, 130, 40, 0.22);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.unpack-group-tab:hover:not(:disabled) { color: #c9a84c; border-color: rgba(212, 168, 80, 0.45); }
+
+.unpack-group-tab--active {
+  color: #e8be65;
+  background: linear-gradient(180deg, rgba(58, 40, 18, 0.85), rgba(32, 22, 12, 0.85));
+  border-color: rgba(212, 168, 80, 0.6);
+}
+
+/* Dimmed, not hidden or disabled: an empty tab is still worth clicking to read where its contents come
+   from, which is exactly what a player who has never seen a Treasure cache needs. */
+.unpack-group-tab--empty:not(.unpack-group-tab--active) { opacity: 0.55; }
+
+.unpack-group-tab__count {
+  min-width: 1.1rem;
+  padding: 0.05rem 0.28rem;
+  font-size: 0.66rem;
+  color: #f2dcae;
+  background: rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(180, 130, 40, 0.28);
+  border-radius: 2px;
+}
+
+.unpack-group-tab:disabled { cursor: default; opacity: 0.4; }
+
+/* ── A treasure cache breaking open ───────────────────────────────────────────
+   Three beats over TREASURE_BURST_MS (1200ms), matching the constant in PackOpening.jsx:
+     0-350ms    brighten
+     250-800ms  rays grow and rotate
+     700-1200ms shatter into particles, chest fades
+   Everything is `transform`/`opacity`/`filter` so the whole sequence composites. */
+.treasure-cache {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+/* The card keeps its framed loot look right up to the shatter — see `LootTile`. Before, this was a bare
+   `<img>`, so the moment you pressed open the gold border vanished and it became a floating picture. */
+.treasure-cache__card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55));
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.treasure-cache:hover .treasure-cache__card {
+  transform: scale(1.04);
+  filter: drop-shadow(0 12px 26px rgba(240, 190, 90, 0.35));
+}
+
+/* Inside the card's frame, so the border whitens along with the art instead of staying gold around a blank
+   square. Opacity is driven by the charge keyframes. */
+.treasure-cache__whiteout {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #fff;
+  opacity: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* Rays sit BEHIND the chest, so they read as light escaping it rather than painted over it. A conic gradient
+   with hard stops is the cheapest way to get a fan of beams — no SVG, no per-ray element. */
+.treasure-cache__rays {
+  position: absolute;
+  z-index: 1;
+  width: 460px;
+  height: 460px;
+  opacity: 0;
+  transform: scale(0.25) rotate(0deg);
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 224, 140, 0.55) 0deg 4deg, transparent 4deg 18deg,
+    rgba(255, 224, 140, 0.4)  18deg 21deg, transparent 21deg 40deg,
+    rgba(255, 224, 140, 0.55) 40deg 45deg, transparent 45deg 62deg,
+    rgba(255, 224, 140, 0.35) 62deg 65deg, transparent 65deg 90deg,
+    rgba(255, 224, 140, 0.55) 90deg 95deg, transparent 95deg 115deg,
+    rgba(255, 224, 140, 0.4)  115deg 118deg, transparent 118deg 140deg,
+    rgba(255, 224, 140, 0.55) 140deg 145deg, transparent 145deg 168deg,
+    rgba(255, 224, 140, 0.35) 168deg 171deg, transparent 171deg 195deg,
+    rgba(255, 224, 140, 0.55) 195deg 200deg, transparent 200deg 222deg,
+    rgba(255, 224, 140, 0.4)  222deg 225deg, transparent 225deg 250deg,
+    rgba(255, 224, 140, 0.55) 250deg 255deg, transparent 255deg 278deg,
+    rgba(255, 224, 140, 0.35) 278deg 281deg, transparent 281deg 305deg,
+    rgba(255, 224, 140, 0.55) 305deg 310deg, transparent 310deg 332deg,
+    rgba(255, 224, 140, 0.4)  332deg 335deg, transparent 335deg 360deg
+  );
+  /* Fades the beams out toward their tips so they do not end in a hard circular edge. */
+  mask-image: radial-gradient(circle, rgba(0,0,0,0.15) 12%, #000 34%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,0.15) 12%, #000 34%, transparent 72%);
+  pointer-events: none;
+}
+
+/* The core flash the chest sits in. Separate from the rays so its swell can be timed independently. */
+.treasure-cache__flare {
+  position: absolute;
+  z-index: 1;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.5);
+  background: radial-gradient(circle, rgba(255, 240, 190, 0.9) 0%, rgba(255, 200, 90, 0.45) 34%, transparent 70%);
+  pointer-events: none;
+}
+
+.treasure-cache--bursting { cursor: default; }
+
+/* CHARGE — 0 to 520ms. The card grows and floods to pure white. Nothing has broken yet; this is the wind-up
+   that makes the substitution below invisible, because at the top of it there is nothing to recognise. */
+.treasure-cache--bursting .treasure-cache__card {
+  animation: treasure-charge 520ms cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+.treasure-cache--bursting .treasure-cache__whiteout {
+  animation: treasure-whiteout 520ms cubic-bezier(0.5, 0, 0.7, 1) forwards;
+}
+
+/* SHATTER — the card is gone, replaced by its fragments, so the wrapper stops scaling and lets them travel. */
+.treasure-cache--shattered .treasure-cache__card {
+  animation: none;
+  transform: scale(1.34);
+}
+
+.treasure-cache--bursting .treasure-cache__rays {
+  animation: treasure-rays 1200ms cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+
+.treasure-cache--bursting .treasure-cache__flare {
+  animation: treasure-flare 1200ms ease-out forwards;
+}
+
+@keyframes treasure-charge {
+  0%   { transform: scale(1);    filter: brightness(1) drop-shadow(0 10px 22px rgba(0,0,0,0.55)); }
+  45%  { transform: scale(1.14); filter: brightness(2.2) drop-shadow(0 0 34px rgba(255, 214, 120, 0.9)); }
+  /* A beat of compression before it lets go, so the break reads as the card giving way under pressure. */
+  74%  { transform: scale(1.1);  filter: brightness(3.4) drop-shadow(0 0 46px rgba(255, 235, 180, 1)); }
+  100% { transform: scale(1.34); filter: brightness(4.4) drop-shadow(0 0 60px rgba(255, 250, 235, 1)); }
+}
+
+/* Reaches FULL white exactly as the charge ends, which is the frame the fragments replace the card on. */
+@keyframes treasure-whiteout {
+  0%   { opacity: 0; }
+  55%  { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+@keyframes treasure-rays {
+  0%   { opacity: 0;    transform: scale(0.25) rotate(0deg); }
+  20%  { opacity: 0.35; transform: scale(0.6)  rotate(24deg); }
+  50%  { opacity: 0.95; transform: scale(1)    rotate(58deg); }
+  66%  { opacity: 1;    transform: scale(1.16) rotate(74deg); }
+  100% { opacity: 0;    transform: scale(1.7)  rotate(104deg); }
+}
+
+@keyframes treasure-flare {
+  0%   { opacity: 0;    transform: scale(0.5); }
+  29%  { opacity: 0.55; transform: scale(0.85); }
+  58%  { opacity: 0.8;  transform: scale(1.05); }
+  66%  { opacity: 1;    transform: scale(1.35); }
+  100% { opacity: 0;    transform: scale(2); }
+}
+
+.treasure-cache__shards {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+/* Each shard is one element travelling to its own (--sx, --sy). The 58% delay start is what makes the
+   particles appear to come OUT of the chest's collapse rather than alongside it. */
+.treasure-shard {
+  position: absolute;
+  width: var(--ss, 5px);
+  height: var(--ss, 5px);
+  border-radius: 1px;
+  background: linear-gradient(140deg, #fff4d2, #e8be65 55%, #a86214);
+  box-shadow: 0 0 8px rgba(255, 214, 120, 0.85);
+  opacity: 0;
+  animation: treasure-shard 620ms cubic-bezier(0.15, 0.75, 0.3, 1) calc(580ms + var(--sd, 0ms)) forwards;
+}
+
+.treasure-shard--bright {
+  background: linear-gradient(140deg, #ffffff, #fff0c0 60%, #e8be65);
+  box-shadow: 0 0 12px rgba(255, 240, 190, 0.95);
+}
+
+@keyframes treasure-shard {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.4) rotate(0deg); }
+  12%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--sx), var(--sy)) scale(0.5) rotate(var(--spin, 180deg)); }
+}
+
+/* ── The fragments ──
+   The card is REPLACED by this grid at the top of the white-out. Each piece carries the same artwork as a
+   background, offset so together they reassemble the image — which is the only way an image can actually
+   break apart rather than fade with sparks over it. */
+.treasure-shatter {
+  position: relative;
+  display: block;
+  width: 200px;
+  height: 200px;
+}
+
+.treasure-piece {
+  position: absolute;
+  inset: 0;
+  /* Each piece's own duration, so they do not fade in lockstep. */
+  animation: treasure-piece var(--dur, 520ms) cubic-bezier(0.18, 0.72, 0.3, 1) var(--pd, 0ms) forwards;
+  /* A warm glow on the TRIANGLE (this element carries the clip), which is what separates one white fragment
+     from the next once they part. Without it a mass of white triangles reads as one blob, not as pieces. */
+  filter: drop-shadow(0 0 7px rgba(255, 216, 130, 0.75));
+  will-change: transform, opacity;
+}
+
+/* The inner layer is a flat WHITE fill carrying the card's corner radius, so a fragment is
+   `triangle ∩ rounded-square` — see the note in PackOpening.jsx for why this cannot be one element.
+
+   White, not the artwork: the charge ends with the card flooded to pure white, so the union of these
+   fragments is pixel-for-pixel what was on screen the instant before, at the same scale. Showing the chest
+   again in the pieces would announce the substitution. */
+.treasure-piece__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--loot-card-radius, 18px);
+  background: #fff;
+}
+
+
+@keyframes treasure-piece {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+  62%  { opacity: 1; }
+  100% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--spin, 180deg)) scale(0.42);
+    opacity: 0;
+  }
+}
+
+/* Low and Medium switch `animation` off globally to stop always-on ambient motion costing frames. This is
+   not that: it is one 1200ms sequence, fired only when the player opens a cache they earned, and without it
+   the card would simply vanish and the loot appear. Same exemption the gold burst carries, and for the same
+   reason. Counts are not tiered — 25 fragments and 30 specks for one second is not what those tiers are for. */
+html[data-quality="low"] .treasure-cache--bursting .treasure-cache__card,
+html[data-quality="medium"] .treasure-cache--bursting .treasure-cache__card {
+  animation: treasure-charge 520ms cubic-bezier(0.4, 0, 0.6, 1) forwards !important;
+}
+
+html[data-quality="low"] .treasure-cache--bursting .treasure-cache__whiteout,
+html[data-quality="medium"] .treasure-cache--bursting .treasure-cache__whiteout {
+  animation: treasure-whiteout 520ms cubic-bezier(0.5, 0, 0.7, 1) forwards !important;
+}
+
+html[data-quality="low"] .treasure-cache--shattered .treasure-cache__card,
+html[data-quality="medium"] .treasure-cache--shattered .treasure-cache__card {
+  animation: none !important;
+}
+
+html[data-quality="low"] .treasure-piece,
+html[data-quality="medium"] .treasure-piece {
+  animation: treasure-piece var(--dur, 520ms) cubic-bezier(0.18, 0.72, 0.3, 1) var(--pd, 0ms) forwards !important;
+}
+
+
+html[data-quality="low"] .treasure-cache--bursting .treasure-cache__rays,
+html[data-quality="medium"] .treasure-cache--bursting .treasure-cache__rays {
+  animation: treasure-rays 1200ms cubic-bezier(0.2, 0.6, 0.3, 1) forwards !important;
+}
+
+html[data-quality="low"] .treasure-cache--bursting .treasure-cache__flare,
+html[data-quality="medium"] .treasure-cache--bursting .treasure-cache__flare {
+  animation: treasure-flare 1200ms ease-out forwards !important;
+}
+
+html[data-quality="low"] .treasure-shard,
+html[data-quality="medium"] .treasure-shard {
+  animation: treasure-shard 620ms cubic-bezier(0.15, 0.75, 0.3, 1) calc(580ms + var(--sd, 0ms)) forwards !important;
+}
+
+/* ── A held treasure cache, drawn as loot rather than as a pack ────────────────
+   Same `foundry-square-resource` tile the Bag and the collection queues use, because a cache IS loot — the
+   same object the Wilderness queue showed pending, with the same artwork. Square, so it also sits correctly
+   in the altar's stacked row without the pack's 1:1.45 proportions leaving a gap under it. */
+.held-loot {
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+}
+
+/* Matched to `PackCard`'s own sizes so the stacked row's geometry (`--stack-w`, the overlap) is unchanged
+   whichever tab is showing: `sm` packs are 110px wide, `md` are 200px.
+
+   COMPOUND selector, and it has to be: `.card-face-wrapper.foundry-square-resource` is specificity 0,2,0 and
+   sets `width: 100%`, which a single `.held-loot--sm` cannot beat — and 100% of a content-sized parent is
+   circular, so the tile collapsed to 12px and rendered as a speck. Third time this exact shape has appeared
+   (the shelf packs and the goods grid were the others): a percentage width inheriting into a container that
+   has no definite width of its own. */
+.card-face-wrapper.held-loot--sm { width: 110px; height: 110px; }
+.card-face-wrapper.held-loot--md { width: 200px; height: 200px; }
+
+.held-loot__fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 2.4rem;
+  color: rgba(232, 190, 101, 0.7);
+}
+
+/* The row is bottom-aligned for packs, whose tall shape defines the line. A square tile is shorter, so
+   without this it floats above the packs' baseline when both are on screen during a tab switch. */
+.unpack-pack-row--line > .unpack-pack-item > .held-loot { align-self: flex-end; }

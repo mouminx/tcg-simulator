@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import PackCard from './PackCard';
 import PackOpening from './PackOpening';
-import { getPackTypeById } from '../game/cards';
+import { getPackTypeById, PACK_GROUPS, DEFAULT_PACK_GROUP, getPackGroup, getPackTile } from '../game/cards';
+import { getResourceArt } from '../game/resourceArt';
+import LootTile from './LootTile';
 import {
   assignInventoryItemToSlot,
   createEmptyAttunementLoadout,
@@ -69,6 +71,9 @@ function FlyingPack({ packType, startX, startY, endX, endY, onDone }) {
   return createPortal(
     <div
       ref={ref}
+      // Named so the thing in flight is identifiable. It had no class at all, which is also why nothing
+      // noticed it was still drawing a pack graphic for a treasure cache.
+      className="unpack-flying-pack"
       style={{
         position: 'fixed',
         left: startX,
@@ -79,10 +84,28 @@ function FlyingPack({ packType, startX, startY, endX, endY, onDone }) {
         pointerEvents: 'none',
       }}
     >
-      <PackCard size="md" packType={packType} />
+      <HeldOpenable size="md" packType={packType} />
     </div>,
     document.body
   );
+}
+
+
+/**
+ * A held openable, drawn the way its group declares (`PACK_GROUPS[].tile`).
+ *
+ * `pack` is the foil-wrapper graphic. `loot` is the square resource tile the Bag and the collection queues
+ * use — because a treasure cache IS loot: it is the same object the Wilderness queue showed pending, with the
+ * same artwork, and drawing it as a booster made it look like a card pack that opens into cards.
+ *
+ * Branching here rather than at each render site means the altar's row, the staged view, and anything added
+ * later all agree, and a new group chooses its treatment once in `PACK_GROUPS`.
+ */
+function HeldOpenable({ packType, size }) {
+  if (getPackTile(packType?.id) !== 'loot') {
+    return <PackCard size={size} packType={packType} />;
+  }
+  return <LootTile artSrc={getResourceArt(packType?.artKey)} name={packType?.name ?? ''} size={size} />;
 }
 
 // ── Slot config ────────────────────────────────────────────────────────────────
@@ -440,7 +463,7 @@ function SummoningField({
         ) : (
           <>
             <div className="summon-pack-wrap">
-              <PackCard size="md" packType={staged.packType} />
+              <HeldOpenable size="md" packType={staged.packType} />
             </div>
             <div className="summon-actions">
               <button className="summon-btn summon-btn--back" onClick={onCancel}>
@@ -509,6 +532,11 @@ export default function UnpackPage({
   const [hiddenPackId, setHiddenPackId] = useState(null);
   const [showNextPrompt, setShowNextPrompt] = useState(false);
   const [stagedPack, setStagedPack] = useState(null); // { pack, packType }
+  /**
+   * Which altar tab is showing. Not persisted — it is where the player is looking, the same reasoning as the
+   * forge row selector. Defaults to Packs.
+   */
+  const [activeGroup, setActiveGroup] = useState(DEFAULT_PACK_GROUP);
   const [draftLoadout, setDraftLoadout] = useState(() => createEmptyAttunementLoadout());
   const packItemRefs = useRef({});
   const fieldRef = useRef(null);
@@ -533,6 +561,22 @@ export default function UnpackPage({
    * first gets the same treatment — see `.unpack-pack-row--line` in App.css.
    */
   const packRowRef = useRef(null);
+
+  /**
+   * Held packs bucketed by group, so a tab knows its own count without re-filtering at every use site.
+   * Built for EVERY group, including empty ones — a tab that vanishes when its last cache is opened would
+   * take the only mention of Treasure with it, and a player would never learn the category exists.
+   */
+  const packsByGroup = useMemo(() => {
+    const buckets = Object.fromEntries(PACK_GROUPS.map(g => [g.id, []]));
+    for (const pack of packs) {
+      const group = getPackGroup(pack.packTypeId);
+      (buckets[group] ?? buckets[DEFAULT_PACK_GROUP]).push(pack);
+    }
+    return buckets;
+  }, [packs]);
+
+  const groupPacks = packsByGroup[activeGroup] ?? [];
 
   function stagePackObject(pack) {
     const packType = getPackTypeById(pack.packTypeId);
@@ -622,13 +666,15 @@ export default function UnpackPage({
   }
 
   function handlePackDone() {
-    const hasMore = packs.length > 0;
+    // Scoped to the visible tab. Against every held pack, finishing your last cache would offer "Open Next"
+    // and then open a card pack from the other tab — something you cannot see and did not choose.
+    const hasMore = groupPacks.length > 0;
     onPackDone();
     if (hasMore) setShowNextPrompt(true);
   }
 
   function handleUnpackNext() {
-    const next = getNextPack(packs);
+    const next = getNextPack(groupPacks);
     if (next) handlePackClick(next);
   }
 
@@ -638,13 +684,13 @@ export default function UnpackPage({
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (isOpening) {
         packOpeningRef.current?.advance();
-      } else if (showNextPrompt || (!busy && packs.length > 0)) {
+      } else if (showNextPrompt || (!busy && groupPacks.length > 0)) {
         handleUnpackNext();
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpening, showNextPrompt, busy, packs]);
+  }, [isOpening, showNextPrompt, busy, groupPacks]);
 
   return (
     <div className="unpack-page">
@@ -655,23 +701,48 @@ export default function UnpackPage({
         <h2>Summon</h2>
       </div>
 
-      {/* The held packs, as an overlapping horizontal line. Always rendered, so the row below it does not
-          jump when the last pack is opened. */}
+      {/* One tab per group of openable things. Every group is always listed, including empty ones: a tab that
+          disappeared with its last item would take the only mention of Treasure with it, and a player would
+          have no way to learn the category exists. Counts sit on the tab so a full Treasure tab is visible
+          while you are looking at Packs. */}
+      <div className="unpack-groups" role="tablist" aria-label="Openable">
+        {PACK_GROUPS.map(group => {
+          const count = packsByGroup[group.id]?.length ?? 0;
+          const active = group.id === activeGroup;
+          return (
+            <button
+              key={group.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`unpack-group-tab${active ? ' unpack-group-tab--active' : ''}${count === 0 ? ' unpack-group-tab--empty' : ''}`}
+              onClick={() => setActiveGroup(group.id)}
+              disabled={busy}
+            >
+              <span className="unpack-group-tab__label">{group.label}</span>
+              <span className="unpack-group-tab__count">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* The held packs of the active group, as an overlapping horizontal line. Always rendered, so the row
+          below it does not jump when the last one is opened. */}
       <div
         ref={el => {
           packRowRef.current = el;
           if (packFanRef) packFanRef.current = el;
         }}
-        className={`unpack-pack-row unpack-pack-row--line stack-line${busy ? ' unpack-pack-row--busy' : ''}${packs.length === 0 ? ' unpack-pack-row--empty' : ''}`}
+        className={`unpack-pack-row unpack-pack-row--line stack-line${busy ? ' unpack-pack-row--busy' : ''}${groupPacks.length === 0 ? ' unpack-pack-row--empty' : ''}`}
         // The one thing CSS cannot work out for itself: how many gaps the overlap has to close so the whole
         // stack fits the row. `max(1, …)` guards the divide-by-zero at a single item.
-        style={{ '--stack-gaps': Math.max(1, packs.length - 1) }}
+        style={{ '--stack-gaps': Math.max(1, groupPacks.length - 1) }}
       >
-        {packs.length === 0 ? (
+        {groupPacks.length === 0 ? (
           <p className="unpack-pack-row-empty-hint">
-            Acquire packs from the Shop to begin summoning
+            {PACK_GROUPS.find(g => g.id === activeGroup)?.empty ?? 'Nothing to open here yet.'}
           </p>
-        ) : packs.map((pack, i) => {
+        ) : groupPacks.map((pack, i) => {
           const packType = getPackTypeById(pack.packTypeId);
           const isHidden = hiddenPackId === pack.id;
           return (
@@ -687,7 +758,7 @@ export default function UnpackPage({
               onDragEnd={handlePackDragEnd}
               onClick={() => handlePackClick(pack)}
             >
-              <PackCard size="sm" packType={packType} />
+              <HeldOpenable size="sm" packType={packType} />
             </div>
           );
         })}
@@ -715,7 +786,7 @@ export default function UnpackPage({
           <div className="opening-stage">
             <div className="unpack-next-area">
               <p className="unpack-next-label">
-                {packs.length} pack{packs.length !== 1 ? 's' : ''} remaining
+                {groupPacks.length} remaining
               </p>
               <button className="unpack-next-btn summon-btn summon-btn--primary" onClick={handleUnpackNext}>
                 Open Next Pack

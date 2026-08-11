@@ -45,6 +45,16 @@ const OUT = join(ROOT, 'src/assets/audio');
  * Category presets. `target` is integrated loudness in LUFS — SFX sit hotter than ambience
  * so they cut through the bed without needing per-sound volume tweaks.
  */
+/**
+ * loudnorm's true-peak ceiling, in dBTP.
+ *
+ * -1.0 is the project's stated target for the SOURCE, but Opus overshoots it on percussive or very dense
+ * material — the shipped `pool.cardPlace.*` and `wilderness.chop.1` land at 0.0 dB because of it. Peaky
+ * content can need a lower ceiling to come out under 0, which is what a per-entry `tp` is for. Lowering it
+ * limits PEAKS only; the integrated target is untouched, so a sound stays level-matched with everything else.
+ */
+const DEFAULT_TP = -1.0;
+
 const PRESETS = {
   // 48000 is not a free choice: libopus only accepts 8/12/16/24/48 kHz. The 32000 that used
   // to be here failed outright — it went unnoticed because no entry used this preset until
@@ -97,6 +107,25 @@ const MAP = [
       'cards_rapid_3.wav': { startSeconds: 1.06, clipSeconds: 0.86 },
     } },
   { id: 'reward.coin',               preset: 'sfx',      files: 'sack_of_coins_clinking_' },
+  // Breaking open a treasure cache. All three takes BUILD to their reveal rather than opening on it —
+  // measured RMS peaks at ~0.5s, ~0.75s and ~1.0s respectively — so played whole the click would register
+  // and the sound would arrive up to a second later. Same trap as cards_rapid and card_place: each is
+  // excerpted to start just before its own peak, which puts the hit ~50ms in and reads as immediate.
+  //
+  // NO `measureSeconds` here, and that is deliberate — it was tried and it CLIPPED. Measuring a 0.9s window
+  // and encoding 1.7s calibrates loudnorm's true-peak limiter on the wrong region, so the output overshot to
+  // +1.1/+1.6/+1.9 dB against the project's -1 dBTP. `measureSeconds` earns its place only for a percussive
+  // one-shot whose long quiet decay would drag the mean down (see pool.cardPlace); these are dense shimmer
+  // sounds where the encoded region is the right thing to measure.
+  // `tp` is lowered from the default -1.0 because these overshot to +1.1/+1.9 dB — audibly clipped, and well
+  // past the 0.0 dB the noisiest shipped sounds reach. Dropping the true-peak ceiling makes loudnorm limit
+  // the peaks harder while leaving the -14 LUFS integrated target alone, so the cache still sits at the same
+  // perceived loudness as every other SFX. Measured after: see the peak check in the commit message.
+  { id: 'treasure.open', preset: 'sfx', files: 'treasure_open_', tp: -4.5, perFile: {
+      'treasure_open_1.wav': { startSeconds: 0.30, clipSeconds: 1.70 },
+      'treasure_open_2.wav': { startSeconds: 0.55, clipSeconds: 1.70 },
+      'treasure_open_3.wav': { startSeconds: 0.80, clipSeconds: 1.80 },
+    } },
   // ── Interface ────────────────────────────────────────────────────────────────
   // Also pools, for the same reason. The source folder names record the intent:
   //   pageTurn  pack-sfx/            — opening a pack
@@ -171,9 +200,10 @@ function regionArgs(opts, forMeasurement = false) {
  */
 async function measureLoudness(input, target, opts = {}) {
   const { pre, post } = regionArgs(opts, true);
+  const tp = opts.tp ?? DEFAULT_TP;
   const args = [
     '-hide_banner', '-nostats', ...pre, '-i', input, ...post,
-    '-af', `loudnorm=I=${target}:TP=-1.0:LRA=11:print_format=json`,
+    '-af', `loudnorm=I=${target}:TP=${tp}:LRA=11:print_format=json`,
     '-f', 'null', '-',
   ];
   let stderr = '';
@@ -190,6 +220,7 @@ async function measureLoudness(input, target, opts = {}) {
 
 async function encodeOne(inputPath, outputPath, preset, opts = {}) {
   const p = PRESETS[preset];
+  const tp = opts.tp ?? DEFAULT_TP;
   const filters = [];
 
   // Measured two-pass loudnorm is materially better than the single-pass estimate,
@@ -197,13 +228,13 @@ async function encodeOne(inputPath, outputPath, preset, opts = {}) {
   const measured = await measureLoudness(inputPath, p.target, opts);
   if (measured) {
     filters.push(
-      `loudnorm=I=${p.target}:TP=-1.0:LRA=11` +
+      `loudnorm=I=${p.target}:TP=${tp}:LRA=11` +
       `:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}` +
       `:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}` +
       `:offset=${measured.target_offset}:linear=true`,
     );
   } else {
-    filters.push(`loudnorm=I=${p.target}:TP=-1.0:LRA=11`);
+    filters.push(`loudnorm=I=${p.target}:TP=${tp}:LRA=11`);
   }
 
   if (p.trim) {

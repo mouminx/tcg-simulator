@@ -1725,6 +1725,92 @@ at once rather than a single flip. It also scrolls the queue strip into view —
 past the fold on a short window, which would defeat a button whose whole job is showing you
 everything at once.
 
+### The altar's group tabs
+
+`PACK_GROUPS` in cards.js; tabs rendered by `UnpackPage`. **Packs** is the default; **Treasure** is separate
+because a cache is not a card pack — it opens into gold, has its own artwork and its own opening animation, so
+putting it in the same row as boosters mixed two different things.
+
+A pack type opts into a group with `group: '<id>'`; anything without one is `packs`, which is why no existing
+type needed changing. Adding a group is one entry in `PACK_GROUPS` plus a `group` on the types that belong to
+it — the extension point for more treasure tiers or other openable loot.
+
+- **`getPackGroup` falls back to the default for an unknown id.** A save can hold a retired pack type (see
+  `RETIRED_PACK_REPLACEMENTS`), and a pack belonging to no group would be held, invisible in every tab, and
+  unopenable. The suite asserts the tab counts sum to the number of packs held.
+- **Empty groups keep their tab**, dimmed. A tab that vanished with its last cache would take the only mention
+  of Treasure with it, so a player would never learn the category exists. The empty line says where the
+  contents *come from*, which is the only useful thing to tell someone looking at an empty tab.
+- **`getNextPack`, the `u` hotkey, "N remaining" and `handlePackDone` are all scoped to the visible tab.**
+  Against every held pack, finishing your last cache would offer "Open Next" and then open a card pack from
+  the other tab — something you cannot see and did not choose.
+
+**Held caches draw as LOOT tiles, not packs.** `PACK_GROUPS[].tile` is `'pack'` or `'loot'`, and
+`HeldOpenable` in UnpackPage branches on it once for both the altar row and the staged view. A cache is the
+same object the Wilderness queue showed pending, so it uses the same square `foundry-square-resource` tile and
+the same chest art; as a booster wrapper it looked like something that opens into cards.
+
+Its size rule must be a **compound** selector (`.card-face-wrapper.held-loot--sm`):
+`.card-face-wrapper.foundry-square-resource` is 0,2,0 and sets `width: 100%`, which a single class cannot beat
+— and 100% of a content-sized parent is circular, so the tile collapsed to 12px. Third instance of that shape,
+after the shelf packs and the goods grid.
+
+### A treasure cache breaking open
+
+`TreasureCache` in PackOpening.jsx, `.treasure-cache` in App.css. Treasure has no foil to tear, and running it
+through `SplitPack` opened a chest of gold with a paper-tearing animation. Three beats over
+**`TREASURE_BURST_MS` (1200ms)**:
+
+| Window | What |
+|---|---|
+| 0–520ms | CHARGE: the card grows and floods to pure white |
+| 250–800ms | rays grow out from behind it, rotating |
+| 520–1320ms | the card is **replaced by 27 random triangular fragments** that fly apart |
+
+**A cache reveals its whole contents at once** — no card-by-card tap. The chest has already burst, so tapping
+five gold cards afterwards is ceremony for a reward already shown arriving. `revealAll` is extracted from
+`handleQuickDraw` and shared: the burst calls it silently, Quick Draw calls it with a sound. Quick Draw is
+hidden for treasure, where the only thing it could do during INTRO is skip the burst.
+
+- **An `<img>` cannot break apart**, which is why the card is *substituted* at the top of the white-out. The two
+  stages are real React state, not just CSS timing, because that swap has to land on the frame where there is
+  nothing recognisable on screen to give it away.
+- **The crack pattern is RADIAL, not a grid**, because that is how things break: cracks run outward from an
+  impact point and are crossed by a concentric fracture. One off-centre impact, nine random spoke angles, one
+  jittered ring. Inside the ring each wedge is a triangle from the impact point; outside it each wedge is a
+  quad split in two — so every fragment is a triangle. Adjacent pieces share spoke endpoints *by
+  construction*, which is what tiles them with no seams. The wrapping wedge must take the long way round or
+  the last piece is drawn inside-out and leaves a gap.
+- **Regenerated per opening**, so no two caches break alike, with per-piece travel, spin, delay and duration
+  randomised — that is what makes them fade at different moments rather than in lockstep. Pieces fly along the
+  line from the impact point to their own centroid, inner ones first, so the break propagates outward.
+- **The fragments are WHITE and carry no artwork.** The charge ends with the card flooded to pure white, so the
+  thing on screen at that instant *is* a white rounded square and that is what must break; fragments showing
+  the chest again would announce the substitution. The intact card is unmounted, so no frame has both.
+- **Two elements per fragment, and it must be two.** A fragment is `triangle ∩ rounded-square`, which one
+  element cannot express: the outer carries the triangle and the motion, the inner the corner radius
+  (`--loot-card-radius`, shared with the card so they cannot drift). Clipping is in the outer's own
+  coordinates and the transform applies after, so a piece keeps its shape rigidly as it flies. Without it a
+  shattering card briefly grows square corners it never had.
+- **Each triangle carries a warm drop-shadow**, which is what separates one white fragment from the next. A
+  mass of white triangles with no edges reads as a single blob.
+- **`LootTile` is shared** by the held row, the flight, the staged view and the cache itself. It was rebuilt ad
+  hoc in some of those and a bare `<img>` in others, so a cache turned back into a pack mid-flight and lost its
+  gold border once opening began. The white-out sits *inside* the frame so the border whitens with the art.
+- **The phase timeout reads the same constant the CSS is written against.** `handleSplit` waits
+  `TREASURE_BURST_MS` before `REVEALING`; if the two drift the loot appears over a chest that is still
+  bursting. The suite asserts the reveal is absent at 700ms and present after.
+- **`isTreasure` comes from the pack's GROUP, not from `isResourceReveal`.** They coincide today, but the
+  group is the declared fact and the reveal shape is a consequence — so a future card pack that happened to
+  yield resources would not get the chest.
+- **Rays are one `conic-gradient` behind the chest**, masked radially so the beams fade at the tips instead of
+  ending on a hard circle. No SVG and no per-ray element.
+- **The shard field is built once per mount from a seeded generator.** Inline it would reshuffle on any
+  re-render — and this component re-renders on the very phase change that starts the animation, so the shards
+  would jump at the moment they became visible. Same reason `GoldBurst` seeds its motes.
+- **Exempted from the low/medium `animation: none` blanket**, like `.gold-burst`: one 1200ms sequence fired
+  when the player opens something they earned, and without it the chest would simply vanish. Asserted at low.
+
 ### Treasure Pack
 
 - generated by `Treasure Sense`

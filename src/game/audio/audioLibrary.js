@@ -64,6 +64,7 @@ export const SOUND_IDS = Object.freeze({
   cardFlip: 'card.flip',
   cardPlace: 'card.place',
   rewardClaim: 'reward.claim',
+  treasureOpen: 'treasure.open',
   coin: 'reward.coin',
   mineComplete: 'foundry.mineComplete',
   smeltComplete: 'foundry.smeltComplete',
@@ -303,6 +304,21 @@ export const AUDIO_DEFINITIONS = Object.freeze([
     minRetriggerMs: 120,
     detuneJitter: 40,
     variants: CARDS_RAPID_POOL,
+  },
+  {
+    // Breaking open a treasure cache. Three takes, one picked at random.
+    //
+    // `maxVoices: 1` and a long retrigger window because this is a 1.7s shimmer under a 1320ms animation —
+    // two of them overlapping would be mud, and there is no way to open two caches at once anyway.
+    // No `detuneJitter`: the three takes already supply the variety, and pitch-shifting a long tonal
+    // shimmer is audible as a wobble rather than as variation (unlike a short percussive click).
+    id: SOUND_IDS.treasureOpen,
+    bus: AUDIO_BUSES.sfx,
+    volume: 0.85,
+    preload: 'auto',
+    maxVoices: 1,
+    minRetriggerMs: 900,
+    variants: variantsOf(SOUND_IDS.treasureOpen, 3),
   },
 
   // ── Production ──────────────────────────────────────────────────────────────

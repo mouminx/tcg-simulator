@@ -372,6 +372,55 @@ const TAG_CHANCE = 0.14;
  */
 export const PERMANENT_PACK_IDS = ['dusk', 'iron', 'arcane', 'void', 'primordial'];
 
+/**
+ * The groups a held, openable thing can belong to — the tabs on the summoning altar.
+ *
+ * A pack type opts in with `group: '<id>'`; anything without one is in `packs`, which is why every existing
+ * type and every future card pack needs no change. Treasure is separate because it is not a card pack at all:
+ * it is a found cache that opens into resources, with its own artwork and its own opening animation. Lumping
+ * it in with the card packs put a thing that yields gold in the same row as things that yield cards.
+ *
+ * Adding a group is this array plus a `group` on the types that belong to it. `empty` is the line shown when
+ * the group has nothing in it, and it should say where the things COME FROM — that is the only useful thing
+ * to tell someone looking at an empty tab.
+ */
+export const PACK_GROUPS = Object.freeze([
+  Object.freeze({
+    id: 'packs',
+    label: 'Packs',
+    empty: 'Buy packs from the shelves to the left to begin summoning.',
+    // How a held item in this group is drawn: `pack` is the foil-wrapper graphic, `loot` is the square
+    // resource tile the Bag and the collection queues use. Declared per GROUP rather than branched on
+    // `id === 'treasure'` at each render site, so a new group picks its own treatment in one place.
+    tile: 'pack',
+  }),
+  Object.freeze({
+    id: 'treasure',
+    label: 'Treasure',
+    empty: 'Treasure caches are uncovered by Treasure Sense while gathering.',
+    tile: 'loot',
+  }),
+]);
+
+export const DEFAULT_PACK_GROUP = 'packs';
+
+/**
+ * Which group a held pack belongs to.
+ *
+ * Falls back to the default for an unknown id rather than dropping it: a save can hold a pack whose type was
+ * retired (see `RETIRED_PACK_REPLACEMENTS`), and a pack that belongs to no group would be invisible in every
+ * tab — held, unopenable, and impossible to diagnose.
+ */
+export function getPackGroup(packTypeId) {
+  return PACK_TYPES[packTypeId]?.group ?? DEFAULT_PACK_GROUP;
+}
+
+/** How a held item of this type should be drawn — `'pack'` or `'loot'`. See `PACK_GROUPS[].tile`. */
+export function getPackTile(packTypeId) {
+  const group = getPackGroup(packTypeId);
+  return PACK_GROUPS.find(g => g.id === group)?.tile ?? 'pack';
+}
+
 /** Stocked a few at a time by the rotation. See `src/game/shop.js`. */
 export const ROTATION_PACK_IDS = [
   'vault1', 'vault2', 'vault3',
@@ -417,7 +466,14 @@ export const PACK_TYPES = {
     tierWeights:   { 1: 78, 2: 15, 3: 5, 4: 1.7, 5: 0.3 },
   },
   treasure: {
-    id: 'treasure', name: 'Treasure', subtitle: 'Pack', cardCount: 5,
+    // Not a card pack: it opens into gold rather than cards, so it lives on its own altar tab and gets its
+    // own opening animation. See PACK_GROUPS.
+    group: 'treasure',
+    // Drawn as a loot tile, so it needs art the way a resource does. Same key as
+    // `TREASURE_PACK_RESOURCE.artKey`, so the pending reward in the Wilderness queue and the held cache on
+    // the altar are unmistakably the same object.
+    artKey: 'treasure_chest',
+    id: 'treasure', name: 'Treasure', subtitle: 'Cache', cardCount: 5,
     cost: 0, stars: '✦ ✦',
     description: 'Gold caches only · Found through Treasure Sense',
     rarityWeights: { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0, mythic: 0 },
