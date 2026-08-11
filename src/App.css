@@ -9390,26 +9390,21 @@ optgroup {
   color: rgba(150, 110, 55, 0.9);
 }
 
-/* ── Mine slots ── */
-/* Two columns by default; FOUR on a short viewport, which is a height fix rather than a width preference.
-   Measured at 1366x768: each `.foundry-half` gets 395px, and a 2x2 grid of 270px slots needs 551px before
-   the collection queue is counted — so the mine section could not fit however small the cards got. One row
-   of four is 270px + queue = ~341px and does fit, and the halves have width to spare at every size the
-   game supports. The breakpoint is on HEIGHT for the same reason. */
+/* ── Mine slots (and Wilderness's gathering slots, which reuse this class) ── */
+/* ALWAYS 2x2. No height breakpoint.
+   There used to be a `max-height: 940px` query that switched to a single row of four, on the grounds that
+   2x2 does not fit a short viewport — which is true: at 1366x768 a `.foundry-half` gets 395px and a 2x2 grid
+   of 270px slots needs 551px, so this half scrolls there.
+
+   It is 2x2 anyway, because a row of four does not work for how mining and gathering are actually played,
+   and because four slots squeezed across one half are too small to read. Wider slots with an inner scroll
+   beat a layout that fits and cannot be used. Do not reintroduce the breakpoint to reclaim the height: the
+   fix, if one is wanted, is a shorter SLOT, not more columns. */
 .foundry-mine-slots {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
   align-items: stretch;
-}
-
-/* 940px, not 860: at 1440x900 the 2x2 grid still overflowed the mine half by 304px. The breakpoint is
-   set from where the measurement says the layout stops fitting, not from a round number. */
-@media (max-height: 940px) {
-  .foundry-mine-slots {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.45rem;
-  }
 }
 
 /* NO `min-height` here, and `align-content: start`.
@@ -9440,10 +9435,17 @@ optgroup {
    stack would silently never engage. Two classes beat one regardless of order. Same trap as the shop's
    category media query and the summon field's container query.
 
-   These tiles have no intrinsic width (the grid used to give them one), so the stack has to. */
+   These tiles have no intrinsic width (the grid used to give them one), so the stack has to.
+
+   **72px, matching `.inventory-tile` exactly.** A queued loot tile and the same resource sitting in the Bag
+   are the same object, so they should read at the same size — and it was 112px here against 72px there, which
+   made the queue look like a different, heavier thing than the inventory it feeds. Matching also takes 40px
+   straight off the row (112 -> 72), which is 40px back in a half that scrolls. */
 .foundry-queue-slots.stack-line {
-  --stack-w: 112px;
-  --stack-overlap: 62px;
+  --stack-w: 72px;
+  /* Proportional to the smaller tile: 38 of 72 leaves 34px showing, the same fraction 62 of 112 left. Only
+     the baseline for a short queue — the solved step takes over once the row needs it. */
+  --stack-overlap: 38px;
   display: flex;
   /* Must be reset HERE, not on `.stack-line`. `.foundry-queue-slots` sets `gap: 0.65rem` from its grid days
      at the same specificity but later in the file, so the base reset lost — and the gap was added on top of
@@ -9461,12 +9463,12 @@ optgroup {
 .foundry-queue-slots.stack-line > .foundry-queue-pack,
 .foundry-queue-slots.stack-line > .card-face-wrapper {
   width: var(--stack-w);
-  /* Sized to CONTENT, not to `--foundry-queue-tile-h` (188px), which was reserved for a 5-column grid cell
-     and is a tall rectangle at the stack's 112px width.
-     A fixed replacement was tried at 148px and made things WORSE where the queue is small: the Wilderness
-     processing bonus queue holds two tiles and its grid row was only 96px, so a 148px floor grew that half
-     from 389px of scroll to 464px. `0` lets each row cost exactly what it holds. */
-  min-height: 0;
+  /* Square at 72px, the same box `.inventory-tile` uses.
+     NOT `--foundry-queue-tile-h` (188px), which was reserved for a 5-column grid cell and is a tall rectangle
+     at this width. A fixed 148px was also tried and made things WORSE where the queue is small: the
+     Wilderness processing bonus queue holds two tiles and its grid row was only 96px, so a 148px floor grew
+     that half from 389px of scroll to 464px. */
+  min-height: var(--stack-w);
   /* `grid-column` on the pack tile is meaningless in a flex row and would otherwise be dead weight. */
   grid-column: auto;
 }

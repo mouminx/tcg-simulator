@@ -185,6 +185,12 @@ neglect.
 | Cards (shop + altar) | **no page scroll** | **no page scroll** | **no page scroll** |
 | Foundry — forge half | 338px | 263px | 234px |
 | Wilderness — processing half | 206px | 145px | 96px |
+| Foundry — mine half | ~390px | ~390px | ~390px |
+| Wilderness — gathering half | ~390px | ~390px | ~390px |
+
+The mine and gathering figures are the cost of forced 2x2 slots — a deliberate choice, see below. Everything
+else in this table is with empty collection queues; a large haul used to add ~200px per queue, and now adds
+one 72px row (see **`.stack-line`** and the collection-queue note under it).
 
 Those production figures are with empty collection queues. With a large haul (11–12 entries) the queues used
 to add ~200px each; stacked, they add ~30px. Measured at 1366x768 with the same seed, before → after:
@@ -202,10 +208,21 @@ every width from 1024 to 1920, though the altar rail owns up to 109px of its own
 `.collection-card-slot` also had to stop being a fixed 110x160 and fill its cell, or a shrunken cell left the
 card overflowing it — that was the last ~25px of residual scroll.
 
-**The mine and gathering slots go to a single row of four below 940px.** A 2x2 grid of 270px slots needs
-551px and the half only gets 395px, so no amount of card-shrinking would have fitted it; the halves have
-width to spare at every size the game supports. The breakpoint is 940px because that is where the
-measurement says it stops fitting — at 1440x900 the 2x2 grid still overflowed by 304px.
+**The mine and gathering slots are ALWAYS 2x2, and this half is allowed to scroll for it.** There was a
+`max-height: 940px` breakpoint that switched to a single row of four so the half would fit; it is gone.
+
+Four across does fit — and it is the wrong layout: it does not match how mining and gathering are played, and
+four slots squeezed into one half are too small to read. So the arithmetic is accepted rather than solved: a
+`.foundry-half` gets 395px at 1366x768 and a 2x2 grid of 270px slots needs 551px, which is ~390px of the mine
+and gathering halves' inner scroll. Wider, readable slots with a scroll beat a layout that fits and cannot be
+used.
+
+**Do not reintroduce the breakpoint to reclaim that height.** It was tried, shipped, and rejected on exactly
+this ground. If the height is wanted back, the answer is a shorter SLOT, not more columns.
+
+At 1366x768 a socketed card is 112px in a 270px slot; at 1512x982, 133px in a 304px slot. There is room in
+the slot for up to ~190px of card (`.foundry-mine-slot__card` caps at `max-width: 70%`), so the binding limit
+is `--station-card-w`'s `13.5vh` — see the note on that variable for what raising it costs.
 
 ### One forge row and one processing bench at a time
 
@@ -1481,7 +1498,13 @@ card faces, pack items, the pack-count tile) render into these rows without each
    because the altar column around it does scroll.
 
 Per-consumer sizing: packs 110px wide / 58px bite; reveal cards 110px / 78px (twice the pack cap in a
-narrower column, so a tighter grouping); queue tiles 112px / 62px.
+narrower column, so a tighter grouping); **collection-queue tiles 72px / 38px**.
+
+The queue tiles are 72px because that is exactly `.inventory-tile`'s size. A queued loot tile and the same
+resource sitting in the Bag are the same object and should read at the same scale; they were 112px here
+against 72px there, which made the queue look like a heavier, separate thing from the inventory it feeds.
+Matching also takes 40px off the row, which is 40px back in a half that scrolls — 112px -> 72px, and the whole
+queue is now one tile tall where a 5-column grid needed 308px for the same haul.
 
 The cap on held packs came down to 10 with this — see **Held-pack cap**.
 
