@@ -1,0 +1,87 @@
+---
+paths:
+  - "src/App.jsx"
+  - "src/game/storage.js"
+---
+
+<!-- Path-scoped rule: loads when the save's shape or location is in play. -->
+
+# Save State
+
+The persisted shape, and what each version migration did. The root `CLAUDE.md` carries the *contract* (App.jsx
+owns the shape, storage.js owns the location, adapters move raw strings); this is the shape itself and the
+history, which is not derivable from the code once a migration has run.
+
+## Save State
+
+- `localStorage` key: `tcg-sim` on the web; a `save.json` file in the desktop shell — see
+  **Where the save lives** below. `App.jsx` owns the save's *shape*, `src/game/storage.js` owns its
+  *location*, and neither knows about the other
+- current save version: `23`
+
+Current persisted state includes:
+
+```js
+{
+  balance,
+  collection,
+  packs,
+  market,
+  resources,
+  arcanaInventory,
+  oreInventory,
+  ingotInventory,
+  mineSlots,
+  mineSlotCapacity,
+  mineClaimQueue,
+  mineRewardQueue,
+  forgeCardSlots,
+  forgeOreSlots,
+  forgeIngredientSlots,
+  forgeFuelSlots,
+  ingotClaimQueue,
+  forgeRewardQueue,
+  gatheredInventory,
+  processedInventory,
+  gatheringSlots,
+  gatheringClaimQueue,
+  gatheringRewardQueue,
+  processingSlots,
+  processedClaimQueue,
+  processingRewardQueue,
+  expeditionDifficultyId,
+  expeditionUnitSlots,
+  expeditionSupplySlots,
+  expeditionArcanaSlots,
+  expeditionRun,
+  packsOpened,
+  audioSettings,
+  graphicsSettings,
+  pocket,
+  pocketCapacity,
+  lootSeen,
+  version,
+  pocketSystemVersion,
+}
+```
+
+Important details:
+
+- `pocket` stores full card objects, not IDs
+- active resource pocket state is gone from the save shape
+- `resources` stores all Arcana element tiers using Arcana resource ids
+- `audioSettings` is persisted but there is not yet a UI to edit it
+- **23** re-keyed every card onto a UUID — see Card Identity. Nothing was added to the save shape;
+  `id` changed type from number to string. `migrateCardIdsToUuid` in `App.jsx` is the migration, and
+  it sits **above** the `< 18` branch in `loadState` because that branch *returns*, so anything below
+  it never runs for the oldest saves — which are exactly the ones carrying counter ids
+- **22** folded gathered ores and ingots into `oreInventory` / `ingotInventory` (and the pending
+  claim queues) — see Inventory. Nothing was added to the save shape; entries moved between existing
+  maps
+- `lootSeen` (added in 21) records whether each loot-bearing view has been looked at since
+  its last delivery. Absent on older saves means "seen", so existing loot shows a calm
+  diamond instead of glowing on first load
+- old Expedition saves are migrated so support slots collapse back to the new defaults (`1` supply, `1` arcana)
+- legacy creature-card saves are migrated into the newer class/unit card model
+
+---

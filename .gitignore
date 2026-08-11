@@ -56,3 +56,6 @@ supabase/.temp
 # `git add -A` would commit them. Guard rather than remember.
 * [0-9].*
 * [0-9][0-9].*
+
+# Packaged-build userData and temp artefacts written by the test suites
+tests/.tmp
