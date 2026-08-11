@@ -826,6 +826,21 @@ runner stashes it and writes a temporary one pointing at the local stack. This w
 after `.env.local` was switched to the hosted project, the suites started failing because hosted auth
 rejects `@example.test` addresses — a failure, rather than quietly seeding production with junk players.
 
+### The runner must assert a FULL pass, and must not re-run to get details
+
+Two bugs in `run-all.sh` that between them hid a real failure, both now fixed in `run_suite`:
+
+- It matched the summary line with `grep -E "^[0-9]+/[0-9]+ passed"`, which **matches `44/45 passed`** — so
+  a partial pass read as success. That happened: `test-slots-ui` reported 44/45 and the run carried on
+  calling itself green. The check now compares the two numbers *and* the suite's exit code.
+- On failure it **re-ran the suite** to print details. For the online suites that means creating more
+  accounts, takes minutes, and — since they are timing-sensitive — the second run can pass, so the evidence
+  for the failure destroys itself. Output is captured once and the `FAIL` lines are printed from it.
+
+`test-slots-ui` is mildly flaky against a freshly-started local stack (that 44/45, then 45/45 on three
+consecutive re-runs). Worth knowing before treating one red run as a regression — but with the above fixed,
+a red run is now at least *reported* as red.
+
 ### supabase-js is lazily imported
 
 `import('@supabase/supabase-js')` inside `getClient()`, for the same reason `three` is lazy: a static
