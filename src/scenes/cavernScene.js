@@ -1,806 +1,975 @@
 /**
- * Foundry backdrop — a worked stone mine shaft, lit by its own forge.
+ * Foundry backdrop — an open-roofed underground forge chamber.
  *
- * A cave is defined by what is lit, not by what is there. So the priorities here are
- * almost the inverse of the wilderness scene:
+ * The composition is intentionally built as a diorama rather than a tunnel: a dark rock
+ * amphitheatre frames a broad worked floor, two mine portals feed curving rails into the
+ * room, and a masonry furnace anchors the centre. Lava on both flanks supplies the warm
+ * edge light and leads the eye toward the lower bridge. Everything is procedural and
+ * deterministic; repeated detail is instanced and the only textures are tiny in-memory
+ * radial masks for atmospheric particles.
  *
- *   1. **Darkness with pools of light.** Two point lights carry the whole scene: a warm
- *      forge fire near the camera and a cooler lantern deep in the shaft. Everything
- *      between them falls off into fog.
- *   2. **Dense, near-black fog.** Underground it is the only depth cue there is — there
- *      is no sky to silhouette against. It is also what makes the shaft read as
- *      *continuing* rather than ending at a wall.
- *   3. **Fire flicker.** The one thing that stops a cave looking like a still life. Sum
- *      of incommensurate sines, applied to intensity *and* to how far the light reaches.
- *   4. **Ore glinting in the walls.** The money shot for a mine: emissive crystals placed
- *      on the same surface function as the rock, so they sit *in* the wall rather than
- *      floating near it. Unlit material, so bloom catches them even in shadow.
- *   5. **Human workings** — support frames, sleepers and rails receding down the shaft.
- *      Without these it is a cave; with them it is a mine. The rails also draw the eye
- *      into the tunnel, which is what gives the composition depth.
- *
- * The tunnel is one displaced cylinder viewed from inside, not an assembly of walls. That
- * gives an irregular rock enclosure in a single draw call, and it lets ore, stalactites
- * and support frames all be positioned from the same radius function so nothing clips.
- *
- * `THREE` is passed in rather than imported so this module carries no static three
- * dependency — see backdrop.js for why that matters for code splitting.
+ * `THREE` is passed in so this module never pulls three.js into the main bundle. The
+ * runtime remains responsible for the 30 fps cap, visibility pause and quality fallback.
  */
 
-// Deterministic, so the mine does not reshuffle on every navigation.
 function makeRng(seed) {
-  let s = seed >>> 0;
+  let state = seed >>> 0;
   return function next() {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
   };
 }
 
-// ── Shaft geometry ──────────────────────────────────────────────────────────
-// The shaft runs along -Z. Its axis sits above the floor so the floor plane cuts a
-// chord across the tube, which is what gives a cave cross-section rather than a pipe.
-const AXIS_Y = 10;
-const Z_NEAR = 44;
-/**
- * Scattered features stop well short of Z_NEAR. The shell has to start behind the camera
- * to enclose it, but a stalactite or ore fleck at z=40 sits ~14 units from a camera at
- * z=26 and fills half the frame as an unreadable black wedge.
- */
-const Z_DETAIL_NEAR = 16;
-const Z_FAR = -124;
-const SHAFT_LENGTH = Z_NEAR - Z_FAR;
-const FLOOR_Y = 0;
-
-/**
- * The shell is a partial arc, not a closed tube: the roof is cut away so an angled
- * bird's-eye camera can look down into the shaft. Angles follow shaftPoint, where PI/2 is
- * straight up — so the excluded band is centred there and the retained sweep runs the long
- * way round through the floor.
- *
- * At these limits the side walls still rise to y ~= 17, which keeps the support-frame
- * lintels (y ~= 15.5) enclosed. Read as a cutaway diorama, which is the point.
- */
-const ARC_START = 0.889 * Math.PI;
-const ARC_END = 2.111 * Math.PI;
-const ARC_SEGS = 60;
-const LEN_SEGS = 90;
-
-/** Radius profile: a working chamber at the camera, narrowing as it drives deeper. */
-function shaftRadius(z) {
-  const k = (Z_NEAR - z) / SHAFT_LENGTH; // 0 at the near end, 1 at the far end
-  return 21 - 8.5 * k;
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
-/**
- * Irregularity of the rock face at a given angle and depth.
- *
- * Three incommensurate sines rather than value noise: it is a handful of flops, it never
- * repeats within the shaft, and rock has no characteristic scale to get wrong. Used by
- * the shell, the ore and the stalactites alike so they all agree on where the wall is.
- */
-function wallOffset(angle, z) {
-  return (
-    1.00 * Math.sin(angle * 3.0 + z * 0.11)
-    + 0.55 * Math.sin(angle * 5.3 - z * 0.19 + 1.3)
-    + 0.30 * Math.sin(angle * 9.7 + z * 0.31 + 0.7)
-    // Short wavelength (~9 units, i.e. a couple of facets) and the reason the wall reads as
-    // hewn rock at all. Without a term at facet scale, flat shading had nothing to reveal:
-    // neighbouring faces shared a normal and the fire-lit wall was a smooth gradient.
-    + 0.26 * Math.sin(angle * 13.1 + z * 0.72 + 2.1)
-  ) * 1.95;
-}
-
-/**
- * Half-width of the shaft at floor level, on the given side.
- *
- * The floor used to be a fixed 76-wide plane, which overhung the rock by a wide margin —
- * and because the shell is rendered BackSide, that apron was plainly visible outside the
- * tunnel as a large flat surface. Lit by the forge it became a smooth orange gradient
- * filling the left of the frame, which is what read as a featureless wall.
- *
- * The wall radius depends on the angle and the angle depends on the radius, so this
- * iterates twice from the undisplaced circle. Two rounds is plenty at this amplitude.
- */
-function floorHalfWidth(z, side) {
-  const r0 = shaftRadius(z);
-  let hw = Math.sqrt(Math.max(4, r0 * r0 - AXIS_Y * AXIS_Y));
-  for (let k = 0; k < 2; k += 1) {
-    const r = r0 + wallOffset(Math.atan2(-AXIS_Y, side * hw), z);
-    hw = Math.sqrt(Math.max(4, r * r - AXIS_Y * AXIS_Y));
-  }
-  return hw;
-}
-
-/**
- * The open rim of the shaft at a given depth. `side` is -1 for the left lip, +1 for the
- * right. Used to seal the surrounding rock surface flush against the cutaway.
- */
-function rimPoint(z, side) {
-  return shaftPoint(side < 0 ? ARC_START : ARC_END, z);
-}
-
-/** Point on the rock face. `inset` pulls a feature slightly into the stone. */
-function shaftPoint(angle, z, inset = 0) {
-  const r = shaftRadius(z) + wallOffset(angle, z) - inset;
-  return {
-    x: Math.cos(angle) * r,
-    y: AXIS_Y + Math.sin(angle) * r,
-    r,
-  };
-}
-
-const ROCK_HUES = [0x4a4139, 0x38322c, 0x52483c, 0x2f2a25, 0x453d36];
-
-/**
- * Ore hues. Weighted toward the metals the Foundry actually smelts, with two arcane
- * crystals for colour contrast — a wall of nothing but warm ore reads as monotone.
- */
-const ORE_HUES = [
-  0xe8c268, 0xe8c268, // gold
-  0xd98a45, 0xd98a45, // copper
-  0xc9d2da,           // silver
-  0x5fc9d8,           // arcane teal
-  0x9a6fd0,           // arcane violet
-];
-
-/**
- * Where the two lights sit. Module-level because the ore needs them at build time: ore is
- * lit by proximity to these, computed once, not per frame.
- */
-const FIRE_POS = { x: -9.5, y: 4.4, z: 4 };
-/**
- * A lamp hung on a mid-shaft support frame. Three pools of light receding into the dark
- * read as depth in a way two cannot: with only the forge and the far lantern there was a
- * large unlit gap between them, and unlit rock renders as absence rather than as distance.
- */
-const MIDLAMP_POS = { x: -6.5, y: 13, z: -28 };
-const LANTERN_POS = { x: 4, y: AXIS_Y + 2, z: -62 };
-const LAMPS = [FIRE_POS, MIDLAMP_POS, LANTERN_POS];
-
-/**
- * How strongly a point is lit by the nearest lamp, 0..1.
- *
- * Ore is drawn with an unlit material so it survives the darkness, but applying that
- * uniformly made every fleck equally bright regardless of where it sat — the result read
- * as confetti hanging in mid-air rather than as metal in rock, because a bright speck in
- * front of black rock has nothing to belong to. Baking proximity into the instance colour
- * restores the cue: ore glints where light reaches it and goes dark where it does not.
- */
-function lightReach(x, y, z) {
-  let best = 0;
-  for (const L of LAMPS) {
-    const d = Math.hypot(x - L.x, y - L.y, z - L.z);
-    best = Math.max(best, Math.max(0, 1 - d / 46));
-  }
-  return best ** 0.75;
-}
-
-const FOG_COLOR = 0x4b3623;
-/**
- * Linear fog, not FogExp2, and this is a direct consequence of the orthographic camera.
- *
- * FogExp2 attenuates by absolute distance from the camera. An orthographic rig sits ~110
- * units back from its target, so *every* surface was 90-190 units away and the whole frame
- * fogged uniformly at ~90% — a flat brown veil with no depth information in it at all. The
- * old density of 0.0108 was tuned for a camera standing inside the tunnel, where near rock
- * was genuinely a few units away.
- *
- * Ranged fog puts the falloff where the scene actually is: nothing before FOG_NEAR is
- * touched, and the far end of the shaft dissolves by FOG_FAR.
- *
- * FOG_COLOR stays a warm dusty brown. Fog covers most of an enclosed frame, so its colour
- * effectively *is* the scene's mid-tone; at the near-black it started as, everything past the
- * lamps collapsed and no amount of light could lift it, because fog is applied after lighting.
- */
-const FOG_NEAR = 96;
-const FOG_FAR = 230;
-
-/** Soft additive disc for dust motes and the fire's glow sprite. */
-function makeGlowTexture(THREE, inner = 'rgba(255,255,255,1)') {
+function makeGlowTexture(THREE) {
   const size = 64;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, inner);
-  g.addColorStop(0.35, 'rgba(255,226,180,0.34)');
-  g.addColorStop(1, 'rgba(255,190,140,0)');
-  ctx.fillStyle = g;
+  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.22, 'rgba(255,226,170,0.8)');
+  gradient.addColorStop(0.55, 'rgba(255,154,70,0.22)');
+  gradient.addColorStop(1, 'rgba(255,100,20,0)');
+  ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function roughenGeometry(THREE, geometry, seed, amount = 0.18) {
+  const rng = makeRng(seed);
+  const position = geometry.attributes.position;
+  const direction = new THREE.Vector3();
+  for (let i = 0; i < position.count; i += 1) {
+    direction.fromBufferAttribute(position, i);
+    const length = Math.max(0.001, direction.length());
+    const wave = Math.sin(direction.x * 5.7 + direction.y * 3.1 + direction.z * 7.3 + seed);
+    const scale = 1 + amount * (0.58 * wave + 0.42 * (rng() * 2 - 1));
+    direction.multiplyScalar(scale / length * length);
+    position.setXYZ(i, direction.x, direction.y, direction.z);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addRockSurfaceShader(material, cacheKey) {
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFoundryRockWorld;')
+      .replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        vec4 foundryRockWorld = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          foundryRockWorld = instanceMatrix * foundryRockWorld;
+        #endif
+        foundryRockWorld = modelMatrix * foundryRockWorld;
+        vFoundryRockWorld = foundryRockWorld.xyz;
+      `);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `
+        #include <common>
+        varying vec3 vFoundryRockWorld;
+        float foundryRockHash(vec3 p) {
+          return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+        }
+      `)
+      .replace('#include <color_fragment>', `
+        #include <color_fragment>
+        vec3 rockCell = floor(vFoundryRockWorld * 0.72);
+        float grain = foundryRockHash(rockCell);
+        float broad = sin(vFoundryRockWorld.x * 0.21 + vFoundryRockWorld.z * 0.13)
+          * sin(vFoundryRockWorld.y * 0.31 - vFoundryRockWorld.z * 0.17);
+        float strata = 0.5 + 0.5 * sin(vFoundryRockWorld.y * 1.35
+          + vFoundryRockWorld.x * 0.08 + broad * 1.7);
+        diffuseColor.rgb *= 0.79 + grain * 0.17 + strata * 0.09;
+      `);
+  };
+  material.customProgramCacheKey = () => `foundry-rock-${cacheKey}`;
+  return material;
+}
+
+function composeInstance(THREE, mesh, index, descriptor, scratch) {
+  const {
+    x = 0, y = 0, z = 0,
+    sx = 1, sy = 1, sz = 1,
+    rx = 0, ry = 0, rz = 0,
+    color = 0xffffff,
+  } = descriptor;
+  scratch.position.set(x, y, z);
+  scratch.euler.set(rx, ry, rz);
+  scratch.quaternion.setFromEuler(scratch.euler);
+  scratch.scale.set(sx, sy, sz);
+  scratch.matrix.compose(scratch.position, scratch.quaternion, scratch.scale);
+  mesh.setMatrixAt(index, scratch.matrix);
+  mesh.setColorAt(index, scratch.color.setHex(color));
+}
+
+function buildInstancedBoxes(THREE, track, scene, descriptors, materialOptions) {
+  if (!descriptors.length) return null;
+  const geometry = track(new THREE.BoxGeometry(1, 1, 1));
+  const material = track(new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.82,
+    metalness: 0.04,
+    flatShading: true,
+    ...materialOptions,
+  }));
+  const mesh = new THREE.InstancedMesh(geometry, material, descriptors.length);
+  const scratch = {
+    position: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+    scale: new THREE.Vector3(),
+    euler: new THREE.Euler(),
+    matrix: new THREE.Matrix4(),
+    color: new THREE.Color(),
+  };
+  descriptors.forEach((descriptor, index) => composeInstance(THREE, mesh, index, descriptor, scratch));
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  scene.add(mesh);
+  return mesh;
+}
+
+function buildGround(THREE, track, scene, rng) {
+  const geometry = track(new THREE.PlaneGeometry(118, 84, 40, 30));
+  geometry.rotateX(-Math.PI / 2);
+  const position = geometry.attributes.position;
+  const colors = new Float32Array(position.count * 3);
+  const color = new THREE.Color();
+
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    const edge = Math.max(Math.abs(x) / 59, Math.abs(z) / 42);
+    const height = 0.24 * Math.sin(x * 0.23 + z * 0.17)
+      + 0.14 * Math.sin(x * 0.61 - z * 0.38)
+      - Math.max(0, edge - 0.82) * 2.2;
+    position.setY(i, height);
+    const variation = 0.78 + rng() * 0.28 + 0.08 * Math.sin(x * 0.14 - z * 0.11);
+    color.setHex(0x49362a).multiplyScalar(variation);
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+  position.needsUpdate = true;
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+
+  const material = track(new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    roughness: 0.96,
+    metalness: 0.02,
+  }));
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = `varying vec3 vFoundryGround;\n${shader.vertexShader}`
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFoundryGround = position;');
+    shader.fragmentShader = `varying vec3 vFoundryGround;\n${shader.fragmentShader}`
+      .replace('#include <color_fragment>', `
+        #include <color_fragment>
+        vec2 tile = vFoundryGround.xz / vec2(4.4, 3.8);
+        vec2 gridDist = abs(fract(tile) - 0.5);
+        float mortar = smoothstep(0.462, 0.497, max(gridDist.x, gridDist.y));
+        float broad = sin(vFoundryGround.x * 0.51 + vFoundryGround.z * 0.23)
+          * sin(vFoundryGround.z * 0.73 - vFoundryGround.x * 0.19);
+        diffuseColor.rgb *= (0.88 + 0.12 * broad) * (1.0 - mortar * 0.24);
+      `);
+  };
+
+  const floor = new THREE.Mesh(geometry, material);
+  floor.position.y = 0;
+  scene.add(floor);
+
+  const chasmGeometry = track(new THREE.PlaneGeometry(220, 170));
+  chasmGeometry.rotateX(-Math.PI / 2);
+  const chasmMaterial = track(new THREE.MeshStandardMaterial({
+    color: 0x130c09,
+    roughness: 1,
+    metalness: 0,
+  }));
+  const chasm = new THREE.Mesh(chasmGeometry, chasmMaterial);
+  chasm.position.y = -5.2;
+  scene.add(chasm);
+}
+
+function buildCaveMasses(THREE, track, scene, rng) {
+  const backMaterial = track(addRockSurfaceShader(new THREE.MeshStandardMaterial({
+    color: 0x35241c,
+    roughness: 0.98,
+    metalness: 0,
+    flatShading: true,
+    side: THREE.DoubleSide,
+  }), 'back'));
+  const backMass = new THREE.Mesh(track(new THREE.PlaneGeometry(166, 52, 20, 8)), backMaterial);
+  backMass.position.set(0, 18, -65);
+  scene.add(backMass);
+
+  const geometries = [
+    roughenGeometry(THREE, track(new THREE.IcosahedronGeometry(1, 2)), 17, 0.16),
+    roughenGeometry(THREE, track(new THREE.DodecahedronGeometry(1, 1)), 41, 0.19),
+    roughenGeometry(THREE, track(new THREE.SphereGeometry(1, 14, 10)), 79, 0.16),
+  ];
+  const material = track(addRockSurfaceShader(new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.94,
+    metalness: 0.02,
+    flatShading: false,
+  }), 'mass'));
+  const palettes = [0x3c2a22, 0x493126, 0x56392a, 0x62402d, 0x31231e, 0x6b4731];
+  const descriptors = [[], [], []];
+
+  const pushRock = descriptor => {
+    descriptors[Math.floor(rng() * descriptors.length)].push(descriptor);
+  };
+
+  for (let row = 0; row < 5; row += 1) {
+    for (let x = -78; x <= 78; x += 5.8 + rng() * 2.6) {
+      if (row < 3 && Math.abs(Math.abs(x) - 38) < 12.5) continue;
+      const s = 4.2 + rng() * 4.5;
+      pushRock({
+        x: x + (rng() - 0.5) * 4,
+        y: row * 5.2 + s * 0.28 + (rng() - 0.5) * 1.6,
+        z: -50 - rng() * 10,
+        sx: s * (0.85 + rng() * 0.6),
+        sy: s * (0.62 + rng() * 0.7),
+        sz: s * (0.72 + rng() * 0.5),
+        rx: rng() * Math.PI,
+        ry: rng() * Math.PI,
+        rz: rng() * Math.PI,
+        color: palettes[Math.floor(rng() * palettes.length)],
+      });
+    }
+  }
+
+  for (const side of [-1, 1]) {
+    for (let z = -52; z <= 58; z += 5.5 + rng() * 2.5) {
+      for (let row = 0; row < 4; row += 1) {
+        const s = 4.2 + rng() * 4.8;
+        pushRock({
+          x: side * (58 + rng() * 12),
+          y: row * 5 + s * 0.25,
+          z: z + (rng() - 0.5) * 5,
+          sx: s * (0.8 + rng() * 0.6),
+          sy: s * (0.65 + rng() * 0.75),
+          sz: s * (0.85 + rng() * 0.7),
+          rx: rng() * Math.PI,
+          ry: rng() * Math.PI,
+          rz: rng() * Math.PI,
+          color: palettes[Math.floor(rng() * palettes.length)],
+        });
+      }
+    }
+  }
+
+  for (let x = -80; x <= 80; x += 6 + rng() * 3.2) {
+    const centreClear = Math.abs(x) < 24;
+    const s = centreClear ? 3.6 + rng() * 3.8 : 4.4 + rng() * 5.0;
+    pushRock({
+      x: x + (rng() - 0.5) * 5,
+      y: -1 + s * 0.25,
+      z: (centreClear ? 57 : 51) + rng() * (centreClear ? 4 : 11),
+      sx: s * (0.9 + rng() * 0.55),
+      sy: s * (0.55 + rng() * 0.65),
+      sz: s * (0.82 + rng() * 0.65),
+      rx: rng() * Math.PI,
+      ry: rng() * Math.PI,
+      rz: rng() * Math.PI,
+      color: palettes[Math.floor(rng() * palettes.length)],
+    });
+  }
+
+  const meshes = descriptors.map((items, variant) => {
+    const mesh = new THREE.InstancedMesh(geometries[variant], material, items.length);
+    const scratch = {
+      position: new THREE.Vector3(),
+      quaternion: new THREE.Quaternion(),
+      scale: new THREE.Vector3(),
+      euler: new THREE.Euler(),
+      matrix: new THREE.Matrix4(),
+      color: new THREE.Color(),
+    };
+    items.forEach((descriptor, index) => composeInstance(THREE, mesh, index, descriptor, scratch));
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    scene.add(mesh);
+    return mesh;
+  });
+
+  return { pushRock, meshes, geometries, material };
+}
+
+function makeLavaMaterial(THREE, track) {
+  return track(new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      void main() {
+        vUv = uv;
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      varying vec2 vUv;
+      varying vec3 vWorld;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+      }
+
+      float fbm(vec2 p) {
+        float value = 0.0;
+        float amp = 0.55;
+        for (int i = 0; i < 4; i++) {
+          value += noise(p) * amp;
+          p = p * 2.03 + 7.1;
+          amp *= 0.5;
+        }
+        return value;
+      }
+
+      void main() {
+        vec2 flowUv = vec2(vUv.x * 5.0, vUv.y * 3.2 - uTime * 0.24);
+        float flow = fbm(flowUv + vec2(sin(vUv.y * 8.0) * 0.28, 0.0));
+        float veins = abs(sin((flow + vUv.y * 0.72) * 18.0));
+        float hot = smoothstep(0.14, 0.86, flow) + 0.38 * pow(1.0 - veins, 5.0);
+        float edge = smoothstep(0.0, 0.17, vUv.x) * smoothstep(1.0, 0.83, vUv.x);
+        hot *= 0.72 + 0.28 * edge;
+        vec3 deep = vec3(0.42, 0.035, 0.005);
+        vec3 orange = vec3(1.65, 0.24, 0.016);
+        vec3 yellow = vec3(2.45, 0.62, 0.075);
+        vec3 color = mix(deep, orange, clamp(hot, 0.0, 1.0));
+        color = mix(color, yellow, smoothstep(0.72, 1.18, hot));
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+    side: THREE.DoubleSide,
+    depthWrite: true,
+    toneMapped: false,
+  }));
+}
+
+function makeRibbonGeometry(THREE, track, points, y = 0.24) {
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  const distances = [0];
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    total += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+    distances.push(total);
+  }
+
+  for (let i = 0; i < points.length; i += 1) {
+    const prev = points[Math.max(0, i - 1)];
+    const next = points[Math.min(points.length - 1, i + 1)];
+    const dx = next.x - prev.x;
+    const dz = next.z - prev.z;
+    const inv = 1 / Math.max(0.001, Math.hypot(dx, dz));
+    const nx = -dz * inv;
+    const nz = dx * inv;
+    const width = points[i].width;
+    positions.push(points[i].x + nx * width, y, points[i].z + nz * width);
+    positions.push(points[i].x - nx * width, y, points[i].z - nz * width);
+    const v = distances[i] / Math.max(0.001, total);
+    uvs.push(0, v, 1, v);
+    if (i < points.length - 1) {
+      const a = i * 2;
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+  }
+
+  const geometry = track(new THREE.BufferGeometry());
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function buildLava(THREE, track, scene) {
+  const material = makeLavaMaterial(THREE, track);
+  const rivers = [
+    [
+      { x: -50, z: -50, width: 3.2 }, { x: -52, z: -34, width: 3.7 },
+      { x: -49, z: -18, width: 3.1 }, { x: -53, z: -2, width: 4.0 },
+      { x: -48, z: 15, width: 3.7 }, { x: -52, z: 32, width: 4.4 },
+      { x: -46, z: 51, width: 5.0 },
+    ],
+    [
+      { x: 60, z: -18, width: 3.4 }, { x: 55, z: -5, width: 4.0 },
+      { x: 58, z: 10, width: 3.5 }, { x: 50, z: 24, width: 4.4 },
+      { x: 48, z: 39, width: 5.1 }, { x: 39, z: 55, width: 6.0 },
+    ],
+    [
+      { x: 22, z: 50, width: 3.5 }, { x: 30, z: 45, width: 4.2 },
+      { x: 39, z: 42, width: 4.6 }, { x: 49, z: 39, width: 5.1 },
+    ],
+  ];
+  for (const points of rivers) {
+    scene.add(new THREE.Mesh(makeRibbonGeometry(THREE, track, points), material));
+  }
+
+  const waterfallGeometry = track(new THREE.PlaneGeometry(8, 17, 4, 14));
+  const falls = [
+    { x: -50, y: 9, z: -49, sx: 1, sy: 1, rz: -0.06 },
+    { x: 59, y: 7.2, z: -18, sx: 0.78, sy: 0.8, rz: 0.08 },
+    { x: 42, y: 5.5, z: 50, sx: 0.7, sy: 0.62, rz: -0.12 },
+  ];
+  for (const fall of falls) {
+    const mesh = new THREE.Mesh(waterfallGeometry, material);
+    mesh.position.set(fall.x, fall.y, fall.z);
+    mesh.scale.set(fall.sx, fall.sy, 1);
+    mesh.rotation.z = fall.rz;
+    scene.add(mesh);
+  }
+  return material;
+}
+
+function makeOffsetCurve(THREE, curve, offset, divisions = 56) {
+  const points = [];
+  for (let i = 0; i <= divisions; i += 1) {
+    const t = i / divisions;
+    const point = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    points.push(new THREE.Vector3(
+      point.x - tangent.z * offset,
+      point.y,
+      point.z + tangent.x * offset,
+    ));
+  }
+  return new THREE.CatmullRomCurve3(points, false, 'centripetal');
+}
+
+function buildRails(THREE, track, scene) {
+  const paths = [
+    new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-38, 1.05, -46), new THREE.Vector3(-33, 1.05, -31),
+      new THREE.Vector3(-31, 1.05, -13), new THREE.Vector3(-27, 1.05, 5),
+      new THREE.Vector3(-18, 1.05, 23), new THREE.Vector3(-5, 1.05, 38),
+    ], false, 'centripetal'),
+    new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-6, 1.05, 38), new THREE.Vector3(12, 1.05, 38.5),
+      new THREE.Vector3(31, 1.05, 39), new THREE.Vector3(54, 1.05, 40),
+    ], false, 'centripetal'),
+    new THREE.CatmullRomCurve3([
+      new THREE.Vector3(38, 1.05, -46), new THREE.Vector3(35, 1.05, -27),
+      new THREE.Vector3(32, 1.05, -9), new THREE.Vector3(35, 1.05, 9),
+      new THREE.Vector3(44, 1.05, 25), new THREE.Vector3(54, 1.05, 40),
+    ], false, 'centripetal'),
+  ];
+  const railMaterial = track(new THREE.MeshStandardMaterial({
+    color: 0x918071,
+    roughness: 0.34,
+    metalness: 0.88,
+  }));
+  for (const curve of paths) {
+    for (const offset of [-2.05, 2.05]) {
+      const geometry = track(new THREE.TubeGeometry(makeOffsetCurve(THREE, curve, offset), 72, 0.2, 5, false));
+      scene.add(new THREE.Mesh(geometry, railMaterial));
+    }
+  }
+
+  const sleeperDescriptors = [];
+  for (const curve of paths) {
+    const count = Math.max(8, Math.floor(curve.getLength() / 3.1));
+    for (let i = 0; i <= count; i += 1) {
+      const t = i / count;
+      const point = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).normalize();
+      sleeperDescriptors.push({
+        x: point.x,
+        y: 0.66,
+        z: point.z,
+        sx: 5.6,
+        sy: 0.34,
+        sz: 0.72,
+        ry: Math.atan2(tangent.x, tangent.z),
+        color: i % 3 === 0 ? 0x3b271b : 0x49301f,
+      });
+    }
+  }
+  buildInstancedBoxes(THREE, track, scene, sleeperDescriptors, { roughness: 0.92, metalness: 0 });
+  return paths;
+}
+
+function addTimberFrame(descriptors, x, z, width = 18, height = 13) {
+  const color = 0x4a2c18;
+  descriptors.push(
+    { x: x - width / 2, y: height / 2, z, sx: 1.5, sy: height, sz: 1.6, color },
+    { x: x + width / 2, y: height / 2, z, sx: 1.5, sy: height, sz: 1.6, color },
+    { x, y: height, z, sx: width + 2.4, sy: 1.7, sz: 1.8, color },
+    { x: x - width * 0.26, y: height * 0.58, z: z + 0.2, sx: 1.0, sy: height * 0.78, sz: 1.0, rz: -0.72, color: 0x56351f },
+    { x: x + width * 0.26, y: height * 0.58, z: z + 0.2, sx: 1.0, sy: height * 0.78, sz: 1.0, rz: 0.72, color: 0x56351f },
+  );
+}
+
+function buildArchitecture(THREE, track, scene, rng) {
+  const timbers = [];
+  addTimberFrame(timbers, -38, -46, 19, 14);
+  addTimberFrame(timbers, 38, -46, 19, 14);
+
+  for (const x of [-5, 11, 27, 43, 58]) {
+    timbers.push(
+      { x, y: -1.4, z: 38, sx: 1.8, sy: 10, sz: 1.8, color: 0x3e281b },
+      { x, y: -0.7, z: 33.5, sx: 1.3, sy: 8.6, sz: 1.3, color: 0x4c3020 },
+      { x, y: -0.7, z: 42.5, sx: 1.3, sy: 8.6, sz: 1.3, color: 0x4c3020 },
+    );
+  }
+  timbers.push(
+    { x: 27, y: 0.15, z: 34, sx: 68, sy: 1.15, sz: 1.15, color: 0x4c3020 },
+    { x: 27, y: 0.15, z: 43, sx: 68, sy: 1.15, sz: 1.15, color: 0x4c3020 },
+  );
+
+  addTimberFrame(timbers, 43, 9, 18, 12);
+  addTimberFrame(timbers, -26, 18, 18, 10);
+  for (const x of [-39, -23, 27, 43]) {
+    timbers.push(
+      { x, y: 4.8, z: -23, sx: 1.2, sy: 9.6, sz: 1.2, color: 0x4a2c18 },
+      { x, y: 9.4, z: -23, sx: 14, sy: 1.1, sz: 1.2, color: 0x56351f },
+    );
+  }
+  buildInstancedBoxes(THREE, track, scene, timbers, { roughness: 0.9, metalness: 0 });
+
+  const stone = [];
+  const brick = (x, y, z, sx, sy, sz, color = 0x514238) => stone.push({ x, y, z, sx, sy, sz, color });
+  brick(2, 1.2, -9, 20, 2.4, 14, 0x493a31);
+  brick(2, 6.1, -11, 17, 8, 11, 0x57463a);
+  brick(2, 10.7, -12, 14, 2.3, 9, 0x49392f);
+  brick(2, 15, -12.5, 8, 6.8, 7, 0x44352d);
+  brick(2, 20.2, -13, 6.4, 4.2, 6, 0x3d3029);
+  brick(2, 23.6, -13.3, 5.2, 2.8, 5.2, 0x342923);
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 4; col += 1) {
+      brick(-4 + col * 4.1 + (row % 2) * 1.1, 3.6 + row * 2.7, -4.7,
+        3.7, 2.4, 1.2, row % 2 ? 0x5e4a3d : 0x524137);
+    }
+  }
+  buildInstancedBoxes(THREE, track, scene, stone, { roughness: 0.93, metalness: 0.03 });
+
+  const darkMaterial = track(new THREE.MeshBasicMaterial({ color: 0x080504 }));
+  const portalGeometry = track(new THREE.PlaneGeometry(17, 13));
+  for (const x of [-38, 38]) {
+    const portal = new THREE.Mesh(portalGeometry, darkMaterial);
+    portal.position.set(x, 6.5, -47.05);
+    scene.add(portal);
+  }
+
+  const mouth = new THREE.Mesh(track(new THREE.PlaneGeometry(7.2, 5.1)), darkMaterial);
+  mouth.position.set(2, 5.1, -4.05);
+  scene.add(mouth);
+  const fireMaterial = makeLavaMaterial(THREE, track);
+  const fire = new THREE.Mesh(track(new THREE.PlaneGeometry(5.5, 3.5, 4, 4)), fireMaterial);
+  fire.position.set(2, 4.75, -3.92);
+  scene.add(fire);
+
+  const propBoxes = [];
+  const metal = 0x5d5650;
+  propBoxes.push(
+    { x: 17, y: 2.1, z: 6, sx: 7.4, sy: 1.3, sz: 3.0, color: metal },
+    { x: 17, y: 1.0, z: 6, sx: 2.3, sy: 2.3, sz: 2.2, color: 0x45413d },
+    { x: 17, y: 0.45, z: 6, sx: 4.5, sy: 0.9, sz: 3.6, color: 0x494038 },
+    { x: -8, y: 1.5, z: 12, sx: 13, sy: 1.2, sz: 5.8, color: 0x4d2e1b },
+    { x: -13.5, y: 3.4, z: 12, sx: 1, sy: 5.2, sz: 1, color: 0x3b2518 },
+    { x: -2.5, y: 3.4, z: 12, sx: 1, sy: 5.2, sz: 1, color: 0x3b2518 },
+    { x: 26, y: 1.5, z: -18, sx: 15, sy: 1.15, sz: 5.8, color: 0x4d2e1b },
+    { x: 19.5, y: 3.5, z: -18, sx: 1, sy: 5.2, sz: 1, color: 0x3b2518 },
+    { x: 32.5, y: 3.5, z: -18, sx: 1, sy: 5.2, sz: 1, color: 0x3b2518 },
+  );
+
+  for (const cart of [{ x: 15, z: 39 }, { x: 45, z: 39.5 }]) {
+    propBoxes.push(
+      { x: cart.x, y: 3.05, z: cart.z, sx: 9, sy: 3.5, sz: 5.2, color: 0x443025 },
+      { x: cart.x, y: 4.35, z: cart.z, sx: 8.1, sy: 0.65, sz: 5.8, color: 0x5b3a23 },
+    );
+  }
+  for (let i = 0; i < 11; i += 1) {
+    const x = rng() < 0.55 ? 28 + rng() * 16 : -33 + rng() * 12;
+    const z = rng() < 0.55 ? -3 + rng() * 20 : 8 + rng() * 22;
+    const s = 2 + rng() * 2;
+    propBoxes.push({
+      x, y: s * 0.5, z, sx: s, sy: s, sz: s,
+      ry: (rng() - 0.5) * 0.24,
+      color: rng() < 0.3 ? 0x5a3a21 : 0x49301e,
+    });
+  }
+  buildInstancedBoxes(THREE, track, scene, propBoxes, { roughness: 0.74, metalness: 0.16 });
+
+  const tools = [];
+  for (let i = 0; i < 12; i += 1) {
+    const leftRack = i < 6;
+    tools.push({
+      x: leftRack ? -20 + i * 1.7 : 21 + (i - 6) * 1.8,
+      y: 4.6 + (i % 2) * 0.9,
+      z: leftRack ? -21.9 : -19.2,
+      sx: 0.22,
+      sy: 6.4 + (i % 3),
+      sz: 0.22,
+      rz: (i % 2 ? 1 : -1) * 0.16,
+      color: i % 3 === 0 ? 0x8b735a : 0x625c56,
+    });
+  }
+  tools.push(
+    { x: -18, y: 2.3, z: -22, sx: 14, sy: 0.55, sz: 0.6, color: 0x4b2d1b },
+    { x: 26, y: 2.3, z: -19, sx: 15, sy: 0.55, sz: 0.6, color: 0x4b2d1b },
+  );
+  buildInstancedBoxes(THREE, track, scene, tools, { roughness: 0.42, metalness: 0.68 });
+
+  const wheelGeometry = track(new THREE.CylinderGeometry(1, 1, 0.48, 10));
+  wheelGeometry.rotateZ(Math.PI / 2);
+  const wheelMaterial = track(new THREE.MeshStandardMaterial({ color: 0x302c29, roughness: 0.45, metalness: 0.85 }));
+  const wheels = new THREE.InstancedMesh(wheelGeometry, wheelMaterial, 8);
+  const scratch = new THREE.Matrix4();
+  let wheelIndex = 0;
+  for (const cart of [{ x: 15, z: 39 }, { x: 45, z: 39.5 }]) {
+    for (const dx of [-3.1, 3.1]) {
+      for (const dz of [-2.3, 2.3]) {
+        scratch.makeTranslation(cart.x + dx, 1.25, cart.z + dz);
+        wheels.setMatrixAt(wheelIndex, scratch);
+        wheelIndex += 1;
+      }
+    }
+  }
+  wheels.instanceMatrix.needsUpdate = true;
+  scene.add(wheels);
+
+  return { fireMaterial };
+}
+
+function buildSmallRocks(THREE, track, scene, rng) {
+  const geometry = roughenGeometry(THREE, track(new THREE.IcosahedronGeometry(1, 0)), 119, 0.23);
+  const material = track(addRockSurfaceShader(new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.94,
+    metalness: 0.02,
+    flatShading: true,
+  }), 'rubble'));
+  const count = 270;
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const euler = new THREE.Euler();
+  const color = new THREE.Color();
+  const hues = [0x382a24, 0x47342a, 0x554033, 0x2b211c, 0x614735];
+  for (let i = 0; i < count; i += 1) {
+    const bank = i < 180;
+    let x;
+    let z;
+    if (bank) {
+      const right = rng() < 0.5;
+      z = -47 + rng() * 99;
+      const centre = right
+        ? 56 - 0.14 * Math.max(0, z + 10)
+        : -50 + Math.sin(z * 0.09) * 3;
+      x = centre + (rng() < 0.5 ? -1 : 1) * (4.2 + rng() * 4.7);
+    } else {
+      const cartOre = i >= 230;
+      if (cartOre) {
+        const cartX = rng() < 0.5 ? 15 : 45;
+        x = cartX + (rng() - 0.5) * 6.2;
+        z = 39.2 + (rng() - 0.5) * 3.4;
+      } else {
+        x = (rng() - 0.5) * 105;
+        z = (rng() - 0.5) * 79;
+      }
+    }
+    const s = i >= 230 ? 0.65 + rng() * 1.2 : 0.38 + rng() * 1.5;
+    position.set(x, (i >= 230 ? 4.8 : 0.2) + s * 0.34, z);
+    euler.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+    quaternion.setFromEuler(euler);
+    scale.set(s * (0.8 + rng() * 0.8), s * (0.5 + rng() * 0.55), s * (0.8 + rng() * 0.7));
+    matrix.compose(position, quaternion, scale);
+    mesh.setMatrixAt(i, matrix);
+    mesh.setColorAt(i, color.setHex(i >= 230 && rng() < 0.25 ? 0x8b6238 : hues[Math.floor(rng() * hues.length)]));
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  scene.add(mesh);
+}
+
+function buildAtmosphere(THREE, track, scene, rng) {
+  const glowTexture = track(makeGlowTexture(THREE));
+  const lampPositions = [
+    new THREE.Vector3(-48, 9, -32), new THREE.Vector3(-18, 8, 20),
+    new THREE.Vector3(25, 10, -31), new THREE.Vector3(47, 8, 12),
+    new THREE.Vector3(29, 7.5, 39),
+  ];
+  const lampGeometry = track(new THREE.BufferGeometry().setFromPoints(lampPositions));
+  const lampMaterial = track(new THREE.PointsMaterial({
+    map: glowTexture,
+    color: 0xffb45f,
+    size: 16,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  }));
+  scene.add(new THREE.Points(lampGeometry, lampMaterial));
+
+  const pointLights = lampPositions.map((position, index) => {
+    const intensity = index === 4 ? 310 : 380;
+    const light = new THREE.PointLight(index === 2 ? 0xffc47d : 0xff9a45, intensity, 64, 1.68);
+    light.position.copy(position);
+    scene.add(light);
+    return { light, intensity, phase: rng() * Math.PI * 2 };
+  });
+
+  const furnaceLight = new THREE.PointLight(0xff7a25, 690, 92, 1.64);
+  furnaceLight.position.set(2, 7, -1);
+  scene.add(furnaceLight);
+
+  const lavaLights = [
+    { position: [-49, 3, -1], intensity: 390 },
+    { position: [52, 3, 18], intensity: 420 },
+    { position: [35, 1, 48], intensity: 310 },
+  ].map(item => {
+    const light = new THREE.PointLight(0xff5a13, item.intensity, 72, 1.66);
+    light.position.set(...item.position);
+    scene.add(light);
+    return { light, intensity: item.intensity, phase: rng() * 5 };
+  });
+
+  const smokeCount = 90;
+  const smokeGeometry = track(new THREE.BufferGeometry());
+  const smokePositions = new Float32Array(smokeCount * 3);
+  const smokeSeeds = new Float32Array(smokeCount);
+  const smokeSizes = new Float32Array(smokeCount);
+  for (let i = 0; i < smokeCount; i += 1) {
+    smokePositions[i * 3] = 2 + (rng() - 0.5) * 2.2;
+    smokePositions[i * 3 + 1] = 24 + rng() * 2;
+    smokePositions[i * 3 + 2] = -13 + (rng() - 0.5) * 1.4;
+    smokeSeeds[i] = rng();
+    smokeSizes[i] = 7 + rng() * 12;
+  }
+  smokeGeometry.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+  smokeGeometry.setAttribute('aSeed', new THREE.BufferAttribute(smokeSeeds, 1));
+  smokeGeometry.setAttribute('aSize', new THREE.BufferAttribute(smokeSizes, 1));
+  const smokeMaterial = track(new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      uniform float uTime;
+      attribute float aSeed;
+      attribute float aSize;
+      varying float vLife;
+      void main() {
+        float life = fract(aSeed + uTime * 0.035);
+        vLife = life;
+        vec3 p = position;
+        p.y += life * 26.0;
+        p.x += sin(aSeed * 31.0 + uTime * 0.34 + life * 5.0) * (0.8 + life * 3.0);
+        p.z += cos(aSeed * 19.0 + uTime * 0.27 + life * 4.0) * (0.4 + life * 1.8);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_PointSize = aSize * (0.5 + life * 1.15);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying float vLife;
+      void main() {
+        vec2 q = gl_PointCoord - 0.5;
+        float disc = smoothstep(0.5, 0.08, length(q));
+        float fade = smoothstep(0.0, 0.16, vLife) * (1.0 - smoothstep(0.68, 1.0, vLife));
+        gl_FragColor = vec4(vec3(0.105, 0.085, 0.072), disc * fade * 0.23);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  }));
+  scene.add(new THREE.Points(smokeGeometry, smokeMaterial));
+
+  const emberCount = 135;
+  const emberGeometry = track(new THREE.BufferGeometry());
+  const emberPositions = new Float32Array(emberCount * 3);
+  const emberSeeds = new Float32Array(emberCount);
+  const emberSizes = new Float32Array(emberCount);
+  for (let i = 0; i < emberCount; i += 1) {
+    const source = rng();
+    const base = source < 0.46 ? [2, 7, -1] : source < 0.72 ? [-49, 2, 2] : [51, 2, 20];
+    emberPositions[i * 3] = base[0] + (rng() - 0.5) * 10;
+    emberPositions[i * 3 + 1] = base[1] + rng() * 2;
+    emberPositions[i * 3 + 2] = base[2] + (rng() - 0.5) * 16;
+    emberSeeds[i] = rng();
+    emberSizes[i] = 1.4 + rng() * 3.4;
+  }
+  emberGeometry.setAttribute('position', new THREE.BufferAttribute(emberPositions, 3));
+  emberGeometry.setAttribute('aSeed', new THREE.BufferAttribute(emberSeeds, 1));
+  emberGeometry.setAttribute('aSize', new THREE.BufferAttribute(emberSizes, 1));
+  const emberMaterial = track(new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      uniform float uTime;
+      attribute float aSeed;
+      attribute float aSize;
+      varying float vFade;
+      void main() {
+        float life = fract(aSeed + uTime * (0.07 + aSeed * 0.04));
+        vec3 p = position;
+        p.y += life * (8.0 + aSeed * 9.0);
+        p.x += sin(aSeed * 41.0 + uTime * 0.9) * life * 2.4;
+        p.z += cos(aSeed * 27.0 + uTime * 0.7) * life * 1.3;
+        vFade = 1.0 - smoothstep(0.5, 1.0, life);
+        gl_PointSize = aSize;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vFade;
+      void main() {
+        float disc = smoothstep(0.5, 0.12, length(gl_PointCoord - 0.5));
+        gl_FragColor = vec4(3.2, 0.66, 0.08, disc * vFade);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  }));
+  scene.add(new THREE.Points(emberGeometry, emberMaterial));
+
+  const dustCount = 170;
+  const dustGeometry = track(new THREE.BufferGeometry());
+  const dustPositions = new Float32Array(dustCount * 3);
+  for (let i = 0; i < dustCount; i += 1) {
+    dustPositions[i * 3] = (rng() - 0.5) * 120;
+    dustPositions[i * 3 + 1] = 2 + rng() * 28;
+    dustPositions[i * 3 + 2] = -45 + rng() * 91;
+  }
+  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  const dustMaterial = track(new THREE.PointsMaterial({
+    map: glowTexture,
+    color: 0xd6a66f,
+    size: 0.72,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }));
+  const dust = new THREE.Points(dustGeometry, dustMaterial);
+  scene.add(dust);
+
+  return {
+    pointLights,
+    furnaceLight,
+    lavaLights,
+    smokeMaterial,
+    emberMaterial,
+    dust,
+  };
 }
 
 export function buildCavernScene(THREE) {
-  const rng = makeRng(19770412);
+  const rng = makeRng(20260811);
   const scene = new THREE.Scene();
   const disposables = [];
-  const track = obj => { disposables.push(obj); return obj; };
+  const track = object => {
+    disposables.push(object);
+    return object;
+  };
 
-  const m4 = new THREE.Matrix4();
-  const quat = new THREE.Quaternion();
-  const posV = new THREE.Vector3();
-  const scaleV = new THREE.Vector3();
-  const eulerQ = new THREE.Euler();
+  scene.background = new THREE.Color(0x180f0b);
+  scene.fog = new THREE.Fog(0x21150f, 158, 286);
 
-  scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
-  scene.background = new THREE.Color(FOG_COLOR);
+  buildGround(THREE, track, scene, rng);
+  buildCaveMasses(THREE, track, scene, rng);
+  const lavaMaterial = buildLava(THREE, track, scene);
+  buildRails(THREE, track, scene);
+  const architecture = buildArchitecture(THREE, track, scene, rng);
+  buildSmallRocks(THREE, track, scene, rng);
+  const atmosphere = buildAtmosphere(THREE, track, scene, rng);
 
-  // ── Shaft shell ───────────────────────────────────────────────────────────
-  // Built directly from shaftPoint over an (angle, z) grid rather than displacing a
-  // CylinderGeometry. A cylinder cannot omit the roof without fighting its theta winding,
-  // and building the grid myself means the ore, the stalactites and the floor all sample the
-  // exact same surface function that the wall does.
-  const shellGeo = track(new THREE.BufferGeometry());
-  {
-    const cols = ARC_SEGS + 1;
-    const rows = LEN_SEGS + 1;
-    const pos = new Float32Array(cols * rows * 3);
-    const colors = new Float32Array(cols * rows * 3);
-    const index = [];
+  scene.add(new THREE.AmbientLight(0x76513a, 2.05));
+  scene.add(new THREE.HemisphereLight(0x806859, 0x25120b, 3.45));
+  const topLight = new THREE.DirectionalLight(0xd49b70, 2.6);
+  topLight.position.set(-34, 95, 48);
+  scene.add(topLight);
+  const coolRim = new THREE.DirectionalLight(0x8995a1, 0.62);
+  coolRim.position.set(70, 52, -80);
+  scene.add(coolRim);
 
-    for (let r = 0; r < rows; r += 1) {
-      const z = Z_NEAR - (r / LEN_SEGS) * SHAFT_LENGTH;
-      for (let c = 0; c < cols; c += 1) {
-        const angle = ARC_START + (c / ARC_SEGS) * (ARC_END - ARC_START);
-        const pt = shaftPoint(angle, z);
-        const i = (r * cols + c) * 3;
-        pos[i] = pt.x;
-        pos[i + 1] = pt.y;
-        pos[i + 2] = z;
-
-        // Patchy stone. A single mesh cannot use instanceColor, so the hue variety the rest
-        // of the scene gets per instance is painted into the vertices here instead —
-        // otherwise 170 units of wall is one flat tone and the eye reads it as a backdrop.
-        //
-        // These are MULTIPLIERS centred on 1.0, not colours. An earlier version sampled
-        // ROCK_HUES and divided by hardcoded constants; because three converts colours to
-        // linear space those components came out near 0.03-0.08 rather than the ~0.28 the
-        // divisors assumed, so darker patches multiplied the wall down by ~10x. That, not
-        // the light level, was why the rock rendered black.
-        const n = Math.sin(pt.x * 0.13 + z * 0.075) * Math.sin(pt.y * 0.21 - z * 0.041);
-        const v = 1 + 0.26 * n;
-        const warm = 0.05 * Math.sin(pt.x * 0.07 - z * 0.03);
-        colors[i] = v * (1 + warm);
-        colors[i + 1] = v;
-        colors[i + 2] = v * (1 - warm);
-      }
-    }
-
-    for (let r = 0; r < LEN_SEGS; r += 1) {
-      for (let c = 0; c < ARC_SEGS; c += 1) {
-        const a = r * cols + c;
-        const b = a + 1;
-        const d = a + cols;
-        const e = d + 1;
-        index.push(a, d, b, b, d, e);
-      }
-    }
-
-    shellGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    shellGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    shellGeo.setIndex(index);
-    shellGeo.computeVertexNormals();
-  }
-  const shellMat = track(new THREE.MeshLambertMaterial({
-    color: 0x4a4239,
-    vertexColors: true,
-    // DoubleSide rather than BackSide: with a hand-wound open arc, which face points inward
-    // depends on index order, and the open roof means the far wall's outside is on screen too.
-    side: THREE.DoubleSide,
-    // Flat-shaded, unlike the wilderness canopy — this is the rock exception the forest
-    // already makes for its boulders, and here it is doing the most work of any single
-    // setting. Smooth-shaded, the fire-lit wall was one continuous orange gradient with no
-    // surface at all. Faceted, every plane takes the firelight at its own angle and the
-    // wall reads as hewn stone.
-    flatShading: true,
-  }));
-  scene.add(new THREE.Mesh(shellGeo, shellMat));
-
-  // ── Floor ─────────────────────────────────────────────────────────────────
-  // A separate plane rather than flattening the shell's underside: clamping vertices
-  // wrecks the normals, and a plane wider than the tube hides everything below it.
-  // Unit width, widened per-vertex to the local shaft width below.
-  const floorGeo = track(new THREE.PlaneGeometry(2, SHAFT_LENGTH + 12, 30, 90));
-  floorGeo.rotateX(-Math.PI / 2);
-  {
-    const pos = floorGeo.attributes.position;
-    for (let i = 0; i < pos.count; i += 1) {
-      const zLocal = pos.getZ(i);
-      // Plane is centred on the origin; convert to world z to sample the shaft profile.
-      const zWorld = zLocal + (Z_NEAR + Z_FAR) / 2;
-      const side = pos.getX(i) < 0 ? -1 : 1;
-      // +2.5 of overlap so the floor tucks under the rock instead of leaving a seam at
-      // the join, which would show the tunnel's underside through the gap.
-      const x = pos.getX(i) * (floorHalfWidth(zWorld, side) + 2.5);
-      pos.setX(i, x);
-      const z = zWorld;
-      // Kept shallow — a mine floor is worked flat, and bumps here would make the
-      // sleepers and rails visibly float.
-      const h = 0.34 * Math.sin(x * 0.21 + z * 0.13) + 0.22 * Math.sin(x * 0.53 - z * 0.29);
-      pos.setY(i, h);
-    }
-    pos.needsUpdate = true;
-    floorGeo.computeVertexNormals();
-  }
-  const floorMat = track(new THREE.MeshLambertMaterial({ color: 0x332e28 }));
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.position.set(0, FLOOR_Y, (Z_NEAR + Z_FAR) / 2);
-  scene.add(floor);
-
-  // ── Surrounding rock surface ──────────────────────────────────────────────
-  // Two strips running out from the shaft's open lips. Without them the cutaway floats in
-  // haze with flat fog filling the corners of the frame; with them the same geometry reads as
-  // a trench driven into solid rock, which is what a mine is. Built from rimPoint so they
-  // meet the wall exactly along its whole tapering length.
-  const SURFACE_OUT = 95;
-  /**
-   * Columns across the strip. This number is not free: the strip reuses LEN_SEGS rows so its
-   * inner edge matches the shell rim exactly, which puts rows ~1.9 units apart. At 7 columns
-   * the facets were 1.9 x 13.6 — long thin ribbons that flat shading turned into a corduroy
-   * texture reading as rope or fur. 50 columns makes them square, which is what the faceted
-   * look needs. The extra ~18k triangles are irrelevant on a 30fps backdrop; keeping the rim
-   * exact matters far more, since a coarser strip cuts corners against the wall's wiggle and
-   * leaves notches along the lip.
-   */
-  const SURFACE_SEGS = 50;
-  const surfaceGeo = track(new THREE.BufferGeometry());
-  {
-    const rows = LEN_SEGS + 1;
-    const cols = SURFACE_SEGS + 1;
-    const perSide = rows * cols;
-    const pos = new Float32Array(perSide * 2 * 3);
-    const colors = new Float32Array(perSide * 2 * 3);
-    const index = [];
-
-    for (let sideIdx = 0; sideIdx < 2; sideIdx += 1) {
-      const side = sideIdx === 0 ? -1 : 1;
-      const base = sideIdx * perSide;
-      for (let r = 0; r < rows; r += 1) {
-        const z = Z_NEAR - (r / LEN_SEGS) * SHAFT_LENGTH;
-        const rim = rimPoint(z, side);
-        for (let c = 0; c < cols; c += 1) {
-          const k = c / SURFACE_SEGS;
-          const x = rim.x + side * SURFACE_OUT * k;
-          // Rises away from the lip and undulates in both axes, so the flat shading has
-          // something to catch.
-          const y = rim.y
-            + 4.5 * k
-            + 2.6 * Math.sin(z * 0.058 + sideIdx * 1.7) * k
-            + 1.5 * Math.sin(x * 0.075 + z * 0.041)
-            + 0.7 * Math.sin(x * 0.163 - z * 0.107);
-          const i = (base + r * cols + c) * 3;
-          pos[i] = x;
-          pos[i + 1] = y;
-          pos[i + 2] = z;
-          const n = Math.sin(x * 0.1 + z * 0.06) * Math.sin(x * 0.037 - z * 0.021);
-          const v = 1 + 0.24 * n;
-          colors[i] = v * 1.02;
-          colors[i + 1] = v;
-          colors[i + 2] = v * 0.96;
-        }
-      }
-      for (let r = 0; r < LEN_SEGS; r += 1) {
-        for (let c = 0; c < SURFACE_SEGS; c += 1) {
-          const a = base + r * cols + c;
-          const bb = a + 1;
-          const d = a + cols;
-          const e = d + 1;
-          index.push(a, d, bb, bb, d, e);
-        }
-      }
-    }
-
-    surfaceGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    surfaceGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    surfaceGeo.setIndex(index);
-    surfaceGeo.computeVertexNormals();
-
-    // These strips face the open sky, and the hemisphere light is what gives them their tone.
-    // Whether hand-wound triangles come out facing up or down is easy to get backwards, and
-    // the material is DoubleSide so the mistake is invisible except as rock that renders far
-    // too dark — it takes the hemisphere's *ground* colour instead of its sky colour. Flip
-    // them if the winding went the wrong way rather than relying on getting it right.
-    const nrm = surfaceGeo.attributes.normal;
-    let ySum = 0;
-    for (let i = 0; i < nrm.count; i += 1) ySum += nrm.getY(i);
-    if (ySum < 0) {
-      for (let i = 0; i < nrm.count; i += 1) {
-        nrm.setXYZ(i, -nrm.getX(i), -nrm.getY(i), -nrm.getZ(i));
-      }
-      nrm.needsUpdate = true;
-    }
-  }
-
-  // Same stone material as the shaft wall, so the cutaway reads as one rock mass.
-  scene.add(new THREE.Mesh(surfaceGeo, shellMat));
-
-  // ── Stalactites and stalagmites ───────────────────────────────────────────
-  // Positioned from shaftPoint so they meet the rock rather than hovering in front of it.
-  const SPIKE_COUNT = 52;
-  const spikeGeo = track(new THREE.ConeGeometry(1, 1, 6, 1));
-  spikeGeo.translate(0, -0.5, 0); // tip at the origin, so instances hang from a surface
-  // White material colour: instanceColor MULTIPLIES it, so supplying a dark rock tone in
-  // both places squared it — 0x463d35 x 0x2f2a25 lands near 0.2% reflectance, i.e. black.
-  // Where per-instance colour carries the real hue, the material must be white.
-  const spikeMat = track(new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }));
-  const spikes = new THREE.InstancedMesh(spikeGeo, spikeMat, SPIKE_COUNT);
-  const tint = new THREE.Color();
-  for (let i = 0; i < SPIKE_COUNT; i += 1) {
-    // Mostly floor now. With the roof cut away there is nothing overhead to hang from, so
-    // the remaining "ceiling" spurs are rock jutting from the tops of the two side walls.
-    const fromCeiling = rng() < 0.28;
-    const z = Z_DETAIL_NEAR - rng() * (Z_DETAIL_NEAR - Z_FAR - 14);
-    let length;
-    if (fromCeiling) {
-      // Only the retained upper edges of the arc — anything nearer the old apex would now
-      // hang from empty air.
-      const angle = rng() < 0.5
-        ? ARC_START + rng() * 0.11 * Math.PI
-        : ARC_END - rng() * 0.11 * Math.PI;
-      const p = shaftPoint(angle, z, 0.6);
-      length = 2 + rng() * 3;
-      posV.set(p.x, p.y, z);
-      // Hang along the inward radius, not straight down — they grow off the rock face.
-      eulerQ.set(0, 0, Math.PI + angle - Math.PI / 2);
-      quat.setFromEuler(eulerQ);
-    } else {
-      length = 1.6 + rng() * 3.4;
-      // Clear of the rails: the centre is the walked, worked path, and a spike standing on
-      // the track read as a black wedge planted across the composition.
-      const side = rng() < 0.5 ? -1 : 1;
-      posV.set(side * (6.5 + rng() * 9), FLOOR_Y + length, z);
-      eulerQ.set(Math.PI, rng() * Math.PI * 2, 0); // tip up, base on the floor
-      quat.setFromEuler(eulerQ);
-    }
-    // Squatter than before: thin cones at this camera angle read as thorns rather than
-    // as rock, and there are a lot of them across the walls.
-    const width = length * (0.3 + rng() * 0.22);
-    scaleV.set(width, length, width);
-    m4.compose(posV, quat, scaleV);
-    spikes.setMatrixAt(i, m4);
-    spikes.setColorAt(i, tint.setHex(ROCK_HUES[Math.floor(rng() * ROCK_HUES.length)]));
-  }
-  spikes.instanceMatrix.needsUpdate = true;
-  if (spikes.instanceColor) spikes.instanceColor.needsUpdate = true;
-  scene.add(spikes);
-
-  // ── Rubble ────────────────────────────────────────────────────────────────
-  const RUBBLE_COUNT = 130;
-  const rubbleGeo = track(new THREE.IcosahedronGeometry(1, 0));
-  const rubbleMat = track(new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }));
-  const rubble = new THREE.InstancedMesh(rubbleGeo, rubbleMat, RUBBLE_COUNT);
-  for (let i = 0; i < RUBBLE_COUNT; i += 1) {
-    const z = Z_DETAIL_NEAR + 6 - rng() * (Z_DETAIL_NEAR + 6 - Z_FAR);
-    // Biased to the tunnel sides: the middle is the walked, cleared path.
-    const side = rng() < 0.5 ? -1 : 1;
-    const x = side * (5 + rng() * 13);
-    const s = 0.5 + rng() * 1.9;
-    posV.set(x, FLOOR_Y + s * 0.35, z);
-    eulerQ.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-    quat.setFromEuler(eulerQ);
-    scaleV.set(s, s * (0.5 + rng() * 0.4), s);
-    m4.compose(posV, quat, scaleV);
-    rubble.setMatrixAt(i, m4);
-    rubble.setColorAt(i, tint.setHex(ROCK_HUES[Math.floor(rng() * ROCK_HUES.length)]));
-  }
-  rubble.instanceMatrix.needsUpdate = true;
-  if (rubble.instanceColor) rubble.instanceColor.needsUpdate = true;
-  scene.add(rubble);
-
-  // ── Ore veins ─────────────────────────────────────────────────────────────
-  // MeshBasicMaterial, so they are bright regardless of where the lights fall and the
-  // bloom pass picks them up out of shadow. That unlit look is the point: ore should
-  // glint in the dark, which is what makes the shaft feel worth digging.
-  const ORE_COUNT = 130;
-  const oreGeo = track(new THREE.OctahedronGeometry(1, 0));
-  const oreMat = track(new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    // Fogged like everything else, so distant ore dims into the haze instead of
-    // hanging in front of it as bright confetti.
-    fog: true,
-  }));
-  const ore = new THREE.InstancedMesh(oreGeo, oreMat, ORE_COUNT);
-  for (let i = 0; i < ORE_COUNT; i += 1) {
-    const z = Z_DETAIL_NEAR - 8 - rng() * (Z_DETAIL_NEAR - 8 - Z_FAR - 10);
-    // Anywhere on the retained arc, biased off the very bottom where the floor would bury it.
-    const angle = ARC_START + (0.04 + rng() * 0.92) * (ARC_END - ARC_START);
-    const p = shaftPoint(angle, z, 0.15 + rng() * 0.3);
-    posV.set(p.x, p.y, z);
-    eulerQ.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-    quat.setFromEuler(eulerQ);
-    const s = 0.11 + rng() * 0.2;
-    scaleV.set(s, s * (1 + rng()), s);
-    m4.compose(posV, quat, scaleV);
-    ore.setMatrixAt(i, m4);
-    // Proximity to a lamp, times a per-instance richness so the vein is not uniform.
-    // The 0.05 floor keeps far ore as the faintest suggestion rather than absent.
-    const reach = lightReach(p.x, p.y, z);
-    ore.setColorAt(i, tint.setHex(ORE_HUES[Math.floor(rng() * ORE_HUES.length)])
-      .multiplyScalar((0.05 + 0.95 * reach) * (0.55 + rng() * 0.45)));
-  }
-  ore.instanceMatrix.needsUpdate = true;
-  if (ore.instanceColor) ore.instanceColor.needsUpdate = true;
-  scene.add(ore);
-
-  // ── Support frames ────────────────────────────────────────────────────────
-  // Posts and lintels, spaced down the shaft. Two instanced meshes rather than one
-  // merged arch: no merge helper is imported, and the post box serves both uprights.
-  const FRAME_COUNT = 9;
-  const FRAME_SPACING = 15;
-  const timberMat = track(new THREE.MeshLambertMaterial({ color: 0x4a3524, flatShading: true }));
-  const postGeo = track(new THREE.BoxGeometry(1, 1, 1));
-  postGeo.translate(0, 0.5, 0); // base at y=0, so height scales upward from the floor
-  const posts = new THREE.InstancedMesh(postGeo, timberMat, FRAME_COUNT * 2);
-  const beamGeo = track(new THREE.BoxGeometry(1, 1, 1));
-  const beams = new THREE.InstancedMesh(beamGeo, timberMat, FRAME_COUNT);
-  for (let i = 0; i < FRAME_COUNT; i += 1) {
-    // Starting 8 further back than the other detail: at 12 units the lintel of the
-    // nearest frame sat above the top of the frustum and read as a black bar.
-    const z = Z_DETAIL_NEAR - 8 - i * FRAME_SPACING;
-    // Tuck the frame just inside the rock, and let the shaft's taper set its width.
-    const halfWidth = shaftRadius(z) * 0.52;
-    const height = 11 + shaftRadius(z) * 0.16;
-    for (let side = 0; side < 2; side += 1) {
-      const x = side === 0 ? -halfWidth : halfWidth;
-      posV.set(x, FLOOR_Y, z);
-      quat.identity();
-      scaleV.set(1.1, height, 1.1);
-      m4.compose(posV, quat, scaleV);
-      posts.setMatrixAt(i * 2 + side, m4);
-    }
-    posV.set(0, FLOOR_Y + height + 0.55, z);
-    quat.identity();
-    scaleV.set(halfWidth * 2 + 2.2, 1.1, 1.3);
-    m4.compose(posV, quat, scaleV);
-    beams.setMatrixAt(i, m4);
-  }
-  posts.instanceMatrix.needsUpdate = true;
-  beams.instanceMatrix.needsUpdate = true;
-  scene.add(posts);
-  scene.add(beams);
-
-  // ── Rails ─────────────────────────────────────────────────────────────────
-  // Perspective lines converging into the fog. Cheap, and they do more for the sense of
-  // depth than any amount of extra rock.
-  const SLEEPER_COUNT = 46;
-  const sleeperGeo = track(new THREE.BoxGeometry(6.4, 0.34, 1.1));
-  const sleeperMat = track(new THREE.MeshLambertMaterial({ color: 0x3f2f21, flatShading: true }));
-  const sleepers = new THREE.InstancedMesh(sleeperGeo, sleeperMat, SLEEPER_COUNT);
-  for (let i = 0; i < SLEEPER_COUNT; i += 1) {
-    posV.set(0, FLOOR_Y + 0.2, Z_DETAIL_NEAR + 10 - i * 3.4);
-    eulerQ.set(0, (rng() - 0.5) * 0.05, 0); // slight scatter; nothing underground is true
-    quat.setFromEuler(eulerQ);
-    scaleV.set(1, 1, 1);
-    m4.compose(posV, quat, scaleV);
-    sleepers.setMatrixAt(i, m4);
-  }
-  sleepers.instanceMatrix.needsUpdate = true;
-  scene.add(sleepers);
-
-  const railGeo = track(new THREE.BoxGeometry(0.32, 0.3, SLEEPER_COUNT * 3.4));
-  const railMat = track(new THREE.MeshLambertMaterial({ color: 0x6b6f73 }));
-  for (const x of [-2.2, 2.2]) {
-    const rail = new THREE.Mesh(railGeo, railMat);
-    rail.position.set(x, FLOOR_Y + 0.5, Z_DETAIL_NEAR + 10 - (SLEEPER_COUNT * 3.4) / 2);
-    scene.add(rail);
-  }
-
-  // ── Forge ─────────────────────────────────────────────────────────────────
-  // Off to one side and near the camera, so its light rakes across the wall and the
-  // support frames instead of flattening everything head-on.
-  const FORGE_POS = new THREE.Vector3(FIRE_POS.x, FLOOR_Y, FIRE_POS.z);
-  const braGeo = track(new THREE.CylinderGeometry(2.5, 3.3, 3.2, 10));
-  const braMat = track(new THREE.MeshLambertMaterial({ color: 0x574a3c, flatShading: true }));
-  const brazier = new THREE.Mesh(braGeo, braMat);
-  brazier.position.set(FORGE_POS.x, FORGE_POS.y + 1.6, FORGE_POS.z);
-  scene.add(brazier);
-
-  const emberGeo = track(new THREE.IcosahedronGeometry(2.1, 0));
-  const emberMat = track(new THREE.MeshBasicMaterial({ color: 0xff7a2e }));
-  const embers = new THREE.Mesh(emberGeo, emberMat);
-  embers.position.set(FORGE_POS.x, FORGE_POS.y + 3.2, FORGE_POS.z);
-  embers.scale.set(1, 0.55, 1);
-  scene.add(embers);
-
-  // Sprite halo. Bloom alone cannot invent light scattering in the air between the fire
-  // and the camera; this sells the fire as something burning rather than a lit shape.
-  const glowMat = track(new THREE.SpriteMaterial({
-    map: track(makeGlowTexture(THREE, 'rgba(255,214,150,0.95)')),
-    color: 0xff9440,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    fog: false,
-  }));
-  const glow = new THREE.Sprite(glowMat);
-  glow.position.copy(embers.position);
-  // Sprite scale is in WORLD units, and the fire sits only ~18 units from the camera. At
-  // the 20 it started at, this single additive quad covered the left third of the frame and
-  // washed out everything behind it — including all the rock detail. A halo should be
-  // slightly larger than the fire it surrounds, nothing more.
-  glow.scale.set(7, 7, 1);
-  scene.add(glow);
-
-  // Intensity is in candela and falls off as 1/d^decay, so the number has to be large:
-  // three has been physically based since r155. At the old value of 2.6 a wall 20 units
-  // away received 2.6/20^1.7 = 0.015 and the entire shaft rendered black. The wilderness
-  // scene never hit this because directional and hemisphere lights do not attenuate.
-  // decay 1.7 rather than a physical 2 so the light reaches down the shaft.
-  const FIRE_INTENSITY = 210;
-  const fireLight = new THREE.PointLight(0xff8c3a, FIRE_INTENSITY, 96, 1.7);
-  fireLight.position.set(FIRE_POS.x, FIRE_POS.y, FIRE_POS.z);
-  scene.add(fireLight);
-
-  // ── Mid-shaft lamp ────────────────────────────────────────────────────────
-  const midLamp = new THREE.PointLight(0xffb271, 120, 78, 1.7);
-  midLamp.position.set(MIDLAMP_POS.x, MIDLAMP_POS.y, MIDLAMP_POS.z);
-  scene.add(midLamp);
-
-  const midGlowMat = track(new THREE.SpriteMaterial({
-    map: track(makeGlowTexture(THREE, 'rgba(255,226,178,0.9)')),
-    color: 0xffbd80,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    fog: false,
-  }));
-  const midGlow = new THREE.Sprite(midGlowMat);
-  midGlow.position.copy(midLamp.position);
-  midGlow.scale.set(4.6, 4.6, 1);
-  scene.add(midGlow);
-
-  // A cooler second source far down the shaft. Two lights at different colour
-  // temperatures separate foreground from background far better than one bright lamp.
-  const LANTERN_INTENSITY = 150;
-  const lantern = new THREE.PointLight(0x8fb4d8, LANTERN_INTENSITY, 110, 1.6);
-  lantern.position.set(4, AXIS_Y + 2, -62);
-  scene.add(lantern);
-
-  const lanternGlowMat = track(new THREE.SpriteMaterial({
-    map: track(makeGlowTexture(THREE, 'rgba(210,230,255,0.85)')),
-    color: 0x9fc4e8,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    fog: false,
-  }));
-  const lanternGlow = new THREE.Sprite(lanternGlowMat);
-  lanternGlow.position.copy(lantern.position);
-  lanternGlow.scale.set(11, 11, 1);
-  scene.add(lanternGlow);
-
-  // Enough ambient that rock never goes to pure black — fully black geometry reads as a
-  // hole in the image rather than as unlit stone.
-  // Floor for the darkest rock. Stone that renders at pure black reads as a hole in the
-  // image, not as unlit stone — it was the main reason the first pass looked like objects
-  // floating in a void instead of a cave.
-  scene.add(new THREE.AmbientLight(0x9d907a, 3.6));
-  scene.add(new THREE.HemisphereLight(0x6f82a3, 0x6b5238, 2.6));
-
-  // Top fill, and it exists for a layout reason rather than a lighting one. The rock
-  // surrounding the cutaway is beyond every lamp's reach, so it renders at roughly a third
-  // the brightness of the trench. That would be fine for a picture — but this is a backdrop,
-  // the UI panels cover the middle where the lit trench is, and the regions a player
-  // actually sees through are the corners, which are exactly the unlit surface. A directional
-  // light does not attenuate, so it lifts the surface without touching the lamps' falloff.
-  const topFill = new THREE.DirectionalLight(0xbfc6d8, 1.35);
-  topFill.position.set(24, 90, 30);
-  scene.add(topFill);
-
-  // ── Dust ──────────────────────────────────────────────────────────────────
-  // Two counter-rotating groups at different heights. Rotating a container is free,
-  // where per-frame position updates would touch the buffer every frame for no visible
-  // gain at this size.
-  const dustGroups = [];
-  for (let g = 0; g < 2; g += 1) {
-    const COUNT = 150;
-    const geo = track(new THREE.BufferGeometry());
-    const p = new Float32Array(COUNT * 3);
-    for (let i = 0; i < COUNT; i += 1) {
-      const z = Z_DETAIL_NEAR + 8 - rng() * (Z_DETAIL_NEAR + 8 - Z_FAR) * 0.85;
-      p[i * 3] = (rng() - 0.5) * 34;
-      p[i * 3 + 1] = 1.5 + rng() * (g === 0 ? 9 : 18);
-      p[i * 3 + 2] = z;
-    }
-    geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
-    const mat = track(new THREE.PointsMaterial({
-      map: track(makeGlowTexture(THREE)),
-      color: g === 0 ? 0xffc98a : 0xa8bcd4,
-      size: g === 0 ? 0.5 : 0.36,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: g === 0 ? 0.5 : 0.34,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }));
-    const points = new THREE.Points(geo, mat);
-    scene.add(points);
-    dustGroups.push({ points, dir: g === 0 ? 1 : -1, baseY: points.position.y });
-  }
-
-  // ── Camera ────────────────────────────────────────────────────────────────
-  // Orthographic and angled down into the shaft, the diorama look. No perspective means no
-  // vanishing point, so depth has to come from the receding lamps, the fog and the rails
-  // rather than from convergence — which is why those three matter more here than they did
-  // in the perspective framing.
-  const VIEW_HEIGHT = 56;
-  const CAM_TARGET = new THREE.Vector3(0, 4, -12);
-  // ~42 degrees elevation, ~32 degrees off the shaft axis: high enough to see the floor and
-  // both walls, shallow enough that the shaft still reads as running away from the viewer.
-  const CAM_OFFSET = new THREE.Vector3(0.394, 0.669, 0.630).multiplyScalar(110);
+  const VIEW_HEIGHT = 108;
+  const cameraTarget = new THREE.Vector3(0, 5.5, -1);
+  const cameraOffset = new THREE.Vector3(72, 137, 148);
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 520);
-  // backdrop.js rebuilds the frustum edges from this on every resize; an orthographic camera
-  // has no `aspect` to set.
   camera.userData.viewHeight = VIEW_HEIGHT;
-  camera.position.copy(CAM_TARGET).add(CAM_OFFSET);
-  camera.lookAt(CAM_TARGET);
-
-  const fireColor = new THREE.Color();
-  const FIRE_HOT = new THREE.Color(0xffb066);
-  const FIRE_COOL = new THREE.Color(0xff6a20);
+  camera.position.copy(cameraTarget).add(cameraOffset);
+  camera.lookAt(cameraTarget);
 
   return {
     scene,
     camera,
-    // Lower threshold and higher strength than the wilderness: the scene is dark, so
-    // little exceeds the cut, and the glow is doing narrative work here rather than
-    // just softening highlights.
-    bloom: { strength: 1.05, radius: 0.8, threshold: 0.58 },
-    // Compresses the fire's highlights instead of clipping them, and lifts the shadow end
-    // enough that rock stays legible as rock.
-    toneMapping: { type: 'ACESFilmicToneMapping', exposure: 1.15 },
+    bloom: { strength: 0.72, radius: 0.7, threshold: 0.78 },
+    toneMapping: { type: 'ACESFilmicToneMapping', exposure: 1.22 },
 
-    update(t) {
-      // Fire flicker. Four incommensurate frequencies so it never settles into a visible
-      // pulse, driving intensity, reach and colour temperature together — a real flame
-      // gets hotter and whiter as it flares, it does not just get brighter.
-      const flick = 0.74
-        + 0.15 * Math.sin(t * 11.3)
-        + 0.10 * Math.sin(t * 17.9 + 1.7)
-        + 0.07 * Math.sin(t * 29.1 + 0.4)
-        + 0.05 * Math.sin(t * 43.7 + 2.2);
-      const f = Math.min(1.18, Math.max(0.46, flick));
-      fireLight.intensity = FIRE_INTENSITY * f;
-      fireLight.distance = 92 + 12 * f;
-      fireColor.copy(FIRE_COOL).lerp(FIRE_HOT, Math.min(1, Math.max(0, (f - 0.5) / 0.6)));
-      fireLight.color.copy(fireColor);
-      emberMat.color.copy(fireColor);
-      glowMat.color.copy(fireColor);
-      glow.scale.setScalar(6.2 + 1.6 * f);
-      embers.scale.set(1 + 0.06 * f, 0.55 + 0.08 * f, 1 + 0.06 * f);
+    update(time) {
+      lavaMaterial.uniforms.uTime.value = time;
+      architecture.fireMaterial.uniforms.uTime.value = time + 1.7;
+      atmosphere.smokeMaterial.uniforms.uTime.value = time;
+      atmosphere.emberMaterial.uniforms.uTime.value = time;
 
-      // The hung lamp swings a little, which animates its pool of light on the rock.
-      midLamp.position.x = MIDLAMP_POS.x + Math.sin(t * 0.5) * 0.5;
-      midGlow.position.x = midLamp.position.x;
-      midLamp.intensity = 120 * (0.94 + 0.06 * Math.sin(t * 2.3));
+      const furnaceFlicker = clamp(
+        0.88
+          + 0.10 * Math.sin(time * 8.3)
+          + 0.07 * Math.sin(time * 13.7 + 1.4)
+          + 0.04 * Math.sin(time * 23.1 + 0.6),
+        0.66,
+        1.15,
+      );
+      atmosphere.furnaceLight.intensity = 690 * furnaceFlicker;
+      atmosphere.furnaceLight.distance = 88 + furnaceFlicker * 8;
 
-      // The lantern breathes far more slowly — a shuttered lamp, not an open flame.
-      const lf = 0.9 + 0.1 * Math.sin(t * 1.7) + 0.05 * Math.sin(t * 3.1 + 0.8);
-      lantern.intensity = LANTERN_INTENSITY * lf;
-      lanternGlow.scale.setScalar(10.5 * lf);
-
-      // Dust: slow rotation plus a gentle rise, so motes drift rather than orbit visibly.
-      for (const group of dustGroups) {
-        group.points.rotation.y = t * 0.013 * group.dir;
-        group.points.position.y = Math.sin(t * 0.11 * group.dir) * 1.2;
+      for (const item of atmosphere.pointLights) {
+        item.light.intensity = item.intensity * (0.92
+          + 0.06 * Math.sin(time * 2.1 + item.phase)
+          + 0.03 * Math.sin(time * 5.9 + item.phase * 1.7));
+      }
+      for (const item of atmosphere.lavaLights) {
+        item.light.intensity = item.intensity * (0.9
+          + 0.08 * Math.sin(time * 1.7 + item.phase)
+          + 0.04 * Math.sin(time * 4.3 + item.phase));
       }
 
-      // Drift. With an orthographic camera, moving the rig pans rather than parallaxes, so
-      // this stays small and slow — it exists to stop the frame feeling frozen, not to
-      // suggest depth.
-      const driftX = Math.sin(t * 0.045) * 3.4;
-      const driftZ = Math.cos(t * 0.031) * 2.2;
+      atmosphere.dust.rotation.y = Math.sin(time * 0.025) * 0.028;
+      atmosphere.dust.position.y = Math.sin(time * 0.12) * 0.7;
+
+      const driftX = Math.sin(time * 0.032) * 1.25;
+      const driftZ = Math.cos(time * 0.026) * 1.0;
       camera.position.set(
-        CAM_TARGET.x + CAM_OFFSET.x + driftX,
-        CAM_TARGET.y + CAM_OFFSET.y,
-        CAM_TARGET.z + CAM_OFFSET.z + driftZ,
+        cameraTarget.x + cameraOffset.x + driftX,
+        cameraTarget.y + cameraOffset.y,
+        cameraTarget.z + cameraOffset.z + driftZ,
       );
-      camera.lookAt(CAM_TARGET.x + driftX * 0.5, CAM_TARGET.y, CAM_TARGET.z + driftZ * 0.5);
+      camera.lookAt(
+        cameraTarget.x + driftX * 0.35,
+        cameraTarget.y,
+        cameraTarget.z + driftZ * 0.35,
+      );
     },
 
     dispose() {
-      for (const d of disposables) d.dispose?.();
+      for (const disposable of disposables) disposable.dispose?.();
       scene.clear();
     },
   };

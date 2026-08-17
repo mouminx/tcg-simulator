@@ -2,18 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { NAME_MAX, isDisplayNameAvailable, signIn, signUp, validateDisplayName } from '../game/account';
 
 /**
- * The login page — sign in, create an account, or play offline.
+ * The entry page — choose Solo Self Found or preview the upcoming Online mode.
  *
- * Rendered by `App`'s boot gate, and only when online mode is configured. A build with no Supabase
- * project never shows it, and neither does the desktop SSF build, so this component may assume the online
- * path exists rather than reasoning about whether it should.
+ * Rendered by `App`'s boot gate whenever there is no restored online session. Online remains visible so
+ * players know what is planned, but its account actions stay disabled until that mode is released.
  *
  * ── Offline is a real button, not a fallback link ──
  * SSF is a mode the player is entitled to, not a degraded state, and it is also the honest answer to "I
  * have no connection". A sign-in screen that cannot succeed and offers no way past itself is a trap.
  */
-export default function LoginPage({ onSignedIn, onPlayOffline, initialError }) {
-  const [mode, setMode] = useState('signIn');
+export default function LoginPage({ onSignedIn, onPlayOffline, initialError, onlineAvailable = true }) {
+  const [mode, setMode] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -26,6 +25,7 @@ export default function LoginPage({ onSignedIn, onPlayOffline, initialError }) {
   const [nameHint, setNameHint] = useState(null);
 
   const isSignUp = mode === 'signUp';
+  const authOpen = mode !== null;
   const nameRequestRef = useRef(0);
 
   /**
@@ -60,6 +60,7 @@ export default function LoginPage({ onSignedIn, onPlayOffline, initialError }) {
   }, [displayName, isSignUp]);
 
   function switchMode(next) {
+    if (!onlineAvailable) return;
     setMode(next);
     setError(null);
     setNotice(null);
@@ -105,7 +106,7 @@ export default function LoginPage({ onSignedIn, onPlayOffline, initialError }) {
 
   return (
     <div className="gate">
-      <div className="gate__panel">
+      <div className="gate__panel gate__panel--entry">
         <h1 className="gate__title">Cards of Arcana</h1>
 
         <div className="gate__rule" aria-hidden="true">
@@ -114,82 +115,115 @@ export default function LoginPage({ onSignedIn, onPlayOffline, initialError }) {
           <span className="gate__rule-line" />
         </div>
 
-        <div className="gate__tabs" role="tablist" aria-label="Account">
-          <button
-            type="button" role="tab" aria-selected={!isSignUp}
-            className={`gate__tab${!isSignUp ? ' gate__tab--active' : ''}`}
-            onClick={() => switchMode('signIn')}
-          >
-            Sign In
-          </button>
-          <button
-            type="button" role="tab" aria-selected={isSignUp}
-            className={`gate__tab${isSignUp ? ' gate__tab--active' : ''}`}
-            onClick={() => switchMode('signUp')}
-          >
-            Create Account
-          </button>
+        <div className="gate__choices">
+          <section className="gate__choice gate__choice--solo" aria-labelledby="gate-solo-title">
+            <div className="gate__choice-mark" aria-hidden="true">ᛟ</div>
+            <p className="gate__choice-kicker">Local Journey</p>
+            <h2 id="gate-solo-title">Solo Self Found</h2>
+            <p className="gate__choice-description">
+              Build your collection alone with progress stored only on this device.
+            </p>
+            <button className="gate__offline" type="button" onClick={onPlayOffline} disabled={busy}>
+              Play Offline
+            </button>
+          </section>
+
+          <section className="gate__choice gate__choice--online gate__choice--locked" aria-labelledby="gate-online-title">
+            <div className="gate__lock" aria-label="Coming soon">
+              <span>Coming Soon</span>
+            </div>
+            <div className="gate__choice-mark gate__choice-mark--lock" aria-hidden="true">
+              <span className="gate__padlock" />
+            </div>
+            <p className="gate__choice-kicker">Account Journey</p>
+            <h2 id="gate-online-title">Online</h2>
+            <p className="gate__choice-description">
+              Sign in to carry cloud saves between devices while online features continue to grow.
+            </p>
+            <div className="gate__tabs" aria-label="Online account actions">
+              <button
+                type="button"
+                className="gate__tab"
+                disabled
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                className="gate__tab"
+                disabled
+              >
+                Create Account
+              </button>
+            </div>
+          </section>
         </div>
 
-        <form className="gate__form" onSubmit={handleSubmit}>
-          {isSignUp && (
-            <label className="gate__field">
-              <span className="gate__label">
-                Player Name
-                {nameHint && (
-                  <span className={`gate__name-state gate__name-state--${nameState}`}>{nameHint}</span>
+        {initialError && !authOpen && <p className="gate__error gate__entry-error" role="alert">{initialError}</p>}
+
+        {authOpen && (
+          <div className="gate__auth-backdrop" role="presentation">
+            <section className="gate__auth-dialog" role="dialog" aria-modal="true" aria-labelledby="gate-auth-title">
+              <button
+                type="button"
+                className="gate__auth-close"
+                onClick={() => switchMode(null)}
+                aria-label="Back to play mode selection"
+              >
+                ×
+              </button>
+              <p className="gate__choice-kicker">Online Account</p>
+              <h2 id="gate-auth-title">{isSignUp ? 'Create Account' : 'Sign In'}</h2>
+              <p className="gate__auth-description">
+                {isSignUp ? 'Create an identity for cloud saves.' : 'Continue with your online saves.'}
+              </p>
+
+              <form className="gate__form" onSubmit={handleSubmit}>
+                {isSignUp && (
+                  <label className="gate__field">
+                    <span className="gate__label">
+                      Player Name
+                      {nameHint && (
+                        <span className={`gate__name-state gate__name-state--${nameState}`}>{nameHint}</span>
+                      )}
+                      {nameState === 'checking' && <span className="gate__name-state">Checking…</span>}
+                    </span>
+                    <input
+                      className="gate__input" type="text" value={displayName} autoComplete="nickname"
+                      onChange={e => setDisplayName(e.target.value)}
+                      maxLength={NAME_MAX} required
+                      placeholder="Unique, and how others see you"
+                    />
+                  </label>
                 )}
-                {nameState === 'checking' && <span className="gate__name-state">Checking…</span>}
-              </span>
-              <input
-                className="gate__input" type="text" value={displayName} autoComplete="nickname"
-                onChange={e => setDisplayName(e.target.value)}
-                maxLength={NAME_MAX} required
-                placeholder="Unique, and how others see you"
-              />
-            </label>
-          )}
 
-          <label className="gate__field">
-            <span className="gate__label">Email</span>
-            <input
-              className="gate__input" type="email" value={email} autoComplete="email" required
-              onChange={e => setEmail(e.target.value)}
-            />
-          </label>
+                <label className="gate__field">
+                  <span className="gate__label">Email</span>
+                  <input
+                    className="gate__input" type="email" value={email} autoComplete="email" required
+                    onChange={e => setEmail(e.target.value)}
+                  />
+                </label>
 
-          <label className="gate__field">
-            <span className="gate__label">Password</span>
-            <input
-              className="gate__input" type="password" value={password} required minLength={6}
-              autoComplete={isSignUp ? 'new-password' : 'current-password'}
-              onChange={e => setPassword(e.target.value)}
-            />
-          </label>
+                <label className="gate__field">
+                  <span className="gate__label">Password</span>
+                  <input
+                    className="gate__input" type="password" value={password} required minLength={6}
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    onChange={e => setPassword(e.target.value)}
+                  />
+                </label>
 
-          {error && <p className="gate__error" role="alert">{error}</p>}
-          {notice && <p className="gate__notice" role="status">{notice}</p>}
+                {error && <p className="gate__error" role="alert">{error}</p>}
+                {notice && <p className="gate__notice" role="status">{notice}</p>}
 
-          <button className="gate__submit" type="submit" disabled={busy}>
-            {busy ? 'Please wait…' : (isSignUp ? 'Create Account' : 'Sign In')}
-          </button>
-        </form>
-
-        <div className="gate__rule gate__rule--minor" aria-hidden="true">
-          <span className="gate__rule-line" />
-          <span className="gate__rule-rune">ᛟ</span>
-          <span className="gate__rule-line" />
-        </div>
-
-        <button className="gate__offline" type="button" onClick={onPlayOffline} disabled={busy}>
-          Play Offline
-        </button>
-        <p className="gate__offline-note">
-          Solo self-found, stored on this device. No account needed.
-          <br />
-          Signing in adds cloud saves that follow you between machines. Trading and the market are not
-          open yet.
-        </p>
+                <button className="gate__submit" type="submit" disabled={busy}>
+                  {busy ? 'Please wait…' : (isSignUp ? 'Create Account' : 'Sign In')}
+                </button>
+              </form>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

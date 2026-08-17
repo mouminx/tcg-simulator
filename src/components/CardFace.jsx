@@ -1,15 +1,13 @@
-import { forwardRef, memo, useRef, useEffect } from 'react';
+import { forwardRef, memo, useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { RARITIES, TIERS, TAGS, formatAffixText } from '../game/cards';
 import Gold from './Gold';
 import { useGraphicsFeatures } from '../game/graphics';
 import { getClassArt } from '../game/cardArt';
 import { CARD_COLORS } from '../game/cardColors';
-import commonGem from '../assets/rarity-gems/common.svg';
-import uncommonGem from '../assets/rarity-gems/uncommon.svg';
-import rareGem from '../assets/rarity-gems/rare.svg';
-import epicGem from '../assets/rarity-gems/epic.svg';
-import legendaryGem from '../assets/rarity-gems/legendary.svg';
-import mythicGem from '../assets/rarity-gems/mythic.svg';
+import { GEM_RESOURCES_BY_ID } from '../game/gems';
+import { describeSocket, normalizeCardSockets } from '../game/cardSockets';
+import { getResourceArt } from '../game/resourceArt';
 import tier1Stars from '../assets/tier-stars/tier1.svg';
 import tier2Stars from '../assets/tier-stars/tier2.svg';
 import tier3Stars from '../assets/tier-stars/tier3.svg';
@@ -20,14 +18,14 @@ import tier5Stars from '../assets/tier-stars/tier5.svg';
 const FOIL_RARITIES    = new Set(['uncommon', 'rare', 'epic', 'legendary', 'mythic']);
 // Rarities that also get sparkle dots on top
 const SPARKLE_RARITIES = new Set(['epic', 'legendary', 'mythic']);
-const RARITY_GEMS = {
-  common: commonGem,
-  uncommon: uncommonGem,
-  rare: rareGem,
-  epic: epicGem,
-  legendary: legendaryGem,
-  mythic: mythicGem,
-};
+const RARITY_FRAME_COLORS = Object.freeze({
+  common: '#f4f2e8',
+  uncommon: '#58cf70',
+  rare: '#4a8df0',
+  epic: '#a855f7',
+  legendary: '#f0cf4f',
+  mythic: '#ef4444',
+});
 const TIER_STAR_ASSETS = {
   1: tier1Stars,
   2: tier2Stars,
@@ -41,7 +39,7 @@ const TIER_STAR_ASSETS = {
 // of them. Only pass 'full' where the card renders large enough that a thumb
 // would look soft on a 2x DPR display: the 330px viewer modal / hover preview
 // and the 200px pack-reveal center card.
-const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell, holo, visualMode = 'full', artDetail = 'thumb' }, ref) {
+const CardFace = forwardRef(function CardFace({ card, onClick, onAffixClick = null, onSocketClick = null, resourceDropTarget = null, showSocketTooltips = false, className, onSell, holo, visualMode = 'full', artDetail = 'thumb' }, ref) {
   const features = useGraphicsFeatures();
   const rarity = RARITIES[card.rarity];
   const tier = card.tier ?? 1;
@@ -60,6 +58,29 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   const wrapRef    = useRef(null);
   const rafRef     = useRef(null);
   const touchState = useRef({ active: false, timer: null });
+  const [socketTip, setSocketTip] = useState(null);
+
+  function updateSocketTip(event, socket, gem) {
+    if (!showSocketTooltips || !socket || !gem) return;
+    const tooltipWidth = 252;
+    const tooltipHeight = 96;
+    const offset = 14;
+    const x = event.clientX + offset + tooltipWidth > window.innerWidth
+      ? event.clientX - tooltipWidth - offset
+      : event.clientX + offset;
+    const y = event.clientY + offset + tooltipHeight > window.innerHeight
+      ? event.clientY - tooltipHeight - offset
+      : event.clientY + offset;
+    const fullDescription = describeSocket(socket);
+    setSocketTip({
+      name: gem.name,
+      description: fullDescription.startsWith(`${gem.name}: `)
+        ? fullDescription.slice(gem.name.length + 2)
+        : fullDescription,
+      x: Math.max(8, x),
+      y: Math.max(8, y),
+    });
+  }
 
   function mergeRef(el) {
     wrapRef.current = el;
@@ -157,11 +178,14 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
   const hasSparkle = holo && features.holoLayers && SPARKLE_RARITIES.has(card.rarity);
   const artSrc = getClassArt(card.classType, card.artVariant ?? 0, artDetail);
   const artPosition = 'center 10%';
-  const rarityGemSrc = RARITY_GEMS[card.rarity];
   const tierStarsSrc = TIER_STAR_ASSETS[tier] ?? tier1Stars;
+  const frameColor = card.tag === 'firstEdition'
+    ? '#f0c040'
+    : (RARITY_FRAME_COLORS[card.rarity] ?? RARITY_FRAME_COLORS.common);
 
   const palette = CARD_COLORS[card.classType] ?? CARD_COLORS[card.name];
   const affixes = card.affixes ?? [];
+  const sockets = normalizeCardSockets(card);
 
   // Seven spots scattered across the card [x%, y%]
   const SPOTS = [
@@ -192,7 +216,8 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     <div
       ref={mergeRef}
       className={`card-face-wrapper tier-${tier} ${compactVisuals ? 'card-face-wrapper--compact' : ''} ${className || ''} ${holo ? `holo-active holo--${card.rarity}` : ''} ${card.tag ? `has-tag-${card.tag}` : ''}`}
-      style={{ '--glow-color': glowColor }}
+      style={{ '--glow-color': glowColor, '--card-frame-color': frameColor }}
+      data-resource-drop-target={resourceDropTarget || undefined}
       onClick={onClick}
       onMouseMove={tiltEnabled ? handleMouseMove : undefined}
       onMouseLeave={tiltEnabled ? handleMouseLeave : undefined}
@@ -202,15 +227,8 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
     >
       <div className="card-face-inner">
         <div className="card-face-front" style={{ background: cardBg }}>
-          {!compactVisuals && features.tierOverlay && <div className="card-tier-overlay" />}
-          {!compactVisuals && features.tagVfx && tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
-
-          {/* Header row: name left, tier stars right */}
-          <div className="card-header-row">
-            <span className="card-name">{card.name}</span>
-          </div>
-
-          {/* Art window — 3:2 */}
+          {/* Full-bleed portrait. Readability shading belongs to this artwork layer so the
+              card keeps one uninterrupted image instead of recreating an inset art panel. */}
           <div className="card-art-frame">
             <div className="card-art-window">
               {artSrc
@@ -218,19 +236,33 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
                 : <div className="card-art-placeholder" />
               }
             </div>
-            <div className={`card-art-rarity-tab card-art-rarity-tab--${card.rarity}`} aria-label={rarity.name} title={rarity.name}>
-              <div className="card-art-rarity-tab__well">
-                <img
-                  src={rarityGemSrc}
-                  alt=""
-                  aria-hidden="true"
-                  className="card-art-rarity-tab__gem"
-                  draggable="false"
-                  loading="lazy"
-                  decoding="async"
-                />
+          </div>
+          {!compactVisuals && features.tierOverlay && <div className="card-tier-overlay" />}
+          {!compactVisuals && features.tagVfx && tag && <div className={`tag-vfx tag-vfx--${card.tag}`} aria-hidden="true" />}
+
+          {/* A card's tier is its affix count, so the stars live at the top as the
+              first piece of information on the full-art face. */}
+          <div className={`card-affix-stars card-affix-stars--tier-${tier}`} aria-label={`${tier} affix${tier === 1 ? '' : 'es'}`}>
+            <div className="card-affix-stars__well">
+              <div className="card-affix-stars__row" aria-hidden="true">
+                {Array.from({ length: tier }, (_, index) => (
+                  <img
+                    key={`${card.id}-affix-star-${index}`}
+                    src={tierStarsSrc}
+                    alt=""
+                    className="card-affix-stars__star"
+                    draggable="false"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ))}
               </div>
             </div>
+          </div>
+
+          {/* The name floats over the portrait rather than occupying a separate panel. */}
+          <div className="card-header-row">
+            <span className="card-name">{card.name}</span>
           </div>
 
           {/* No tag pill. A holo/foil/first-edition finish announces itself through the
@@ -243,7 +275,11 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
               {affixes.map(affix => (
                 <div
                   key={`${card.id}-${affix.id}`}
-                  className={`card-affix-line${affix.isHigher ? ' card-affix-line--higher' : ''}`}
+                  className={`card-affix-line${affix.isHigher ? ' card-affix-line--higher' : ''}${onAffixClick ? ' card-affix-line--socket-target' : ''}`}
+                  onClick={onAffixClick ? event => {
+                    event.stopPropagation();
+                    onAffixClick(affix.id);
+                  } : undefined}
                 >
                   <span className="card-affix-bullet" aria-hidden="true">
                     {affix.isHigher ? '★' : '◆'}
@@ -256,6 +292,38 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
             </div>
           )}
 
+          {sockets.length > 0 && (
+            <div className="card-socket-rail" aria-label={`${sockets.length} gem socket${sockets.length === 1 ? '' : 's'}`}>
+              {sockets.map((socket, index) => {
+                const gem = socket ? GEM_RESOURCES_BY_ID[socket.gemId] : null;
+                return (
+                  <span
+                    key={`${card.id}-socket-${index}`}
+                    className={`card-socket${gem ? ' card-socket--filled' : ''}${gem && onSocketClick ? ' card-socket--extractable' : ''}`}
+                    style={gem ? { '--socket-color': gem.color } : undefined}
+                    title={showSocketTooltips ? undefined : describeSocket(socket)}
+                    onMouseEnter={gem ? event => updateSocketTip(event, socket, gem) : undefined}
+                    onMouseMove={gem ? event => updateSocketTip(event, socket, gem) : undefined}
+                    onMouseLeave={gem ? () => setSocketTip(null) : undefined}
+                    onClick={gem && onSocketClick ? event => {
+                      event.stopPropagation();
+                      onSocketClick(index);
+                    } : undefined}
+                  >
+                    {gem && (
+                      <img
+                        src={getResourceArt(gem.artKey)}
+                        alt=""
+                        aria-hidden="true"
+                        draggable="false"
+                      />
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
           {/* Holo layers — sit above art, below header/tags */}
           {hasFoil    && <div className="holo-foil"    aria-hidden="true" />}
           {holo       && <div className="holo-glare"   aria-hidden="true" />}
@@ -264,23 +332,6 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           {card.fuseScore != null && (
             <div className="card-fuse-badge">⊕{card.fuseScore}</div>
           )}
-          <div className={`card-bottom-socket card-bottom-socket--tier-${tier}`} aria-label={`Tier ${tier}`}>
-            <div className="card-bottom-socket__well">
-              <div className="card-bottom-socket__stars" aria-hidden="true">
-                {Array.from({ length: tier }, (_, index) => (
-                  <img
-                    key={`${card.id}-bottom-tier-star-${index}`}
-                    src={tierStarsSrc}
-                    alt=""
-                    className="card-bottom-socket__star"
-                    draggable="false"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
           {card.grade != null && (
             <div className={`card-grade-badge grade-badge--${card.grade === 10 ? 'gem' : card.grade >= 8 ? 'high' : card.grade >= 5 ? 'mid' : 'low'}`}>
               {card.grade}
@@ -303,6 +354,17 @@ const CardFace = forwardRef(function CardFace({ card, onClick, className, onSell
           {tier > 1 && <span className="card-back-tier">T{TIERS[tier].name}</span>}
         </div>
       </div>
+      {showSocketTooltips && socketTip && createPortal(
+        <div
+          className="resource-tooltip card-socket-tooltip"
+          style={{ left: socketTip.x, top: socketTip.y }}
+          role="tooltip"
+        >
+          <span className="resource-tooltip__name">{socketTip.name}</span>
+          <span className="resource-tooltip__desc">{socketTip.description}</span>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 });

@@ -12,28 +12,12 @@ import {
   validateAttunementLoadout,
   ATTUNEMENT_SLOT_RULES,
 } from '../game/arcanaAttunement';
-import { ARCANA_ITEMS_BY_ID, ESSENCES_BY_ID } from '../game/arcana';
-
-// Charm artwork — mirrors Arcana.jsx imports
-import _cindergust from '../assets/cards/charms/cindergust.webp';
-import _stormlash  from '../assets/cards/charms/stormlash.webp';
-import _tidereed   from '../assets/cards/charms/tidereed.webp';
-import _bloomtide  from '../assets/cards/charms/bloomtide.webp';
-import _galebolt   from '../assets/cards/charms/galebolt.webp';
-import _voidtide   from '../assets/cards/charms/voidtide.webp';
-import _dawnseal   from '../assets/cards/charms/dawnseal.webp';
-import _starveil   from '../assets/cards/charms/starveil.webp';
-
-const CHARM_ART = {
-  'smoldering-charm': _cindergust,
-  'jolting-charm':    _stormlash,
-  'flowing-charm':    _tidereed,
-  'blooming-charm':   _bloomtide,
-  'gusting-charm':    _galebolt,
-  'hollowing-charm':  _voidtide,
-  'gleaming-charm':   _dawnseal,
-  'ascending-charm':  _starveil,
-};
+import { ARCANA_ITEMS_BY_ID } from '../game/arcana';
+import {
+  getNextAttunementCost,
+  getPackAttunementItemIds,
+  MAX_PACK_ATTUNEMENTS,
+} from '../game/arcanaPackOpening';
 
 // Module-level drag state (one drag at a time)
 let _draggingPack = null;
@@ -48,48 +32,6 @@ function getNextPack(packs) {
   }
   return packs[0] ?? null;
 }
-
-function FlyingPack({ packType, startX, startY, endX, endY, onDone }) {
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        el.style.transition =
-          'left 0.52s cubic-bezier(0.4,0,0.2,1), top 0.52s cubic-bezier(0.4,0,0.2,1), transform 0.52s cubic-bezier(0.4,0,0.2,1)';
-        el.style.left = `${endX}px`;
-        el.style.top = `${endY}px`;
-        el.style.transform = 'translate(-50%,-50%) scale(1)';
-      });
-    });
-    const t = setTimeout(onDone, 560);
-    return () => clearTimeout(t);
-  }, []);
-
-  return createPortal(
-    <div
-      ref={ref}
-      // Named so the thing in flight is identifiable. It had no class at all, which is also why nothing
-      // noticed it was still drawing a pack graphic for a treasure cache.
-      className="unpack-flying-pack"
-      style={{
-        position: 'fixed',
-        left: startX,
-        top: startY,
-        transform: 'translate(-50%,-50%) scale(0.55)',
-        transformOrigin: 'center center',
-        zIndex: 9999,
-        pointerEvents: 'none',
-      }}
-    >
-      <HeldOpenable size="md" packType={packType} />
-    </div>,
-    document.body
-  );
-}
-
 
 /**
  * A held openable, drawn the way its group declares (`PACK_GROUPS[].tile`).
@@ -116,48 +58,9 @@ const SLOT_RUNE = { calling: 'ᚨ', surge: 'ᚲ', inscription: 'ᛊ' };
 
 // ── Effect description helpers ─────────────────────────────────────────────────
 
-const TAG_COLORS = {
-  holo: '#59d9ff', foil: '#d8dee8', reverse: '#ff87d2',
-  shadow: '#8d87ff', nexus: '#b45cff', prismatic: '#ff73f1', firstEdition: '#ffd84d',
-};
-
 function formatTagName(tag) {
   if (tag === 'firstEdition') return 'First Edition';
   return tag.charAt(0).toUpperCase() + tag.slice(1);
-}
-
-function getEffectTags(loadout) {
-  const tags = [];
-  for (const slotId of SLOT_ORDER) {
-    const item = loadout?.[slotId];
-    if (!item) continue;
-    const arcanaItem = ARCANA_ITEMS_BY_ID[item.itemId];
-    if (!arcanaItem) continue;
-    const { effect } = arcanaItem;
-    if (effect.bias === 'element') {
-      const ess = ESSENCES_BY_ID[effect.targetEssenceId];
-      tags.push({
-        slotId,
-        label: `Higher chance for ${effect.targetFamily} creatures`,
-        color: ess?.color ?? '#e2c870',
-      });
-    } else if (effect.bias === 'tier') {
-      const tierColors = { 2: '#94a3b8', 3: '#fbbf24', 4: '#f0abfc', 5: '#ff4268' };
-      tags.push({
-        slotId,
-        label: `Higher chance for Tier ${effect.targetTier}+ value`,
-        color: tierColors[effect.targetTier] ?? '#94a3b8',
-      });
-    } else if (effect.bias === 'tag') {
-      const tagName = formatTagName(effect.targetTag);
-      tags.push({
-        slotId,
-        label: `Higher chance for ${tagName} treatment`,
-        color: TAG_COLORS[effect.targetTag] ?? '#a78bfa',
-      });
-    }
-  }
-  return tags;
 }
 
 function getItemTooltipBody(groupEntry) {
@@ -184,12 +87,20 @@ function SummoningField({
   onAssign,
   onRemove,
   onConfirm,
+  onConfirmAttunement,
   onCancel,
+  openingContent = null,
+  showNextPrompt = false,
+  remainingPacks = 0,
+  onOpenNext,
+  packTargetRef,
+  balance = 0,
+  carriedResource = null,
+  onTakeCarriedAttunement,
 }) {
   const [dragOverField, setDragOverField] = useState(false);
   const [dragOverSlot, setDragOverSlot] = useState(null);
   const [tooltip, setTooltip] = useState(null);
-  const dragItemRef = useRef(null);
 
   function showInvTooltip(e, groupEntry) {
     const r = e.currentTarget.getBoundingClientRect();
@@ -203,49 +114,26 @@ function SummoningField({
   }
   function hideInvTooltip() { setTooltip(null); }
 
-  const isIdle = !staged;
-  const effectTags = isBlankSlate ? getEffectTags(loadout) : [];
+  const isIdle = !staged && !openingContent && !showNextPrompt;
+  const confirmedItemIds = getPackAttunementItemIds(staged?.pack);
+  const attunementCost = staged ? getNextAttunementCost(staged.pack) : null;
+  const canAttune = isBlankSlate
+    && confirmedItemIds.length < MAX_PACK_ATTUNEMENTS
+    && attunementCost != null
+    && balance >= attunementCost;
+  const loadoutComplete = validateAttunementLoadout(
+    loadout, inventory, { requireAllSlotsFilled: true }
+  ).isComplete;
 
   // Group inventory by itemId for display
-  const slottedIds = new Set(
-    Object.values(loadout ?? {})
-      .filter(Boolean)
-      .map(s => s.inventoryEntryId)
-  );
-
-  const inventoryGrouped = inventory.reduce((acc, item) => {
-    if (!acc[item.itemId]) {
-      acc[item.itemId] = { ...item, count: 0, available: [] };
-    }
-    acc[item.itemId].count++;
-    if (!slottedIds.has(item.inventoryEntryId)) {
-      acc[item.itemId].available.push(item);
-    }
-    return acc;
-  }, {});
-
-  const charms = Object.values(inventoryGrouped).filter(i => i.category === 'charm');
-  const catalysts = Object.values(inventoryGrouped).filter(i => i.category === 'catalyst');
-  const sigils = Object.values(inventoryGrouped).filter(i => i.category === 'sigil');
-  const hasAnyItems = inventory.length > 0;
+  // Items live in the Bag. The altar owns only the three square sockets, so it never grows a second,
+  // cramped inventory strip and the user sees the same square card before and after placement.
 
   // ── Drag handlers ──
 
-  function handleItemDragStart(e, groupEntry) {
-    const entry = groupEntry.available[0];
-    if (!entry) { e.preventDefault(); return; }
-    dragItemRef.current = entry;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', entry.inventoryEntryId);
-  }
-
-  function handleItemDragEnd() {
-    dragItemRef.current = null;
-    setDragOverSlot(null);
-  }
-
   function handleSlotDragOver(e, slotId) {
-    const item = dragItemRef.current;
+    if (!isBlankSlate) return;
+    const item = carriedResource?.entries?.[0] ?? null;
     if (!item) {
       // might be a pack drag — allow field-level handling
       return;
@@ -266,10 +154,20 @@ function SummoningField({
     e.preventDefault();
     e.stopPropagation();
     setDragOverSlot(null);
-    const item = dragItemRef.current;
+    if (!isBlankSlate) return;
+    const item = carriedResource?.entries?.[0] ?? null;
     if (!item || item.category !== SLOT_ACCEPTED_CATEGORY[slotId]) return;
-    onAssign(slotId, item);
-    dragItemRef.current = null;
+    const assignedItem = onTakeCarriedAttunement?.(slotId);
+    if (assignedItem) onAssign(slotId, assignedItem);
+  }
+
+  function handleSlotPointerDown(e, slotId) {
+    if (!isBlankSlate) return;
+    const item = carriedResource?.entries?.[0];
+    if (!item || item.category !== SLOT_ACCEPTED_CATEGORY[slotId]) return;
+    e.stopPropagation();
+    const assignedItem = onTakeCarriedAttunement?.(slotId);
+    if (assignedItem) onAssign(slotId, assignedItem);
   }
 
   // Field-level drag (for pack drops)
@@ -294,14 +192,6 @@ function SummoningField({
       _draggingPack = null;
       onPackDrop(pack);
     }
-  }
-
-  // Click to assign (routes by category)
-  function handleItemClick(groupEntry) {
-    const entry = groupEntry.available[0];
-    if (!entry) return;
-    const slotId = SLOT_ORDER.find(sid => SLOT_ACCEPTED_CATEGORY[sid] === entry.category);
-    if (slotId) onAssign(slotId, entry);
   }
 
   return (
@@ -329,132 +219,110 @@ function SummoningField({
       onDragLeave={handleFieldDragLeave}
       onDrop={handleFieldDrop}
     >
-      {/* ── Left: Attunement Slots + Inventory ── */}
-      <div className={`summon-col summon-col--left${!isBlankSlate && !isIdle ? ' summon-col--inactive' : ''}`}>
+      {/* Persistent top band: it never changes height while the pack moves through its opening phases. */}
+      <div className={`summon-col summon-col--left${!isBlankSlate ? ' summon-col--inactive' : ''}`}>
         <div className="summon-col-header">
           <span className="summon-col-rune">ᚨ</span>
           <span>Attunement</span>
+          <span className="summon-attunement-count">{confirmedItemIds.length}/{MAX_PACK_ATTUNEMENTS}</span>
         </div>
 
-        {isIdle ? (
-          <p className="summon-col-idle-hint">Slot items to attune a Blank Slate pack</p>
-        ) : !isBlankSlate ? (
-          <p className="summon-col-idle-hint">Attunement requires a Blank Slate pack</p>
-        ) : (
-          <>
-            {/* Slots */}
-            <div className="summon-slots">
-              {SLOT_ORDER.map(slotId => {
-                const slotRule = ATTUNEMENT_SLOT_RULES[slotId];
-                const slottedItem = loadout?.[slotId];
-                const isDragOver = dragOverSlot === slotId;
-                return (
-                  <div
-                    key={slotId}
-                    className={[
-                      'summon-slot',
-                      slottedItem ? 'summon-slot--filled' : '',
-                      isDragOver ? 'summon-slot--dragover' : '',
-                    ].filter(Boolean).join(' ')}
-                    onDragOver={e => handleSlotDragOver(e, slotId)}
-                    onDragLeave={handleSlotDragLeave}
-                    onDrop={e => handleSlotDrop(e, slotId)}
-                  >
-                    <div className="summon-slot-head">
-                      <span className="summon-slot-rune">{SLOT_RUNE[slotId]}</span>
-                      <span className="summon-slot-label">
-                        {slotRule.label.replace(' slot', '')}
-                      </span>
-                    </div>
-                    {slottedItem ? (
-                      <div className="summon-slot-filled-row">
-                        <span className="summon-slot-item-name">{slottedItem.name}</span>
-                        <button
-                          className="summon-slot-clear"
-                          onClick={() => onRemove(slotId)}
-                          title="Remove"
-                        >×</button>
-                      </div>
-                    ) : (
-                      <span className="summon-slot-hint">
-                        Drop {SLOT_ACCEPTED_CATEGORY[slotId]}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Inventory */}
-            {hasAnyItems && (
-              <div className="summon-inventory">
-                <div className="summon-inventory-divider">
-                  <span>Items</span>
+        {/* The apparatus is persistent even when this pack cannot use it. Removing the sockets made
+            ordinary packs look as if attunement had disappeared rather than being incompatible. */}
+        <div className="summon-slots">
+          {SLOT_ORDER.map(slotId => {
+            const slotRule = ATTUNEMENT_SLOT_RULES[slotId];
+            const slottedItem = loadout?.[slotId];
+            const isDragOver = dragOverSlot === slotId;
+            return (
+              <div
+                key={slotId}
+                data-resource-drop-target="summon-attunement-slot"
+                data-attunement-slot-id={slotId}
+                aria-disabled={!isBlankSlate}
+                className={[
+                  'summon-slot',
+                  slottedItem ? 'summon-slot--filled' : '',
+                  isDragOver ? 'summon-slot--dragover' : '',
+                  !isBlankSlate ? 'summon-slot--locked' : '',
+                ].filter(Boolean).join(' ')}
+                onDragOver={e => handleSlotDragOver(e, slotId)}
+                onDragLeave={handleSlotDragLeave}
+                onDrop={e => handleSlotDrop(e, slotId)}
+                onPointerDown={e => handleSlotPointerDown(e, slotId)}
+              >
+                <div className="summon-slot-head">
+                  <span className="summon-slot-rune">{SLOT_RUNE[slotId]}</span>
+                  <span className="summon-slot-label">
+                    {slotRule.label.replace(' slot', '')}
+                  </span>
                 </div>
-
-                {/* Charms — show with artwork */}
-                {charms.length > 0 && (
-                  <div className="summon-inv-charm-grid">
-                    {charms.map(g => {
-                      const art = CHARM_ART[g.itemId];
-                      const isUnavailable = g.available.length === 0;
-                      return (
-                        <div
-                          key={g.itemId}
-                          className={[
-                            'summon-inv-charm',
-                            isUnavailable ? 'summon-inv-charm--slotted' : '',
-                          ].filter(Boolean).join(' ')}
-                          draggable={!isUnavailable}
-                          onDragStart={e => handleItemDragStart(e, g)}
-                          onDragEnd={handleItemDragEnd}
-                          onClick={() => handleItemClick(g)}
-                          onMouseEnter={e => showInvTooltip(e, g)}
-                          onMouseLeave={hideInvTooltip}
-                        >
-                          {art && (
-                            <div className="summon-inv-charm-art">
-                              <img src={art} alt={g.name} />
-                            </div>
-                          )}
-                          <span className="summon-inv-charm-count">{g.count}</span>
-                        </div>
-                      );
-                    })}
+                {slottedItem ? (
+                  <div className="summon-slot-filled-row">
+                    {ARCANA_ITEMS_BY_ID[slottedItem.itemId]?.artKey && (
+                      <img
+                        className="summon-slot-item-art"
+                        src={getResourceArt(ARCANA_ITEMS_BY_ID[slottedItem.itemId].artKey)}
+                        alt=""
+                      />
+                    )}
+                    <span className="summon-slot-item-name">{slottedItem.name}</span>
+                    <button
+                      className="summon-slot-clear"
+                      onClick={() => onRemove(slotId)}
+                      title="Remove"
+                    >×</button>
                   </div>
+                ) : (
+                  <span className="summon-slot-hint">
+                    Drop {SLOT_ACCEPTED_CATEGORY[slotId]}
+                  </span>
                 )}
-
-                {/* Catalysts + Sigils — text rows */}
-                {[...catalysts, ...sigils].map(g => {
-                  const isUnavailable = g.available.length === 0;
-                  return (
-                    <div
-                      key={g.itemId}
-                      className={[
-                        'summon-inv-row',
-                        isUnavailable ? 'summon-inv-row--slotted' : '',
-                      ].filter(Boolean).join(' ')}
-                      draggable={!isUnavailable}
-                      onDragStart={e => handleItemDragStart(e, g)}
-                      onDragEnd={handleItemDragEnd}
-                      onClick={() => handleItemClick(g)}
-                      onMouseEnter={e => showInvTooltip(e, g)}
-                      onMouseLeave={hideInvTooltip}
-                    >
-                      <span className="summon-inv-row-name">{g.name}</span>
-                      <span className="summon-inv-row-count">{g.count}</span>
-                    </div>
-                  );
-                })}
               </div>
-            )}
-          </>
-        )}
+            );
+          })}
+        </div>
+
+        <div className="summon-attunement-controls">
+          <div className="summon-attunement-pips" aria-label={`${confirmedItemIds.length} pack attunements`}>
+            {Array.from({ length: MAX_PACK_ATTUNEMENTS }, (_, index) => {
+              const itemId = confirmedItemIds[index];
+              const item = itemId ? ARCANA_ITEMS_BY_ID[itemId] : null;
+              return (
+                <span
+                  key={index}
+                  className={`summon-attunement-pip${item ? ' summon-attunement-pip--filled' : ''}${item?.category ? ` summon-attunement-pip--${item.category}` : ''}`}
+                  aria-label={item?.name ?? `Empty attunement ${index + 1}`}
+                  onMouseEnter={item ? e => showInvTooltip(e, item) : undefined}
+                  onMouseLeave={item ? hideInvTooltip : undefined}
+                />
+              );
+            })}
+          </div>
+          <button
+            className="summon-btn summon-btn--attune"
+            disabled={!canAttune || !loadoutComplete}
+            onClick={onConfirmAttunement}
+          >
+            {!isBlankSlate
+              ? 'Blank Slate only'
+              : confirmedItemIds.length >= MAX_PACK_ATTUNEMENTS
+                ? 'Fully Attuned'
+                : `Confirm · ${attunementCost ?? 0} gold`}
+          </button>
+        </div>
       </div>
 
-      {/* ── Center: Pack + Actions ── */}
-      <div className="summon-col summon-col--center">
-        {isIdle ? (
+      {/* Persistent middle: pack, full card reveal and action buttons all occupy this same box. */}
+      <div ref={packTargetRef} className="summon-col summon-col--center">
+        {openingContent ? openingContent : showNextPrompt ? (
+          <div className="unpack-next-area">
+            <p className="unpack-next-label">{remainingPacks} remaining</p>
+            <button className="unpack-next-btn summon-btn summon-btn--primary" onClick={onOpenNext}>
+              Open Next Pack
+            </button>
+          </div>
+        ) : isIdle ? (
           <div className="summon-drop-zone">
             <div className="summon-drop-rune">ᛟ</div>
             <p className="summon-drop-label">Drop a pack to summon</p>
@@ -462,7 +330,7 @@ function SummoningField({
           </div>
         ) : (
           <>
-            <div className="summon-pack-wrap">
+            <div className={`summon-pack-wrap summon-pack-wrap--${getPackTile(staged.packType?.id)}`}>
               <HeldOpenable size="md" packType={staged.packType} />
             </div>
             <div className="summon-actions">
@@ -470,42 +338,22 @@ function SummoningField({
                 Back
               </button>
               <button className="summon-btn summon-btn--primary" onClick={onConfirm}>
-                {isBlankSlate ? 'Summon' : 'Open Pack'}
+                {isBlankSlate ? 'Summon Pack' : 'Open Pack'}
               </button>
             </div>
           </>
         )}
       </div>
 
-      {/* ── Right: Effect Descriptions ── */}
-      <div className={`summon-col summon-col--right${!isBlankSlate && !isIdle ? ' summon-col--inactive' : ''}`}>
-        <div className="summon-col-header">
-          <span className="summon-col-rune">ᛞ</span>
-          <span>Effects</span>
-        </div>
-
-        {isIdle || !isBlankSlate ? (
+      {/* Persistent bottom tray. During reveal PackOpening fills it with the horizontal card stack. */}
+      {!openingContent && (
+        <div className="summon-col summon-col--right summon-card-tray">
+          <div className="summon-col-header"><span className="summon-col-rune">ᛞ</span><span>Revealed Cards</span></div>
           <p className="summon-col-idle-hint">
-            {isIdle
-              ? 'Active attunements appear here'
-              : 'Attunement effects apply to Blank Slate packs only'}
+            Summoned cards collect here.
           </p>
-        ) : effectTags.length === 0 ? (
-          <p className="summon-col-idle-hint">Slot items on the left to apply effects</p>
-        ) : (
-          <div className="summon-effects-list">
-            {effectTags.map(tag => (
-              <div
-                key={tag.slotId}
-                className="summon-effect-tag"
-                style={{ '--tag-accent': tag.color }}
-              >
-                <span className="summon-effect-tag-label">{tag.label}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
     </>
   );
@@ -515,20 +363,23 @@ function SummoningField({
 
 export default function UnpackPage({
   packs,
+  balance,
   arcanaInventory,
   pendingCards,
   pendingResourceCards,
   pendingEssenceDrops,
   pendingPackType,
   onOpenPack,
+  onConfirmAttunement,
   onPackDone,
   onCoinPop,
   collectionBtnRef,
   inventoryTargetRef,
   /** The pack fan, so the shop's shelves can fly a purchase to where it actually lands. */
   packFanRef = null,
+  carriedResource = null,
+  onTakeCarriedAttunement,
 }) {
-  const [flyingPack, setFlyingPack] = useState(null);
   const [hiddenPackId, setHiddenPackId] = useState(null);
   const [showNextPrompt, setShowNextPrompt] = useState(false);
   const [stagedPack, setStagedPack] = useState(null); // { pack, packType }
@@ -538,16 +389,13 @@ export default function UnpackPage({
    */
   const [activeGroup, setActiveGroup] = useState(DEFAULT_PACK_GROUP);
   const [draftLoadout, setDraftLoadout] = useState(() => createEmptyAttunementLoadout());
-  const packItemRefs = useRef({});
   const fieldRef = useRef(null);
+  const packTargetRef = useRef(null);
   const packOpeningRef = useRef(null);
 
   const isOpening = pendingCards.length > 0 || pendingResourceCards.length > 0;
   const isBlankSlate = stagedPack?.pack.packTypeId === 'blankSlate';
-  const attunementValidation = validateAttunementLoadout(
-    draftLoadout, arcanaInventory, { requireAllSlotsFilled: false }
-  );
-  const busy = !!flyingPack || isOpening || !!stagedPack;
+  const busy = isOpening || !!stagedPack;
 
   /**
    * The held packs are a STACKED HORIZONTAL LINE, not a fan.
@@ -587,33 +435,6 @@ export default function UnpackPage({
   function handlePackClick(pack) {
     if (busy) return;
     setShowNextPrompt(false);
-
-    const packEl = packItemRefs.current[pack.id];
-    const fieldEl = fieldRef.current;
-    const packType = getPackTypeById(pack.packTypeId);
-
-    if (packEl && fieldEl) {
-      const packRect = packEl.getBoundingClientRect();
-      const fieldRect = fieldEl.getBoundingClientRect();
-      setHiddenPackId(pack.id);
-      setFlyingPack({
-        pack,
-        packType,
-        startX: packRect.left + packRect.width / 2,
-        startY: packRect.top + packRect.height / 2,
-        endX: fieldRect.left + fieldRect.width / 2,
-        endY: fieldRect.top + fieldRect.height / 2,
-      });
-      return;
-    }
-
-    stagePackObject(pack);
-  }
-
-  function handleFlyDone() {
-    if (!flyingPack) return;
-    const pack = flyingPack.pack;
-    setFlyingPack(null);
     stagePackObject(pack);
   }
 
@@ -652,16 +473,18 @@ export default function UnpackPage({
 
   function handleConfirm() {
     if (!stagedPack) return;
-    if (isBlankSlate) {
-      const packId = stagedPack.pack.id;
-      const loadout = draftLoadout;
-      const opened = onOpenPack(packId, { attunementLoadout: loadout });
-      if (opened === false) return;
-    } else {
-      onOpenPack(stagedPack.pack.id);
-    }
+    const opened = onOpenPack(stagedPack.pack.id);
+    if (opened === false) return;
     setStagedPack(null);
     setHiddenPackId(null);
+    setDraftLoadout(createEmptyAttunementLoadout());
+  }
+
+  function handleConfirmAttunement() {
+    if (!stagedPack || !isBlankSlate) return;
+    const result = onConfirmAttunement?.(stagedPack.pack.id, draftLoadout);
+    if (!result?.ok) return;
+    setStagedPack(current => current ? { ...current, pack: result.pack } : current);
     setDraftLoadout(createEmptyAttunementLoadout());
   }
 
@@ -694,136 +517,104 @@ export default function UnpackPage({
 
   return (
     <div className="unpack-page">
-
-      {/* Titles the altar half, matching the shop's own "SHOP". Both are centred over their own column
-          rather than over the page — see `.shop-header` / `.unpack-header` in App.css. */}
-      <div className="shop-header unpack-header">
-        <h2>Summon</h2>
-      </div>
-
-      {/* One tab per group of openable things. Every group is always listed, including empty ones: a tab that
-          disappeared with its last item would take the only mention of Treasure with it, and a player would
-          have no way to learn the category exists. Counts sit on the tab so a full Treasure tab is visible
-          while you are looking at Packs. */}
-      <div className="unpack-groups" role="tablist" aria-label="Openable">
-        {PACK_GROUPS.map(group => {
-          const count = packsByGroup[group.id]?.length ?? 0;
-          const active = group.id === activeGroup;
-          return (
-            <button
-              key={group.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className={`unpack-group-tab${active ? ' unpack-group-tab--active' : ''}${count === 0 ? ' unpack-group-tab--empty' : ''}`}
-              onClick={() => setActiveGroup(group.id)}
-              disabled={busy}
-            >
-              <span className="unpack-group-tab__label">{group.label}</span>
-              <span className="unpack-group-tab__count">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* The held packs of the active group, as an overlapping horizontal line. Always rendered, so the row
-          below it does not jump when the last one is opened. */}
-      <div
-        ref={el => {
-          packRowRef.current = el;
-          if (packFanRef) packFanRef.current = el;
-        }}
-        className={`unpack-pack-row unpack-pack-row--line stack-line${busy ? ' unpack-pack-row--busy' : ''}${groupPacks.length === 0 ? ' unpack-pack-row--empty' : ''}`}
-        // The one thing CSS cannot work out for itself: how many gaps the overlap has to close so the whole
-        // stack fits the row. `max(1, …)` guards the divide-by-zero at a single item.
-        style={{ '--stack-gaps': Math.max(1, groupPacks.length - 1) }}
-      >
-        {groupPacks.length === 0 ? (
-          <p className="unpack-pack-row-empty-hint">
-            {PACK_GROUPS.find(g => g.id === activeGroup)?.empty ?? 'Nothing to open here yet.'}
-          </p>
-        ) : groupPacks.map((pack, i) => {
-          const packType = getPackTypeById(pack.packTypeId);
-          const isHidden = hiddenPackId === pack.id;
-          return (
-            <div
-              key={pack.id}
-              ref={el => { packItemRefs.current[pack.id] = el; }}
-              className={`unpack-pack-item${isHidden ? ' unpack-pack-item--hidden' : ''}`}
-              // The only per-pack value left. Ascending, so each pack overlaps the one before it and a
-              // hovered pack can lift clear of its right-hand neighbour.
-              style={{ zIndex: i + 1 }}
-              draggable={!busy}
-              onDragStart={e => handlePackDragStart(e, pack)}
-              onDragEnd={handlePackDragEnd}
-              onClick={() => handlePackClick(pack)}
-            >
-              <HeldOpenable size="sm" packType={packType} />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Pack opening */}
-      {isOpening && (
-        <PackOpening
-          ref={packOpeningRef}
-          cards={pendingCards}
-          resourceCards={pendingResourceCards}
-          essenceDrops={pendingEssenceDrops}
-          onDone={handlePackDone}
-          onCoinPop={onCoinPop}
-          collectionBtnRef={collectionBtnRef}
-          inventoryTargetRef={inventoryTargetRef}
-          packType={pendingPackType}
-        />
-      )}
-
-      {/* Next prompt */}
-      {showNextPrompt && (
-        <div className="pack-opening">
-          <p className="hint">&nbsp;</p>
-          <div className="opening-stage">
-            <div className="unpack-next-area">
-              <p className="unpack-next-label">
-                {groupPacks.length} remaining
-              </p>
-              <button className="unpack-next-btn summon-btn summon-btn--primary" onClick={handleUnpackNext}>
-                Open Next Pack
+      <div className="unpack-topbar">
+        {/* One tab per group of openable things. Every group is always listed, including empty ones: a tab
+            that vanished with its last item would take the only mention of Treasure with it. */}
+        <div className="unpack-groups" role="tablist" aria-label="Openable">
+          {PACK_GROUPS.map(group => {
+            const count = packsByGroup[group.id]?.length ?? 0;
+            const active = group.id === activeGroup;
+            return (
+              <button
+                key={group.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`unpack-group-tab${active ? ' unpack-group-tab--active' : ''}${count === 0 ? ' unpack-group-tab--empty' : ''}`}
+                onClick={() => setActiveGroup(group.id)}
+                disabled={busy}
+              >
+                <span className="unpack-group-tab__label">{group.label}</span>
+                <span className="unpack-group-tab__count">{count}</span>
               </button>
-            </div>
-          </div>
+            );
+          })}
         </div>
-      )}
 
-      {/* Summoning field — always visible when not opening */}
-      {!isOpening && !showNextPrompt && (
-        <div ref={fieldRef} className="unpack-summon-field-wrap">
-          <SummoningField
-            staged={stagedPack}
-            isBlankSlate={isBlankSlate}
-            loadout={draftLoadout}
-            inventory={arcanaInventory}
-            onPackDrop={handleFieldPackDrop}
-            onAssign={handleAssignAttunement}
-            onRemove={handleRemoveAttunement}
-            onConfirm={handleConfirm}
-            onCancel={handleCancelStaged}
-          />
+        <div className="shop-header unpack-header">
+          <h2>Summon</h2>
         </div>
-      )}
 
-      {/* Flying pack portal */}
-      {flyingPack && (
-        <FlyingPack
-          packType={flyingPack.packType}
-          startX={flyingPack.startX}
-          startY={flyingPack.startY}
-          endX={flyingPack.endX}
-          endY={flyingPack.endY}
-          onDone={handleFlyDone}
+        {/* The held packs share the title band instead of forming a third compressed row underneath it. */}
+        <div
+          ref={el => {
+            packRowRef.current = el;
+            if (packFanRef) packFanRef.current = el;
+          }}
+          className={`unpack-pack-row unpack-pack-row--line stack-line${busy ? ' unpack-pack-row--busy' : ''}${groupPacks.length === 0 ? ' unpack-pack-row--empty' : ''}`}
+          style={{ '--stack-gaps': Math.max(1, groupPacks.length - 1) }}
+        >
+          {groupPacks.length === 0 ? (
+            <p className="unpack-pack-row-empty-hint">
+              {PACK_GROUPS.find(g => g.id === activeGroup)?.empty ?? 'Nothing to open here yet.'}
+            </p>
+          ) : groupPacks.map((pack, i) => {
+            const packType = getPackTypeById(pack.packTypeId);
+            const tileKind = getPackTile(packType.id);
+            const isHidden = hiddenPackId === pack.id;
+            return (
+              <div
+                key={pack.id}
+                className={`unpack-pack-item unpack-pack-item--${tileKind}${isHidden ? ' unpack-pack-item--hidden' : ''}`}
+                style={{ zIndex: i + 1 }}
+                draggable={!busy}
+                onDragStart={e => handlePackDragStart(e, pack)}
+                onDragEnd={handlePackDragEnd}
+                onClick={() => handlePackClick(pack)}
+              >
+                <HeldOpenable size="sm" packType={packType} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* One altar shell for idle, staged, reveal, and open-next states. Only its contents change. */}
+      <div ref={fieldRef} className="unpack-summon-field-wrap">
+        <SummoningField
+          staged={stagedPack}
+          isBlankSlate={isBlankSlate}
+          loadout={draftLoadout}
+          inventory={arcanaInventory}
+          balance={balance}
+          carriedResource={carriedResource}
+          onTakeCarriedAttunement={onTakeCarriedAttunement}
+          packTargetRef={packTargetRef}
+          openingContent={isOpening ? (
+            <PackOpening
+              ref={packOpeningRef}
+              cards={pendingCards}
+              resourceCards={pendingResourceCards}
+              essenceDrops={pendingEssenceDrops}
+              onDone={handlePackDone}
+              onCoinPop={onCoinPop}
+              collectionBtnRef={collectionBtnRef}
+              inventoryTargetRef={inventoryTargetRef}
+              packType={pendingPackType}
+            />
+          ) : null}
+          showNextPrompt={showNextPrompt}
+          remainingPacks={groupPacks.length}
+          onOpenNext={handleUnpackNext}
+          onPackDrop={handleFieldPackDrop}
+          onAssign={handleAssignAttunement}
+          onRemove={handleRemoveAttunement}
+          onConfirm={handleConfirm}
+          onConfirmAttunement={handleConfirmAttunement}
+          onCancel={handleCancelStaged}
         />
-      )}
+      </div>
+
     </div>
   );
 }

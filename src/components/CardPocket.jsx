@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CardFace from './CardFace';
 import Gold from './Gold';
 import { audioEngine } from '../game/audio/audioEngine';
@@ -206,6 +206,7 @@ export default function CardPocket({
   onReorder,
   onPlaceFromCollection,
   onAddFromStation,
+  onInspect,
 }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [draggingIndex, setDraggingIndex] = useState(null);
@@ -214,6 +215,7 @@ export default function CardPocket({
   // pointer events from whatever view is underneath it.
   const [dragActive, setDragActive] = useState(false);
   const [bandOver, setBandOver] = useState(false);
+  const suppressInspectRef = useRef(false);
 
   const pocketCards = pocket ?? [];
   const filled = pocketCards.length;
@@ -457,18 +459,34 @@ export default function CardPocket({
             draggable
             onDragStart={e => {
               audioEngine.play(SOUND_IDS.cardFlip);
+              suppressInspectRef.current = true;
               setDraggingIndex(index);
               e.dataTransfer.setData('text/plain', String(card.id));
               e.dataTransfer.setData(CARD_SOURCE_MIME, `pocket:${index}`);
               e.dataTransfer.effectAllowed = 'move';
             }}
-            onDragEnd={() => { setDraggingIndex(null); setDragOverIndex(null); }}
+            onDragEnd={() => {
+              setDraggingIndex(null);
+              setDragOverIndex(null);
+              window.setTimeout(() => { suppressInspectRef.current = false; }, 0);
+            }}
             onDragOver={e => handleSlotDragOver(e, index)}
             onDrop={e => handleSlotDrop(e, index)}
-            title={`${card.name} — drag to a station slot, or onto another card to reorder`}
+            title={`${card.name} — press to enchant or drag to a station`}
           >
             {/* Everything that MOVES lives in here. See rule 1 in the header comment. */}
-            <div className="hand__lift">
+            <div
+              className="hand__lift"
+              onPointerDown={() => {
+                // A cancelled native drag is not guaranteed to deliver dragend in every browser.
+                // Reset at the start of each fresh gesture so one old drag can never permanently
+                // suppress later inspect clicks.
+                suppressInspectRef.current = false;
+              }}
+              onClick={() => {
+                if (!suppressInspectRef.current) onInspect?.(card.id);
+              }}
+            >
               <CardFace card={card} visualMode="compact" className="hand__card-face no-twirl" />
               <button
                 className="hand__card-remove"

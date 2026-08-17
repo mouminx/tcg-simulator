@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import { enterGame } from './enter.mjs';
 const results=[]; const check=(n,p,d='')=>{results.push({n,p,d});console.log(`${p?'PASS':'FAIL'}  ${n}${d?`  — ${d}`:''}`);};
 const browser = await chromium.launch(); const errors=[];
-const cards = ['a','b','c'].map(id => ({ id:`w-${id}`, name:`W${id}`, classType:'lumberjack', artVariant:0, rarity:'rare', tier:2, tag:null, value:40, affixes:[] }));
+const cards = ['a','b','c'].map(id => ({ id:`w-${id}`, name:`W${id}`, classType:'woodworker', artVariant:0, rarity:'rare', tier:2, tag:null, value:40, affixes:[] }));
 
 for (const vp of [{w:1366,h:768},{w:1280,h:800},{w:1440,h:900}]) {
   const page = await browser.newPage({ viewport:{width:vp.w,height:vp.h} });
@@ -14,11 +14,11 @@ for (const vp of [{w:1366,h:768},{w:1280,h:800},{w:1440,h:900}]) {
   await page.reload({waitUntil:'networkidle'}); await page.waitForTimeout(2000); await enterGame(page);
   await page.evaluate(s=>{ const v=JSON.parse(localStorage.getItem('tcg-sim'));
     v.collection=s; v.pocket=s; v.pocketCapacity=6; v.balance=500;
-    v.gatheredInventory={wood:40,fiber:40,hide:20}; v.graphicsSettings={quality:'low'};
+    v.gatheredInventory={wood:40,hardwood:40,fiberweed:40,hide:20}; v.graphicsSettings={quality:'low'};
     v.processingSlots=[
-      {slotId:1,card:null,inputId:'wood',inputCount:2,startedAt:null,endsAt:null,outputId:'timber'},
-      {slotId:2,card:null,inputId:'resin',inputCount:1,startedAt:null,endsAt:null,outputId:'sealant'},
-      {slotId:3,card:null,inputId:'hide',inputCount:6,startedAt:null,endsAt:null,outputId:'leather'},
+      {slotId:1,card:null,inputSource:'gathered',inputId:'wood',inputCount:2,startedAt:null,endsAt:null,outputId:'timber'},
+      {slotId:2,card:null,inputSource:'gathered',inputId:'hardwood',inputCount:1,startedAt:null,endsAt:null,outputId:'lumber'},
+      {slotId:3,card:null,inputId:null,inputCount:0,startedAt:null,endsAt:null,outputId:null},
     ];
     localStorage.setItem('tcg-sim', JSON.stringify(v)); }, cards);
   await page.reload({waitUntil:'networkidle'}); await page.waitForTimeout(2000); await enterGame(page);
@@ -47,12 +47,29 @@ for (const vp of [{w:1366,h:768},{w:1280,h:800},{w:1440,h:900}]) {
     console.log(`      half ${m.halfH}px, inner scroll ${m.scroll}px`);
     if (label==='processing') {
       check(`${tag}: wood shows its placed / required amount`,
-        (await page.locator('[data-material-requirement="2/4"]').count())===1);
+        (await page.locator('[data-material-requirement="2/1"]').count())===1);
+      const requirementLayout = await page.locator('[data-material-requirement="2/1"]').evaluate(node => {
+        const card = node.closest('.foundry-square-resource__front');
+        const remove = node.closest('.foundry-forge-ore-slot')?.querySelector('.foundry-forge-ore-slot__clear');
+        const countBox = node.getBoundingClientRect();
+        const cardBox = card?.getBoundingClientRect();
+        const removeBox = remove?.getBoundingClientRect();
+        return {
+          inBottomHalf: Boolean(cardBox && countBox.top > cardBox.top + cardBox.height / 2),
+          overlapsRemove: removeBox
+            ? Math.max(0, Math.min(countBox.right, removeBox.right) - Math.max(countBox.left, removeBox.left))
+              * Math.max(0, Math.min(countBox.bottom, removeBox.bottom) - Math.max(countBox.top, removeBox.top))
+            : 0,
+        };
+      });
+      check(`${tag}: the recipe count is bottom-right and clear of the remove button`,
+        requirementLayout.inBottomHalf && requirementLayout.overlapsRemove === 0,
+        JSON.stringify(requirementLayout));
       await page.locator('.forge-selector__tab').nth(1).click(); await page.waitForTimeout(400);
       const sw = await page.evaluate(()=>({ active:[...document.querySelectorAll('.forge-selector__tab')].map(t=>t.getAttribute('aria-selected')==='true'), rows:document.querySelectorAll('.foundry-forge-row').length }));
       check(`${tag}: switching benches shows exactly one row`, sw.active[1]&&!sw.active[0]&&sw.rows===1, JSON.stringify(sw));
-      check(`${tag}: resin switches to its different recipe requirement`,
-        (await page.locator('[data-material-requirement="1/3"]').count())===1);
+      check(`${tag}: Hardwood switches to the Lumber recipe requirement`,
+        (await page.locator('[data-material-requirement="1/1"]').count())===1);
     }
   }
   await page.close();

@@ -17,7 +17,7 @@ history, which is not derivable from the code once a migration has run.
 - `localStorage` key: `tcg-sim` on the web; a `save.json` file in the desktop shell — see
   **Where the save lives** below. `App.jsx` owns the save's *shape*, `src/game/storage.js` owns its
   *location*, and neither knows about the other
-- current save version: `25`
+- current save version: `29`
 
 Current persisted state includes:
 
@@ -44,6 +44,8 @@ Current persisted state includes:
   forgeRewardQueue,
   gatheredInventory,
   processedInventory,
+  craftedInventory,
+  toolInventory,
   gatheringSlots,
   gatheringClaimQueue,
   gatheringRewardQueue,
@@ -51,6 +53,8 @@ Current persisted state includes:
   processingSlots,
   processingOutputQueues,
   processingRewardQueue,
+  craftingCardSlots,
+  craftingGridSlots,
   expeditionDifficultyId,
   expeditionUnitSlots,
   expeditionSupplySlots,
@@ -70,9 +74,22 @@ Current persisted state includes:
 Important details:
 
 - `pocket` stores full card objects, not IDs
+- `craftingCardSlots` normalizes to five artisan sockets. Saves created with the original three-slot
+  workspace keep Crafter I–III intact and receive empty Crafter IV–V sockets.
+- `toolInventory` stores unique, non-stackable rolled tool objects. A socketed tool moves into the
+  corresponding `mineSlots[].tool` or `gatheringSlots[].tool`; removing its worker returns the tool.
 - active resource pocket state is gone from the save shape
 - `resources` stores all Arcana element tiers using Arcana resource ids
 - `audioSettings` is persisted but there is not yet a UI to edit it
+- **29** adds tiered gathering tools, their rolled affixes, per-worker tool sockets, and Momentum stacks.
+- **28** moves Timber from `processedInventory` into `craftedInventory` while preserving Processing's
+  pending per-bench Timber queues and any Timber already placed in Crafting or Expedition supply slots.
+- **27** adds the distinct `craftedInventory`, renames gathered `fiber` to `fiberweed`, and safely returns
+  Fiber loaded into retired Processing recipes as Fiberweed. Crafting grid inputs migrate with the rename.
+- **26** replaces the Arcana ring workspace with Crafting. `craftingCardSlots` initially stored three
+  socketed artisan card copies and `craftingGridSlots` stores the nine reserved material stacks.
+  Recipes were intentionally absent at that version, so the grid could not consume inputs; removing
+  or clearing a material slot returns its full stack to the inventory recorded in `source`
 - **25** added `mineLootStages` and `gatheringLootStages`. Each entry owns one completed card cycle's
   `loot`, bonus `rewards`, source `slotId`, and `releaseAt`. Rewards remain here briefly while the worker
   slot displays them, then GameApp promotes them into the existing claim/reward queues. The arrays are

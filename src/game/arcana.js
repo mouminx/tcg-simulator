@@ -292,9 +292,10 @@ export const ESSENCES = [
 ];
 
 /** @type {ArcanaCraftedItem[]} */
-export const CHARMS = [
+const LEGACY_CHARMS = [
   {
     id: 'smoldering-charm',
+    tier: 1,
     artKey: 'cindergust',
     name: 'Cindergust Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -309,6 +310,7 @@ export const CHARMS = [
   },
   {
     id: 'jolting-charm',
+    tier: 1,
     artKey: 'stormlash',
     name: 'Stormlash Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -323,6 +325,7 @@ export const CHARMS = [
   },
   {
     id: 'flowing-charm',
+    tier: 1,
     artKey: 'tidereed',
     name: 'Tidereed Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -337,6 +340,7 @@ export const CHARMS = [
   },
   {
     id: 'blooming-charm',
+    tier: 1,
     artKey: 'bloomtide',
     name: 'Bloomtide Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -351,6 +355,7 @@ export const CHARMS = [
   },
   {
     id: 'gusting-charm',
+    tier: 1,
     artKey: 'galebolt',
     name: 'Galebolt Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -365,6 +370,7 @@ export const CHARMS = [
   },
   {
     id: 'hollowing-charm',
+    tier: 1,
     artKey: 'voidtide',
     name: 'Voidtide Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -379,6 +385,7 @@ export const CHARMS = [
   },
   {
     id: 'gleaming-charm',
+    tier: 1,
     artKey: 'dawnseal',
     name: 'Dawnseal Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -393,6 +400,7 @@ export const CHARMS = [
   },
   {
     id: 'ascending-charm',
+    tier: 1,
     artKey: 'starveil',
     name: 'Starveil Charm',
     category: ARCANA_CATEGORIES.CHARM,
@@ -407,10 +415,116 @@ export const CHARMS = [
   },
 ];
 
+export const CALLING_TIER_LABELS = Object.freeze(['I', 'II', 'III', 'IV', 'V']);
+
+export function getCallingItemId(callingType, targetId, tier) {
+  const safeTier = Math.max(1, Math.min(5, Math.floor(Number(tier) || 1)));
+  return `${callingType}-${targetId}-calling-tier-${safeTier}`;
+}
+
+const ELEMENTAL_CALLING_TARGETS = Object.freeze(ESSENCES.map(element => Object.freeze({
+  id: element.id,
+  label: element.name.replace(/\s+Essence$/i, ''),
+  artKey: ({
+    smoldering: 'smoldered_calling',
+    jolting: 'jolted_calling',
+    flowing: 'flowed_calling',
+    blooming: 'bloomed_calling',
+    gusting: 'gusted_calling',
+    hollowing: 'hollowed_calling',
+    gleaming: 'gleamed_calling',
+    ascending: 'ascended_calling',
+    grounding: 'grounded_calling',
+  })[element.id],
+})));
+
+export const VOCATIONAL_CALLING_TARGETS = Object.freeze([
+  Object.freeze({ id: 'miner', label: 'Miner', artKey: "miner's_calling" }),
+  Object.freeze({ id: 'prospector', label: 'Prospector', artKey: "prospector's_calling" }),
+  Object.freeze({ id: 'lumberjack', label: 'Lumberjack', artKey: "lumberjack's_calling" }),
+  Object.freeze({ id: 'forager', label: 'Forager', artKey: "forager's_calling" }),
+  Object.freeze({ id: 'blacksmith', label: 'Blacksmith', artKey: "blacksmith's_calling" }),
+  Object.freeze({ id: 'hunter', label: 'Hunter', artKey: "hunter's_calling" }),
+  Object.freeze({ id: 'weaver', label: 'Weaver', artKey: "weaver's_calling" }),
+  Object.freeze({ id: 'woodworker', label: 'Woodworker', artKey: "woodworker's_calling" }),
+  Object.freeze({ id: 'tanner', label: 'Tanner', artKey: "tanner's_calling" }),
+  Object.freeze({ id: 'gemcutter', label: 'Gemcutter', artKey: "gemcutter's_calling" }),
+]);
+
+export const TRAIT_CALLING_TARGETS = Object.freeze([
+  Object.freeze({ id: 'luck', label: 'Luck', artKey: 'lucky_calling', targetAffixIds: Object.freeze([
+    'miningLuck', 'smeltingLuck', 'loggingLuck', 'huntingLuck', 'tradeLuck', 'combatLuck',
+    'arcaneLuck', 'inspirationLuck', 'foragingLuck', 'weavingLuck', 'woodworkingLuck',
+    'tanningLuck', 'gemcuttingLuck',
+  ]) }),
+  Object.freeze({ id: 'efficiency', label: 'Efficiency', artKey: 'efficient_calling', targetAffixIds: Object.freeze([
+    'miningEfficiency', 'smeltingEfficiency', 'loggingEfficiency', 'huntingEfficiency',
+    'tradeEfficiency', 'combatEfficiency', 'arcaneEfficiency', 'inspirationEfficiency',
+    'foragingEfficiency', 'weavingEfficiency', 'woodworkingEfficiency', 'tanningEfficiency',
+    'gemcuttingEfficiency',
+  ]) }),
+  Object.freeze({ id: 'production-speed', label: 'Production Speed', artKey: 'quick_production_calling', targetAffixIds: Object.freeze(['productionSpeed', 'tanningSpeed']) }),
+  Object.freeze({ id: 'bounty', label: 'Bounty', artKey: 'bountiful_calling', targetAffixIds: Object.freeze(['weavingBounty', 'woodworkingBounty', 'tanningBounty', 'gemcuttingBounty']) }),
+  Object.freeze({ id: 'resource-generation', label: 'Resource Generation', artKey: 'resourceful_calling', targetAffixIds: Object.freeze(['resourceGeneration']) }),
+  Object.freeze({ id: 'coin-generation', label: 'Coin Generation', artKey: "coin's_calling", targetAffixIds: Object.freeze(['coinGeneration']) }),
+  Object.freeze({ id: 'treasure-sense', label: 'Treasure Sense', artKey: 'treasured_calling', targetAffixIds: Object.freeze(['treasureSense']) }),
+]);
+
+const makeTieredCallings = (callingType, targets, makeEffect, describe) => targets.flatMap(target => (
+  CALLING_TIER_LABELS.map((tierLabel, index) => {
+    const tier = index + 1;
+    return Object.freeze({
+      id: getCallingItemId(callingType, target.id, tier),
+      tier,
+      artKey: target.artKey ?? 'empty_calling',
+      name: `${target.label} Calling ${tierLabel}`,
+      category: ARCANA_CATEGORIES.CHARM,
+      recipe: Object.freeze([]),
+      description: describe(target, tierLabel),
+      effect: Object.freeze({
+        slot: ARCANA_SLOTS.CALLING,
+        callingType,
+        tier,
+        ...makeEffect(target),
+      }),
+    });
+  })
+));
+
+export const ELEMENTAL_CALLINGS = Object.freeze(makeTieredCallings(
+  'elemental',
+  ELEMENTAL_CALLING_TARGETS,
+  target => ({ bias: 'element', targetEssenceId: target.id }),
+  (target, tierLabel) => `Tier ${tierLabel} Calling that biases card affixes toward the ${target.label} element.`,
+));
+
+export const VOCATIONAL_CALLINGS = Object.freeze(makeTieredCallings(
+  'vocational',
+  VOCATIONAL_CALLING_TARGETS,
+  target => ({ bias: 'class', targetClassType: target.id }),
+  (target, tierLabel) => `Tier ${tierLabel} Calling that biases summoned cards toward the ${target.label} vocation.`,
+));
+
+export const TRAIT_CALLINGS = Object.freeze(makeTieredCallings(
+  'trait',
+  TRAIT_CALLING_TARGETS,
+  target => ({ bias: 'trait', targetAffixIds: target.targetAffixIds }),
+  (target, tierLabel) => `Tier ${tierLabel} Calling that biases compatible cards toward ${target.label} affixes.`,
+));
+
+/** Legacy Charms remain resolvable so existing saves do not lose already-crafted items. */
+export const CHARMS = Object.freeze([
+  ...LEGACY_CHARMS,
+  ...ELEMENTAL_CALLINGS,
+  ...VOCATIONAL_CALLINGS,
+  ...TRAIT_CALLINGS,
+]);
+
 /** @type {ArcanaCraftedItem[]} */
 export const CATALYSTS = [
   {
     id: 'emberstep-catalyst',
+    tier: 2,
     name: 'Emberstep Catalyst',
     category: ARCANA_CATEGORIES.CATALYST,
     recipe: makeRecipe({ smoldering: 12, blooming: 8, flowing: 4 }),
@@ -423,6 +537,7 @@ export const CATALYSTS = [
   },
   {
     id: 'crestforge-catalyst',
+    tier: 3,
     name: 'Crestforge Catalyst',
     category: ARCANA_CATEGORIES.CATALYST,
     recipe: makeRecipe({ jolting: 16, gusting: 12, gleaming: 8 }),
@@ -435,6 +550,7 @@ export const CATALYSTS = [
   },
   {
     id: 'mythrise-catalyst',
+    tier: 4,
     name: 'Mythrise Catalyst',
     category: ARCANA_CATEGORIES.CATALYST,
     recipe: makeRecipe({ hollowing: 20, gleaming: 16, ascending: 12 }),
@@ -447,6 +563,7 @@ export const CATALYSTS = [
   },
   {
     id: 'zenith-catalyst',
+    tier: 5,
     name: 'Zenith Catalyst',
     category: ARCANA_CATEGORIES.CATALYST,
     recipe: makeRecipe({ ascending: 28, gleaming: 20, hollowing: 16, jolting: 10 }),
@@ -463,6 +580,7 @@ export const CATALYSTS = [
 export const SIGILS = [
   {
     id: 'tideglow-sigil',
+    tier: 1,
     name: 'Tideglow Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ gleaming: 20, flowing: 16, blooming: 10 }),
@@ -475,6 +593,7 @@ export const SIGILS = [
   },
   {
     id: 'windluster-sigil',
+    tier: 2,
     name: 'Windluster Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ gleaming: 20, gusting: 16, smoldering: 10 }),
@@ -487,6 +606,7 @@ export const SIGILS = [
   },
   {
     id: 'ashmirror-sigil',
+    tier: 2,
     name: 'Ashmirror Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ gusting: 18, jolting: 18, flowing: 12 }),
@@ -499,6 +619,7 @@ export const SIGILS = [
   },
   {
     id: 'cinderveil-sigil',
+    tier: 3,
     name: 'Cinderveil Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ hollowing: 22, smoldering: 16, gusting: 10 }),
@@ -511,6 +632,7 @@ export const SIGILS = [
   },
   {
     id: 'riftheart-sigil',
+    tier: 4,
     name: 'Riftheart Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ hollowing: 24, ascending: 18, jolting: 12 }),
@@ -523,6 +645,7 @@ export const SIGILS = [
   },
   {
     id: 'starprism-sigil',
+    tier: 5,
     name: 'Starprism Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ gleaming: 24, ascending: 18, gusting: 12, jolting: 8 }),
@@ -535,6 +658,7 @@ export const SIGILS = [
   },
   {
     id: 'dawnmark-sigil',
+    tier: 5,
     name: 'Dawnmark Sigil',
     category: ARCANA_CATEGORIES.SIGIL,
     recipe: makeRecipe({ gleaming: 26, ascending: 20, flowing: 14 }),

@@ -1,6 +1,6 @@
 /**
  * Generates src/game/cardColors.js — a static map of card name → 4-color
- * palette extracted from the card's artwork PNG (vertical quarters, darkened).
+ * palette extracted from the card's optimized PNG/WebP artwork.
  * Used to create a linear-gradient card background.
  *
  * Run whenever you add new art:
@@ -72,8 +72,8 @@ for (const rarity of rarities) {
   try { files = await readdir(dir); } catch { continue; }
 
   for (const file of files) {
-    if (!file.toLowerCase().endsWith('.png')) continue;
-    const name = titleCase(basename(file, '.png'));
+    if (!/\.(png|webp)$/i.test(file)) continue;
+    const name = titleCase(basename(file, /\.[^.]+$/.exec(file)?.[0] ?? ''));
     try {
       // Sample at 16×16 to get enough pixels for clustering without being slow
       const { data } = await sharp(join(dir, file))
@@ -132,7 +132,7 @@ for (const entry of classDirs) {
   const classType = entry.name.toLowerCase();
   const classDir = join(CLASS_CARDS_DIR, entry.name);
   let variants;
-  try { variants = (await readdir(classDir)).filter(f => f.toLowerCase().endsWith('.png')).sort(); }
+  try { variants = (await readdir(classDir)).filter(f => /\.(png|webp)$/i.test(f)).sort(); }
   catch { continue; }
   if (!variants.length) continue;
   // Use first variant as representative for the palette

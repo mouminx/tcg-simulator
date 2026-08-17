@@ -9,23 +9,45 @@ import Foundry from './components/Foundry';
 import Wilderness from './components/Wilderness';
 import Expedition from './components/Expedition';
 import CardPocket from './components/CardPocket';
+import CardCraftingView from './components/CardCraftingView';
 import GoldBurst, { streamSizeForAmount } from './components/GoldBurst';
 import Inventory, { RESOURCE_DRAG_MIME } from './components/Inventory';
 import SceneBackdrop from './components/SceneBackdrop';
 import SplashScreen from './components/SplashScreen';
 import AudioSettings from './components/AudioSettings';
 import AccountMenu from './components/AccountMenu';
+import LootTierBadge from './components/LootTierBadge';
+import { getLootTier } from './game/lootTiers';
+import { GEM_RESOURCES_BY_ID } from './game/gems';
+import {
+  addCardSocket,
+  extractSocketedGem,
+  getCardSocketCount,
+  getGemFamily,
+  rollSocketEffect,
+  socketGemOnCard,
+} from './game/cardSockets';
 import { ARCANA_ITEMS_BY_ID, DEFAULT_RESOURCES } from './game/arcana';
 import {
   getArcanaResourceArt,
+  getCraftedArt,
   getIngotArt,
   getOreArt,
   getResourceArt,
+  getToolArt,
 } from './game/resourceArt';
-import { openBlankSlatePack } from './game/arcanaPackOpening';
+import {
+  getNextAttunementCost,
+  getPackAttunementItemIds,
+  MAX_PACK_ATTUNEMENTS,
+  openBlankSlatePack,
+} from './game/arcanaPackOpening';
+import { consumeSlottedItemsOnPackOpen, validateAttunementLoadout } from './game/arcanaAttunement';
+import { createCraftedInventoryItem } from './game/arcanaCrafting';
 import {
   ORE_TYPES,
   DEFAULT_ORE_INVENTORY,
+  DEFAULT_MINE_CLAIM_QUEUE,
   DEFAULT_INGOT_INVENTORY,
   DEFAULT_MINE_SLOT_CAPACITY,
   FORGE_FUEL_TYPE,
@@ -33,8 +55,11 @@ import {
   ORE_TO_INGOT,
   SMELT_RECIPES,
   INGOT_RESOURCES,
+  MINING_RESOURCE_TYPES,
   addOreCounts,
+  addMineCounts,
   addForgeFuel,
+  addForgeBooster,
   clampMineSlotCapacity,
   createForgeCardSlots,
   createForgeFuelState,
@@ -43,23 +68,32 @@ import {
   createForgeOreSlots,
   createMiningSlots,
   getMineSlotUpgradeCost,
+  getForgeOutputSource,
+  getForgeBoosterSpeedPercent,
   normalizeForgeCardSlots,
   normalizeForgeIngredientSlots,
   normalizeForgeFuelSlots,
   normalizeForgeOreSlots,
   normalizeMiningSlots,
+  isMiningCardCompatible,
+  getMiningResourceSource,
   resolveCompletedMiningSlots,
   consumeForgeFuelCharge,
+  consumeForgeBoosterCharge,
   startForgeCycle,
   startMiningSlots,
-  hasQueuedOre,
+  hasQueuedMineResources,
+  splitMinedResources,
 } from './game/foundry';
 import {
   ALL_GATHERING_RESOURCES,
   GATHERED_CANONICAL_TARGET,
+  GATHERING_POOLS,
   splitGatheredByInventory,
   DEFAULT_GATHERING_INVENTORY,
   DEFAULT_PROCESSED_INVENTORY,
+  PROCESSING_OUTPUT_RESOURCES_BY_ID,
+  PROCESSING_BOOSTERS,
   PROCESSED_RESOURCES,
   TREASURE_PACK_RESOURCE,
   addGatheredCounts,
@@ -68,14 +102,18 @@ import {
   createProcessingSlots,
   hasQueuedGatheredResources,
   normalizeProcessingSlots,
-  PROCESSING_RECIPES,
+  addProcessingMaterial,
+  addProcessingBooster,
+  getProcessingRecipe,
+  isProcessingCardCompatible,
+  processingSlotAcceptsMaterial,
   normalizeGatheringSlots,
   resolveCompletedProcessingSlots,
   resolveCompletedGatheringSlots,
   startProcessingSlot,
   startGatheringSlots,
 } from './game/wilderness';
-import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, getPackGroup, RETIRED_PACK_REPLACEMENTS, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
+import { openPack, openTreasurePack, openWelcomePack, PACK_TYPES, RARITY_ORDER, STARTING_BALANCE, getGradeCost, getImprintCost, getCardSellValue, getPackTypeById, getPackGroup, RETIRED_PACK_REPLACEMENTS, migrateCreatureCard, newId, resolveCardName, rollAttunementBonus, rollCoinGenerationReward, rollElementalAttunementDrops } from './game/cards';
 import {
   EXPEDITION_STATES,
   EXPEDITION_DIFFICULTIES,
@@ -92,7 +130,14 @@ import {
   resolveExpeditionRun,
 } from './game/expedition';
 import { getStorage, setStorage } from './game/storage';
-import { SHOP_MATERIALS, discountedCost, findUnsellableMaterials, getRotationOffers } from './game/shop';
+import {
+  SHOP_MATERIALS,
+  findUnsellableMaterials,
+  getEscalatingShopPrice,
+  getGoodsRotation,
+  getRotationOffers,
+  normalizeShopPurchases,
+} from './game/shop';
 import {
   addProductionOutput,
   createProductionOutputQueues,
@@ -108,6 +153,17 @@ import {
   normalizeStagedLootEvents,
   partitionStagedLoot,
 } from './game/stagedLoot';
+import {
+  CRAFTED_RESOURCES_BY_ID,
+  CRAFTING_RESOURCE_SOURCES,
+  DEFAULT_CRAFTED_INVENTORY,
+  craftGridRecipe,
+  createCraftingCardSlots,
+  createCraftingGridSlots,
+  distributeCraftingStack,
+  normalizeCraftingCardSlots,
+  normalizeCraftingGridSlots,
+} from './game/crafting';
 import { getClient, getProfile, getSession, isOnlineConfigured, signOut } from './game/account';
 import { SLOT_MODES, adapterForSlot, deleteSlot, listSlots } from './game/slots';
 import LoginPage from './components/LoginPage';
@@ -125,6 +181,11 @@ import {
 } from './game/graphics';
 import Gold from './components/Gold';
 import PlacementEcho from './components/PlacementEcho';
+import {
+  isToolCompatibleWithStation,
+  normalizeToolInventory,
+  rollTool,
+} from './game/tools';
 import './App.css';
 
 const VIEWS = { SHOP: 'shop', UNPACK: 'unpack', COLLECTION: 'collection', ARCANA: 'arcana', FOUNDRY: 'foundry', WILDERNESS: 'wilderness', EXPEDITION: 'expedition', LAB: 'lab', MARKET: 'market' };
@@ -211,9 +272,9 @@ const TAB_ACCENTS = {
 // still gets a scrolling pane, which is the pre-existing behaviour.
 const FIT_VIEWS = new Set([VIEWS.SHOP, VIEWS.COLLECTION, VIEWS.FOUNDRY, VIEWS.WILDERNESS]);
 
-const SAVE_VERSION = 25;
-const FORGE_OUTPUT_IDS = Object.keys(DEFAULT_INGOT_INVENTORY);
-const PROCESSING_OUTPUT_IDS = Object.keys(DEFAULT_PROCESSED_INVENTORY);
+const SAVE_VERSION = 33;
+const FORGE_OUTPUT_IDS = [...new Set(Object.values(SMELT_RECIPES).map(recipe => recipe.outputId).filter(Boolean))];
+const PROCESSING_OUTPUT_IDS = Object.keys(PROCESSING_OUTPUT_RESOURCES_BY_ID);
 const FORGE_SLOT_IDS = createForgeCardSlots().map(slot => slot.slotId);
 const PROCESSING_SLOT_IDS = createProcessingSlots().map(slot => slot.slotId);
 
@@ -256,6 +317,25 @@ function sameCardId(left, right) {
   return String(left) === String(right);
 }
 
+function resolveCardFocusTarget(card, source, id) {
+  if (!card || !source || !id) return null;
+  if (card.classType === 'miner' || card.classType === 'prospector') {
+    const resource = MINING_RESOURCE_TYPES.find(entry => {
+      const entrySource = getMiningResourceSource(entry.id);
+      return entrySource === source && entry.id === id;
+    });
+    return resource ? { ...resource, source } : null;
+  }
+
+  const rarityIndex = RARITY_ORDER.indexOf(card.rarity ?? 'common');
+  const resource = (GATHERING_POOLS[card.classType] ?? []).find(entry => {
+    if (RARITY_ORDER.indexOf(entry.minRarity ?? 'common') > rarityIndex) return false;
+    const canonical = GATHERED_CANONICAL_TARGET[entry.id];
+    return (canonical?.inventory ?? 'gathered') === source && (canonical?.id ?? entry.id) === id;
+  });
+  return resource ? { ...resource, id, source } : null;
+}
+
 /** Resolve the same artwork the Bag tile uses for the stack currently under the pointer. */
 function getCarriedStackArt(stack) {
   if (!stack) return null;
@@ -263,11 +343,39 @@ function getCarriedStackArt(stack) {
   if (stack.source === 'ingot') return getIngotArt(INGOT_RESOURCES[stack.id]?.artKey ?? stack.id);
   if (stack.source === 'arcana') return getArcanaResourceArt(stack.id);
   if (stack.source === 'arcana-item') return getResourceArt(ARCANA_ITEMS_BY_ID[stack.id]?.artKey ?? stack.id);
+  if (stack.source === 'crafted') return getCraftedArt(CRAFTED_RESOURCES_BY_ID[stack.id]?.artKey ?? stack.id);
+  if (stack.source === 'tool') return getToolArt(stack.artKey);
   if (stack.source === 'gathered') {
     const resource = ALL_GATHERING_RESOURCES.find(entry => entry.id === stack.id);
     return getResourceArt(resource?.artKey ?? stack.id);
   }
   return getResourceArt(stack.id);
+}
+
+function CarriedResourcePreviewTile({ stack }) {
+  const art = getCarriedStackArt(stack);
+  return (
+    <div className="carried-resource-cursor card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned">
+      <div className="card-face-inner">
+        <div className="card-face-front foundry-square-resource__front">
+          <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
+            <span className="foundry-square-resource__count">{stack.count}</span>
+          </div>
+          <div className="foundry-square-resource__art-wrap">
+            {art ? (
+              <img
+                src={art}
+                alt=""
+                className="foundry-square-resource__art"
+              />
+            ) : null}
+          </div>
+          <LootTierBadge tier={getLootTier(stack.source, stack.id, stack)} />
+          <span className="carried-resource-cursor__name">{stack.name}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function clampPocketCapacity(capacity) {
@@ -317,6 +425,7 @@ function collapseLegacyExpeditionSupportSlots(parsed) {
   const next = { ...parsed };
   const defaultGathered = { ...DEFAULT_GATHERING_INVENTORY, ...(next.gatheredInventory ?? {}) };
   const defaultProcessed = { ...DEFAULT_PROCESSED_INVENTORY, ...(next.processedInventory ?? {}) };
+  const defaultCrafted = { ...DEFAULT_CRAFTED_INVENTORY, ...(next.craftedInventory ?? {}) };
   const defaultArcanaInventory = [...(next.arcanaInventory ?? [])];
 
   if (Array.isArray(next.expeditionSupplySlots) && next.expeditionSupplySlots.length > EXPEDITION_SLOT_LIMITS.supply.initial) {
@@ -326,6 +435,10 @@ function collapseLegacyExpeditionSupportSlots(parsed) {
         if (!slot?.id || !(slot.count > 0)) return;
         if (slot.source === 'processed') {
           defaultProcessed[slot.id] = (defaultProcessed[slot.id] ?? 0) + slot.count;
+          return;
+        }
+        if (slot.source === 'crafted') {
+          defaultCrafted[slot.id] = (defaultCrafted[slot.id] ?? 0) + slot.count;
           return;
         }
         defaultGathered[slot.id] = (defaultGathered[slot.id] ?? 0) + slot.count;
@@ -358,6 +471,7 @@ function collapseLegacyExpeditionSupportSlots(parsed) {
 
   next.gatheredInventory = defaultGathered;
   next.processedInventory = defaultProcessed;
+  next.craftedInventory = defaultCrafted;
   next.arcanaInventory = defaultArcanaInventory;
   return next;
 }
@@ -365,6 +479,299 @@ function collapseLegacyExpeditionSupportSlots(parsed) {
 
 function migrateCards(cards = []) {
   return cards.map(card => migrateCreatureCard(card));
+}
+
+/** Save 27: raw Fiber was renamed to Fiberweed; Fiber is now produced only by Crafting. */
+function migrateGatheredFiberToFiberweed(parsed) {
+  const renameCount = source => {
+    if (!source || typeof source !== 'object') return source;
+    const next = { ...source };
+    const amount = Math.max(0, Math.floor(Number(next.fiber) || 0));
+    if (amount) next.fiberweed = (next.fiberweed ?? 0) + amount;
+    delete next.fiber;
+    return next;
+  };
+
+  parsed.gatheredInventory = renameCount(parsed.gatheredInventory);
+  parsed.gatheringClaimQueue = renameCount(parsed.gatheringClaimQueue);
+  if (Array.isArray(parsed.gatheringSlots)) {
+    parsed.gatheringSlots = parsed.gatheringSlots.map(slot => (
+      slot?.resourceId === 'fiber' ? { ...slot, resourceId: 'fiberweed' } : slot
+    ));
+  }
+  if (Array.isArray(parsed.gatheringLootStages)) {
+    parsed.gatheringLootStages = parsed.gatheringLootStages.map(stage => ({
+      ...stage,
+      loot: renameCount(stage?.loot),
+    }));
+  }
+  if (Array.isArray(parsed.craftingGridSlots)) {
+    parsed.craftingGridSlots = parsed.craftingGridSlots.map(slot => (
+      slot?.source === 'gathered' && slot?.id === 'fiber'
+        ? { ...slot, id: 'fiberweed', name: 'Fiberweed' }
+        : slot
+    ));
+  }
+  if (Array.isArray(parsed.processingSlots)) {
+    let returned = 0;
+    parsed.processingSlots = parsed.processingSlots.map(slot => {
+      if (slot?.inputId !== 'fiber') return slot;
+      returned += Math.max(0, Math.floor(Number(slot.inputCount) || 0));
+      return { ...slot, inputId: null, inputCount: 0, startedAt: null, endsAt: null, outputId: null };
+    });
+    if (returned) {
+      parsed.gatheredInventory = {
+        ...(parsed.gatheredInventory ?? {}),
+        fiberweed: (parsed.gatheredInventory?.fiberweed ?? 0) + returned,
+      };
+    }
+  }
+  const renameStack = stack => (
+    stack?.source === 'gathered' && stack?.id === 'fiber'
+      ? { ...stack, id: 'fiberweed', name: 'Fiberweed' }
+      : stack
+  );
+  if (Array.isArray(parsed.expeditionSupplySlots)) {
+    parsed.expeditionSupplySlots = parsed.expeditionSupplySlots.map(renameStack);
+  }
+  if (parsed.expeditionRun && typeof parsed.expeditionRun === 'object') {
+    parsed.expeditionRun = {
+      ...parsed.expeditionRun,
+      supplySlots: Array.isArray(parsed.expeditionRun.supplySlots)
+        ? parsed.expeditionRun.supplySlots.map(renameStack)
+        : parsed.expeditionRun.supplySlots,
+      rewardEntries: Array.isArray(parsed.expeditionRun.rewardEntries)
+        ? parsed.expeditionRun.rewardEntries.map(renameStack)
+        : parsed.expeditionRun.rewardEntries,
+    };
+  }
+  return parsed;
+}
+
+/** Save 28: Processing still makes Timber, but Timber's canonical Bag home is now Crafted. */
+function migrateTimberToCrafted(parsed) {
+  const timber = Math.max(0, Math.floor(Number(parsed.processedInventory?.timber) || 0));
+  parsed.processedInventory = { ...(parsed.processedInventory ?? {}) };
+  delete parsed.processedInventory.timber;
+  parsed.craftedInventory = {
+    ...(parsed.craftedInventory ?? {}),
+    timber: (parsed.craftedInventory?.timber ?? 0) + timber,
+  };
+  const migrateStack = stack => (
+    stack?.source === 'processed' && stack?.id === 'timber'
+      ? { ...stack, source: 'crafted' }
+      : stack
+  );
+  if (Array.isArray(parsed.craftingGridSlots)) {
+    parsed.craftingGridSlots = parsed.craftingGridSlots.map(migrateStack);
+  }
+  if (Array.isArray(parsed.expeditionSupplySlots)) {
+    parsed.expeditionSupplySlots = parsed.expeditionSupplySlots.map(migrateStack);
+  }
+  if (parsed.expeditionRun && typeof parsed.expeditionRun === 'object') {
+    parsed.expeditionRun = {
+      ...parsed.expeditionRun,
+      supplySlots: Array.isArray(parsed.expeditionRun.supplySlots)
+        ? parsed.expeditionRun.supplySlots.map(migrateStack)
+        : parsed.expeditionRun.supplySlots,
+      rewardEntries: Array.isArray(parsed.expeditionRun.rewardEntries)
+        ? parsed.expeditionRun.rewardEntries.map(migrateStack)
+        : parsed.expeditionRun.rewardEntries,
+    };
+  }
+  return parsed;
+}
+
+/** Save 30: the three alchemical reagents moved from timed Processing into the Crafting grid. */
+function migrateCallingReagentsToCrafted(parsed) {
+  const reagentInputs = Object.freeze({
+    resin: 'sealant',
+    hyssop: 'alkahest',
+    mushrooms: 'mycelialExtract',
+  });
+  const reagentIds = new Set(Object.values(reagentInputs));
+  parsed.craftedInventory = { ...(parsed.craftedInventory ?? {}) };
+  parsed.processedInventory = { ...(parsed.processedInventory ?? {}) };
+
+  reagentIds.forEach(id => {
+    const amount = Math.max(0, Math.floor(Number(parsed.processedInventory[id]) || 0));
+    if (amount) parsed.craftedInventory[id] = (parsed.craftedInventory[id] ?? 0) + amount;
+    delete parsed.processedInventory[id];
+  });
+
+  if (parsed.processingOutputQueues && typeof parsed.processingOutputQueues === 'object') {
+    parsed.processingOutputQueues = Object.fromEntries(Object.entries(parsed.processingOutputQueues).map(([slotId, row]) => {
+      const nextRow = { ...(row ?? {}) };
+      reagentIds.forEach(id => {
+        const amount = Math.max(0, Math.floor(Number(nextRow[id]) || 0));
+        if (amount) parsed.craftedInventory[id] = (parsed.craftedInventory[id] ?? 0) + amount;
+        delete nextRow[id];
+      });
+      return [slotId, nextRow];
+    }));
+  }
+  if (parsed.processedClaimQueue && typeof parsed.processedClaimQueue === 'object') {
+    const nextQueue = { ...parsed.processedClaimQueue };
+    reagentIds.forEach(id => {
+      const amount = Math.max(0, Math.floor(Number(nextQueue[id]) || 0));
+      if (amount) parsed.craftedInventory[id] = (parsed.craftedInventory[id] ?? 0) + amount;
+      delete nextQueue[id];
+    });
+    parsed.processedClaimQueue = nextQueue;
+  }
+
+  if (Array.isArray(parsed.processingSlots)) {
+    parsed.gatheredInventory = { ...(parsed.gatheredInventory ?? {}) };
+    parsed.processingSlots = parsed.processingSlots.map(slot => {
+      const outputId = reagentInputs[slot?.inputId];
+      if (!outputId) return slot;
+      const returned = Math.max(0, Math.floor(Number(slot.inputCount) || 0));
+      if (returned) parsed.gatheredInventory[slot.inputId] = (parsed.gatheredInventory[slot.inputId] ?? 0) + returned;
+      return { ...slot, inputId: null, inputCount: 0, startedAt: null, endsAt: null, outputId: null };
+    });
+  }
+  return parsed;
+}
+
+/** Save 31: retire the ambiguous Cloth and base Leather identities in favor of crafted materials. */
+function migrateLegacyClothAndLeather(parsed) {
+  const replacements = Object.freeze({
+    cloth: Object.freeze({ source: 'crafted', id: 'linen', name: 'Linen' }),
+    leather: Object.freeze({ source: 'crafted', id: 'roughLeather', name: 'Rough Leather' }),
+  });
+  const legacyIds = Object.keys(replacements);
+  parsed.processedInventory = { ...(parsed.processedInventory ?? {}) };
+  parsed.craftedInventory = { ...(parsed.craftedInventory ?? {}) };
+
+  legacyIds.forEach(id => {
+    const amount = Math.max(0, Math.floor(Number(parsed.processedInventory[id]) || 0));
+    const replacement = replacements[id];
+    if (amount) parsed.craftedInventory[replacement.id] = (parsed.craftedInventory[replacement.id] ?? 0) + amount;
+    delete parsed.processedInventory[id];
+  });
+
+  // These outputs no longer belong to Processing. Move completed quantities straight into Crafted so
+  // normalizing the remaining per-bench queues cannot discard something the player already earned.
+  const collectLegacyOutputs = queue => {
+    const next = { ...(queue ?? {}) };
+    legacyIds.forEach(id => {
+      const amount = Math.max(0, Math.floor(Number(next[id]) || 0));
+      const replacement = replacements[id];
+      if (amount) parsed.craftedInventory[replacement.id] = (parsed.craftedInventory[replacement.id] ?? 0) + amount;
+      delete next[id];
+    });
+    return next;
+  };
+  if (parsed.processingOutputQueues && typeof parsed.processingOutputQueues === 'object') {
+    parsed.processingOutputQueues = Object.fromEntries(
+      Object.entries(parsed.processingOutputQueues).map(([slotId, queue]) => [slotId, collectLegacyOutputs(queue)]),
+    );
+  }
+  if (parsed.processedClaimQueue && typeof parsed.processedClaimQueue === 'object') {
+    parsed.processedClaimQueue = collectLegacyOutputs(parsed.processedClaimQueue);
+  }
+
+  // Hide is now consumed by the Rough Leather grid recipe. Return any Hide left in the retired timed
+  // recipe before clearing that bench, including a cycle that was in progress when the save was made.
+  if (Array.isArray(parsed.processingSlots)) {
+    parsed.gatheredInventory = { ...(parsed.gatheredInventory ?? {}) };
+    parsed.processingSlots = parsed.processingSlots.map(slot => {
+      if (!replacements[slot?.outputId] && slot?.inputId !== 'hide') return slot;
+      const returned = Math.max(0, Math.floor(Number(slot.inputCount) || 0));
+      if (returned && slot.inputId === 'hide') {
+        parsed.gatheredInventory.hide = (parsed.gatheredInventory.hide ?? 0) + returned;
+      }
+      return { ...slot, inputId: null, inputCount: 0, startedAt: null, endsAt: null, outputId: null };
+    });
+  }
+
+  const migrateStack = stack => {
+    const replacement = replacements[stack?.id];
+    if (!replacement) return stack;
+    return { ...stack, ...replacement };
+  };
+  if (Array.isArray(parsed.craftingGridSlots)) {
+    parsed.craftingGridSlots = parsed.craftingGridSlots.map(migrateStack);
+  }
+  if (Array.isArray(parsed.expeditionSupplySlots)) {
+    parsed.expeditionSupplySlots = parsed.expeditionSupplySlots.map(migrateStack);
+  }
+  if (parsed.expeditionRun && typeof parsed.expeditionRun === 'object') {
+    parsed.expeditionRun = {
+      ...parsed.expeditionRun,
+      supplySlots: Array.isArray(parsed.expeditionRun.supplySlots)
+        ? parsed.expeditionRun.supplySlots.map(migrateStack)
+        : parsed.expeditionRun.supplySlots,
+      rewardEntries: Array.isArray(parsed.expeditionRun.rewardEntries)
+        ? parsed.expeditionRun.rewardEntries.map(migrateStack)
+        : parsed.expeditionRun.rewardEntries,
+      unitResults: Array.isArray(parsed.expeditionRun.unitResults)
+        ? parsed.expeditionRun.unitResults.map(result => ({
+            ...result,
+            rewards: Array.isArray(result?.rewards) ? result.rewards.map(migrateStack) : result?.rewards,
+            bonusRewards: Array.isArray(result?.bonusRewards) ? result.bonusRewards.map(migrateStack) : result?.bonusRewards,
+          }))
+        : parsed.expeditionRun.unitResults,
+    };
+  }
+  if (parsed.shopPurchases?.goods && typeof parsed.shopPurchases.goods === 'object') {
+    const goods = { ...parsed.shopPurchases.goods };
+    delete goods.cloth;
+    delete goods.leather;
+    parsed.shopPurchases = { ...parsed.shopPurchases, goods };
+  }
+  return parsed;
+}
+
+/** Save 33: the existing honey artwork and item are honeycomb; align the canonical id and recipe. */
+function migrateHoneyToHoneycomb(parsed) {
+  const renameCounts = counts => {
+    if (!counts || typeof counts !== 'object') return counts;
+    const next = { ...counts };
+    const amount = Math.max(0, Math.floor(Number(next.honey) || 0));
+    if (amount) next.honeycomb = (next.honeycomb ?? 0) + amount;
+    delete next.honey;
+    return next;
+  };
+  const renameStack = stack => (
+    stack?.source === 'gathered' && stack?.id === 'honey'
+      ? { ...stack, id: 'honeycomb', name: 'Honeycomb' }
+      : stack
+  );
+
+  parsed.gatheredInventory = renameCounts(parsed.gatheredInventory);
+  parsed.gatheringClaimQueue = renameCounts(parsed.gatheringClaimQueue);
+  if (Array.isArray(parsed.gatheringSlots)) {
+    parsed.gatheringSlots = parsed.gatheringSlots.map(slot => (
+      slot?.resourceId === 'honey' ? { ...slot, resourceId: 'honeycomb' } : slot
+    ));
+  }
+  if (Array.isArray(parsed.gatheringLootStages)) {
+    parsed.gatheringLootStages = parsed.gatheringLootStages.map(stage => ({
+      ...stage,
+      loot: renameCounts(stage?.loot),
+    }));
+  }
+  if (Array.isArray(parsed.craftingGridSlots)) parsed.craftingGridSlots = parsed.craftingGridSlots.map(renameStack);
+  if (Array.isArray(parsed.expeditionSupplySlots)) parsed.expeditionSupplySlots = parsed.expeditionSupplySlots.map(renameStack);
+  if (parsed.expeditionRun && typeof parsed.expeditionRun === 'object') {
+    parsed.expeditionRun = {
+      ...parsed.expeditionRun,
+      supplySlots: Array.isArray(parsed.expeditionRun.supplySlots)
+        ? parsed.expeditionRun.supplySlots.map(renameStack)
+        : parsed.expeditionRun.supplySlots,
+      rewardEntries: Array.isArray(parsed.expeditionRun.rewardEntries)
+        ? parsed.expeditionRun.rewardEntries.map(renameStack)
+        : parsed.expeditionRun.rewardEntries,
+    };
+  }
+  if (parsed.shopPurchases?.goods && typeof parsed.shopPurchases.goods === 'object') {
+    const goods = { ...parsed.shopPurchases.goods };
+    if (goods.honey) goods.honeycomb = (goods.honeycomb ?? 0) + goods.honey;
+    delete goods.honey;
+    parsed.shopPurchases = { ...parsed.shopPurchases, goods };
+  }
+  return parsed;
 }
 
 /**
@@ -415,6 +822,7 @@ const CARD_SLOT_ARRAYS = [
   'forgeCardSlots',
   'gatheringSlots',
   'processingSlots',
+  'craftingCardSlots',
   'expeditionUnitSlots',
 ];
 
@@ -552,6 +960,21 @@ function parseSave(raw) {
         if ((parsed.version ?? 0) < 23) {
           migrateCardIdsToUuid(parsed);
         }
+        if ((parsed.version ?? 0) < 27) {
+          migrateGatheredFiberToFiberweed(parsed);
+        }
+        if ((parsed.version ?? 0) < 28) {
+          migrateTimberToCrafted(parsed);
+        }
+        if ((parsed.version ?? 0) < 30) {
+          migrateCallingReagentsToCrafted(parsed);
+        }
+        if ((parsed.version ?? 0) < 31) {
+          migrateLegacyClothAndLeather(parsed);
+        }
+        if ((parsed.version ?? 0) < 33) {
+          migrateHoneyToHoneycomb(parsed);
+        }
         /**
          * Held packs of a retired type become the nearest survivor by price.
          *
@@ -605,7 +1028,7 @@ function freshSave() {
     ingotInventory: DEFAULT_INGOT_INVENTORY,
     mineSlots: createMiningSlots(DEFAULT_MINE_SLOT_CAPACITY),
     mineSlotCapacity: DEFAULT_MINE_SLOT_CAPACITY,
-    mineClaimQueue: DEFAULT_ORE_INVENTORY,
+    mineClaimQueue: DEFAULT_MINE_CLAIM_QUEUE,
     mineRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
     mineLootStages: [],
     forgeCardSlots: createForgeCardSlots(),
@@ -616,6 +1039,8 @@ function freshSave() {
     forgeRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
     gatheredInventory: DEFAULT_GATHERING_INVENTORY,
     processedInventory: DEFAULT_PROCESSED_INVENTORY,
+    craftedInventory: DEFAULT_CRAFTED_INVENTORY,
+    toolInventory: [],
     gatheringSlots: createGatheringSlots(),
     gatheringClaimQueue: DEFAULT_GATHERING_INVENTORY,
     gatheringRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
@@ -623,6 +1048,8 @@ function freshSave() {
     processingSlots: createProcessingSlots(),
     processingOutputQueues: createProductionOutputQueues(PROCESSING_SLOT_IDS),
     processingRewardQueue: DEFAULT_BONUS_REWARD_QUEUE,
+    craftingCardSlots: createCraftingCardSlots(),
+    craftingGridSlots: createCraftingGridSlots(),
     expeditionDifficultyId: EXPEDITION_DIFFICULTIES[0].id,
     expeditionUnitSlots: createExpeditionUnitSlots(),
     expeditionSupplySlots: createExpeditionSupplySlots(),
@@ -631,6 +1058,7 @@ function freshSave() {
     pocket: [],
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     graphicsSettings: DEFAULT_GRAPHICS_SETTINGS,
+    shopPurchases: normalizeShopPurchases(null),
 
     collectionSeen: 0,
     pocketCapacity: DEFAULT_POCKET_CAPACITY,
@@ -721,8 +1149,15 @@ function GameApp({ savedState, account }) {
   const [oreInventory, setOreInventory] = useState(() => ({ ...DEFAULT_ORE_INVENTORY, ...(savedState.oreInventory ?? {}) }));
   const [ingotInventory, setIngotInventory] = useState(() => ({ ...DEFAULT_INGOT_INVENTORY, ...(savedState.ingotInventory ?? {}) }));
   const [mineSlotCapacity, setMineSlotCapacity] = useState(() => clampMineSlotCapacity(savedState.mineSlotCapacity));
-  const [mineSlots, setMineSlots] = useState(() => normalizeMiningSlots(savedState.mineSlots, savedState.mineSlotCapacity));
-  const [mineClaimQueue, setMineClaimQueue] = useState(() => ({ ...DEFAULT_ORE_INVENTORY, ...(savedState.mineClaimQueue ?? {}) }));
+  const loadedMineSlots = useMemo(
+    () => normalizeMiningSlots(savedState.mineSlots, savedState.mineSlotCapacity),
+    [savedState.mineSlotCapacity, savedState.mineSlots],
+  );
+  const [mineSlots, setMineSlots] = useState(() => loadedMineSlots.map(slot => ({
+    ...slot,
+    tool: slot.card && isToolCompatibleWithStation(slot.tool, 'mine', slot.card) ? slot.tool : null,
+  })));
+  const [mineClaimQueue, setMineClaimQueue] = useState(() => ({ ...DEFAULT_MINE_CLAIM_QUEUE, ...(savedState.mineClaimQueue ?? {}) }));
   const [mineRewardQueue, setMineRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.mineRewardQueue ?? {}) }));
   const [mineLootStages, setMineLootStages] = useState(() => normalizeStagedLootEvents(savedState.mineLootStages));
   const [forgeCardSlots, setForgeCardSlots] = useState(() => normalizeForgeCardSlots(savedState.forgeCardSlots));
@@ -734,14 +1169,36 @@ function GameApp({ savedState, account }) {
 
 
   const [gatheredInventory, setGatheredInventory] = useState(() => ({ ...DEFAULT_GATHERING_INVENTORY, ...(savedState.gatheredInventory ?? {}) }));
-  const [processedInventory, setProcessedInventory] = useState(() => ({ ...DEFAULT_PROCESSED_INVENTORY, ...(savedState.processedInventory ?? {}) }));
-  const [gatheringSlots, setGatheringSlots] = useState(() => normalizeGatheringSlots(savedState.gatheringSlots));
+  const [processedInventory, setProcessedInventory] = useState(() => addProcessedCounts(
+    DEFAULT_PROCESSED_INVENTORY,
+    savedState.processedInventory,
+  ));
+  const [craftedInventory, setCraftedInventory] = useState(() => ({ ...DEFAULT_CRAFTED_INVENTORY, ...(savedState.craftedInventory ?? {}) }));
+  const loadedGatheringSlots = useMemo(
+    () => normalizeGatheringSlots(savedState.gatheringSlots),
+    [savedState.gatheringSlots],
+  );
+  const [toolInventory, setToolInventory] = useState(() => normalizeToolInventory([
+    ...(savedState.toolInventory ?? []),
+    ...loadedMineSlots
+      .filter(slot => slot.tool && (!slot.card || !isToolCompatibleWithStation(slot.tool, 'mine', slot.card)))
+      .map(slot => slot.tool),
+    ...loadedGatheringSlots
+      .filter(slot => slot.tool && (!slot.card || !isToolCompatibleWithStation(slot.tool, 'gathering', slot.card)))
+      .map(slot => slot.tool),
+  ]));
+  const [gatheringSlots, setGatheringSlots] = useState(() => loadedGatheringSlots.map(slot => ({
+    ...slot,
+    tool: slot.card && isToolCompatibleWithStation(slot.tool, 'gathering', slot.card) ? slot.tool : null,
+  })));
   const [gatheringClaimQueue, setGatheringClaimQueue] = useState(() => ({ ...DEFAULT_GATHERING_INVENTORY, ...(savedState.gatheringClaimQueue ?? {}) }));
   const [gatheringRewardQueue, setGatheringRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.gatheringRewardQueue ?? {}) }));
   const [gatheringLootStages, setGatheringLootStages] = useState(() => normalizeStagedLootEvents(savedState.gatheringLootStages));
   const [processingSlots, setProcessingSlots] = useState(() => normalizeProcessingSlots(savedState.processingSlots));
   const [processingOutputQueues, setProcessingOutputQueues] = useState(() => normalizeSavedProcessingOutputs(savedState));
   const [processingRewardQueue, setProcessingRewardQueue] = useState(() => ({ ...DEFAULT_BONUS_REWARD_QUEUE, ...(savedState.processingRewardQueue ?? {}) }));
+  const [craftingCardSlots, setCraftingCardSlots] = useState(() => normalizeCraftingCardSlots(savedState.craftingCardSlots));
+  const [craftingGridSlots, setCraftingGridSlots] = useState(() => normalizeCraftingGridSlots(savedState.craftingGridSlots));
   const pendingIngotOutputs = useMemo(
     () => totalProductionOutputs(forgeOutputQueues, FORGE_OUTPUT_IDS),
     [forgeOutputQueues],
@@ -773,6 +1230,16 @@ function GameApp({ savedState, account }) {
     const normalized = normalizeGraphicsSettings(savedState.graphicsSettings ?? DEFAULT_GRAPHICS_SETTINGS);
     return { ...normalized, quality: resolveQuality(normalized) };
   });
+  const [shopPurchases, setShopPurchases] = useState(() => normalizeShopPurchases(savedState.shopPurchases));
+  // Shop clicks are intentionally allowed faster than the purchase animation. These refs advance inside
+  // the transaction itself, before React paints, so a burst of clicks cannot reuse a stale price/balance
+  // or cross the held-pack cap while state updates are still batched.
+  const shopBalanceRef = useRef(balance);
+  const shopPurchasesRef = useRef(shopPurchases);
+  const shopHeldPackCountRef = useRef(packs.length);
+  shopBalanceRef.current = balance;
+  shopPurchasesRef.current = shopPurchases;
+  shopHeldPackCountRef.current = packs.length;
   const graphicsQuality = graphicsSettings.quality;
   const graphicsFeatures = QUALITY_FEATURES[graphicsQuality] ?? QUALITY_FEATURES.high;
   /**
@@ -834,6 +1301,10 @@ function GameApp({ savedState, account }) {
   const [hasEntered, setHasEntered] = useState(false);
 
   const [inventoryOpen, setInventoryOpen] = useState(true);
+  const [focusedCardId, setFocusedCardId] = useState(null);
+  const [pendingSocketGemId, setPendingSocketGemId] = useState(null);
+  const [pendingSocketBinding, setPendingSocketBinding] = useState(null);
+  const [pendingCardCraftingItemId, setPendingCardCraftingItemId] = useState(null);
   const inventoryHeaderRef = useRef(null);
 
   const tabRefs = useRef([]);
@@ -1029,6 +1500,8 @@ function GameApp({ savedState, account }) {
       forgeRewardQueue,
       gatheredInventory,
       processedInventory,
+      craftedInventory,
+      toolInventory,
       gatheringSlots,
       gatheringClaimQueue,
       gatheringRewardQueue,
@@ -1036,6 +1509,8 @@ function GameApp({ savedState, account }) {
       processingSlots,
       processingOutputQueues,
       processingRewardQueue,
+      craftingCardSlots,
+      craftingGridSlots,
       expeditionDifficultyId,
       expeditionUnitSlots,
       expeditionSupplySlots,
@@ -1044,6 +1519,7 @@ function GameApp({ savedState, account }) {
       packsOpened,
       audioSettings,
       graphicsSettings,
+      shopPurchases,
       pocket,
       pocketCapacity,
       pocketExpanded,
@@ -1057,7 +1533,31 @@ function GameApp({ savedState, account }) {
       saveState(pendingSaveRef.current);
       pendingSaveRef.current = null;
     }, SAVE_DEBOUNCE_MS);
-  }, [balance, collection, packs, market, resources, arcanaInventory, oreInventory, ingotInventory, mineSlots, mineSlotCapacity, mineClaimQueue, mineRewardQueue, mineLootStages, forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots, forgeOutputQueues, forgeRewardQueue, gatheredInventory, processedInventory, gatheringSlots, gatheringClaimQueue, gatheringRewardQueue, gatheringLootStages, processingSlots, processingOutputQueues, processingRewardQueue, expeditionDifficultyId, expeditionUnitSlots, expeditionSupplySlots, expeditionArcanaSlots, expeditionRun, packsOpened, audioSettings, graphicsSettings, pocket, pocketCapacity, pocketExpanded, lootSeen, collectionSeen]);
+  }, [balance, collection, packs, market, resources, arcanaInventory, oreInventory, ingotInventory, mineSlots, mineSlotCapacity, mineClaimQueue, mineRewardQueue, mineLootStages, forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots, forgeOutputQueues, forgeRewardQueue, gatheredInventory, processedInventory, craftedInventory, toolInventory, gatheringSlots, gatheringClaimQueue, gatheringRewardQueue, gatheringLootStages, processingSlots, processingOutputQueues, processingRewardQueue, craftingCardSlots, craftingGridSlots, expeditionDifficultyId, expeditionUnitSlots, expeditionSupplySlots, expeditionArcanaSlots, expeditionRun, packsOpened, audioSettings, graphicsSettings, shopPurchases, pocket, pocketCapacity, pocketExpanded, lootSeen, collectionSeen]);
+
+  // Native `title` bubbles are browser chrome, visually unrelated to the game and capable of covering
+  // the custom card/resource tooltips. Strip them from the mounted game and from nodes React adds later.
+  useEffect(() => {
+    const removeTitle = node => {
+      const label = node.getAttribute?.('title');
+      // Preserve the useful text as an accessible name when the control does not already have one; only
+      // the browser-rendered bubble is unwanted.
+      if (label && !node.hasAttribute?.('aria-label')) node.setAttribute('aria-label', label);
+      node.removeAttribute?.('title');
+    };
+    const stripTitles = root => {
+      if (root?.nodeType !== Node.ELEMENT_NODE) return;
+      if (root.hasAttribute?.('title')) removeTitle(root);
+      root.querySelectorAll?.('[title]').forEach(removeTitle);
+    };
+    stripTitles(document.body);
+    const observer = new MutationObserver(records => records.forEach(record => {
+      if (record.type === 'attributes') stripTitles(record.target);
+      record.addedNodes.forEach(stripTitles);
+    }));
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+    return () => observer.disconnect();
+  }, []);
 
   // Drives every CSS quality override in App.css. Set on <html> rather than a
   // wrapper div so fixed/portaled elements (tooltips, hover previews, the carried
@@ -1505,18 +2005,90 @@ function GameApp({ savedState, account }) {
       const expectedTarget = `${carriedResource.source}:${carriedResource.id}`;
 
       if (targetKey === expectedTarget) return true;
-      if (targetKey === 'arcana-ring-slot') return carriedResource.source === 'arcana';
-      if (targetKey === 'forge-fuel-slot') return carriedResource.id === FORGE_FUEL_TYPE;
-      if (targetKey === 'forge-ore-slot') return carriedResource.source === 'ore' && Boolean(SMELT_RECIPES[carriedResource.id]);
-      if (targetKey === 'forge-ingredient-slot') return carriedResource.source === 'ingot';
-      if (targetKey === 'wilderness-processing-input-slot') return carriedResource.source === 'gathered' && Boolean(PROCESSING_RECIPES[carriedResource.id]);
+      if (targetKey === 'card-crafting-card') {
+        return (carriedResource.source === 'crafted' && carriedResource.id === 'gemsettersChisel')
+          || (carriedResource.source === 'gathered' && Boolean(GEM_RESOURCES_BY_ID[carriedResource.id]));
+      }
+      // A carried Topaz still needs a Bag resource selected as its imprint. That click configures
+      // the binding only; both the gem and its imprint remain uncommitted until the card is clicked.
+      if (
+        carriedResource.source === 'gathered'
+        && GEM_RESOURCES_BY_ID[carriedResource.id]
+        && getGemFamily(carriedResource.id) === 'topaz'
+        && targetKey?.includes(':')
+      ) {
+        return true;
+      }
+      if (targetKey === 'crafting-grid-slot') {
+        if (!CRAFTING_RESOURCE_SOURCES.includes(carriedResource.source)) return false;
+        const slotId = Number(target.dataset.craftingSlotId);
+        const slot = craftingGridSlots.find(entry => entry.slotId === slotId);
+        return Boolean(slot) && (!slot.id || (slot.source === carriedResource.source && slot.id === carriedResource.id));
+      }
+      if (targetKey === 'forge-fuel-slot') {
+        const slotId = Number(target.dataset.forgeSlotId);
+        const slotIndex = forgeFuelSlots.findIndex(slot => slot.slotId === slotId);
+        const recipe = slotIndex >= 0 ? SMELT_RECIPES[forgeOreSlots[slotIndex]?.oreType] : null;
+        const validFuel = (carriedResource.source === 'ore' && carriedResource.id === FORGE_FUEL_TYPE)
+          || (carriedResource.source === 'gathered' && carriedResource.id === 'gemdust');
+        return validFuel && (!recipe || recipe.fuelType === carriedResource.id);
+      }
+      if (targetKey === 'forge-ore-slot') {
+        const recipe = SMELT_RECIPES[carriedResource.id];
+        return Boolean(recipe) && recipe.inputSource === carriedResource.source;
+      }
+      if (targetKey === 'forge-ingredient-slot') {
+        const slotId = Number(target.dataset.forgeSlotId);
+        const slotIndex = forgeIngredientSlots.findIndex(slot => slot.slotId === slotId);
+        const requirement = slotIndex >= 0 ? SMELT_RECIPES[forgeOreSlots[slotIndex]?.oreType]?.ingredient : null;
+        return requirement
+          ? requirement.source === carriedResource.source && requirement.type === carriedResource.id
+          : ['ingot', 'arcana'].includes(carriedResource.source);
+      }
+      if (targetKey === 'forge-booster-slot') {
+        return carriedResource.source === 'crafted' && ['flux', 'arcaneFlux'].includes(carriedResource.id);
+      }
+      if (targetKey === 'wilderness-processing-input-slot') {
+        const slotId = Number(target.dataset.processingSlotId);
+        const slot = processingSlots.find(entry => entry.slotId === slotId);
+        return Boolean(slot) && processingSlotAcceptsMaterial(slot, carriedResource.source, carriedResource.id);
+      }
+      if (targetKey === 'wilderness-processing-booster-slot') {
+        const slotId = Number(target.dataset.processingSlotId);
+        const slot = processingSlots.find(entry => entry.slotId === slotId);
+        return carriedResource.source === 'crafted'
+          && carriedResource.id === 'tannin'
+          && slot?.card?.classType === 'tanner';
+      }
       if (targetKey === 'expedition-supply-slot') {
         return !target.classList.contains('expedition-resource-slot--locked')
-          && ['gathered', 'processed'].includes(carriedResource.source);
+          && ['gathered', 'processed', 'crafted'].includes(carriedResource.source);
       }
       if (targetKey === 'expedition-arcana-slot') {
         return !target.classList.contains('expedition-resource-slot--locked')
           && carriedResource.source === 'arcana-item';
+      }
+      if (targetKey === 'summon-attunement-slot') {
+        if (carriedResource.source !== 'arcana-item') return false;
+        const entry = carriedResource.entries?.[0];
+        return Boolean(entry) && entry.effect?.slot === target.dataset.attunementSlotId;
+      }
+      return false;
+    }
+
+    function acceptsCarriedTool(target) {
+      if (carriedResource.source !== 'tool' || !target) return false;
+      const socket = target.closest('[data-tool-drop-target]');
+      if (!socket) return false;
+      const slotId = Number(socket.dataset.toolSlotId);
+      const tool = carriedResource.entries?.[0];
+      if (socket.dataset.toolDropTarget === 'mine') {
+        const slot = mineSlots.find(entry => entry.slotId === slotId);
+        return Boolean(slot?.card) && isToolCompatibleWithStation(tool, 'mine', slot.card);
+      }
+      if (socket.dataset.toolDropTarget === 'gathering') {
+        const slot = gatheringSlots.find(entry => entry.slotId === slotId);
+        return Boolean(slot?.card) && isToolCompatibleWithStation(tool, 'gathering', slot.card);
       }
       return false;
     }
@@ -1532,29 +2104,68 @@ function GameApp({ savedState, account }) {
       const targetKey = target.getAttribute('data-resource-drop-target');
       const numericForgeSlotId = Number(target.dataset.forgeSlotId);
       const numericProcessingSlotId = Number(target.dataset.processingSlotId);
+      const numericCraftingSlotId = Number(target.dataset.craftingSlotId);
       if (targetKey === `${carriedResource.source}:${carriedResource.id}`) {
         return handlePlaceCarriedResource({ source: carriedResource.source, id: carriedResource.id });
       }
-      // Arcana owns its ring-slot state and handles the target's drop event before this window
-      // backstop. Returning true here tells dragend not to restore the same carried stack twice.
-      if (targetKey === 'arcana-ring-slot') return true;
+      if (targetKey === 'crafting-grid-slot') return handleLoadCraftingMaterialFromCarry(numericCraftingSlotId);
       if (targetKey === 'forge-fuel-slot') return handleLoadForgeFuelFromCarry(numericForgeSlotId);
       if (targetKey === 'forge-ore-slot') return handleLoadForgeOreFromCarry(numericForgeSlotId);
       if (targetKey === 'forge-ingredient-slot') return handleLoadForgeIngredientFromCarry(numericForgeSlotId);
+      if (targetKey === 'forge-booster-slot') return handleLoadForgeBoosterFromCarry(numericForgeSlotId);
       // Wilderness already owns a native drop handler for this slot. It runs target-first before this
       // window backstop; calling the loader again here would add the same carried stack twice.
       if (targetKey === 'wilderness-processing-input-slot') return Number.isFinite(numericProcessingSlotId);
+      if (targetKey === 'wilderness-processing-booster-slot') return Number.isFinite(numericProcessingSlotId);
       if (targetKey === 'expedition-supply-slot') return handleLoadExpeditionSupplyFromCarry(target.dataset.expeditionSlotId);
       if (targetKey === 'expedition-arcana-slot') return handleLoadExpeditionArcanaFromCarry(target.dataset.expeditionSlotId);
+      // Summon owns this drop in UnpackPage because its loadout is local draft state. The target handler
+      // stops propagation, but treating it as resolved here too makes the window backstop idempotent if a
+      // browser still delivers the native drop: never restore a card the socket just reserved.
+      if (targetKey === 'summon-attunement-slot') return true;
       return false;
     }
 
     function handlePointerDown(event) {
+      if (carriedResource.source === 'tool') {
+        const socket = event.target instanceof Element
+          ? event.target.closest('[data-tool-drop-target]')
+          : null;
+        if (acceptsCarriedTool(socket)) {
+          const slotId = Number(socket.dataset.toolSlotId);
+          if (socket.dataset.toolDropTarget === 'mine') {
+            handleSocketMineTool(carriedResource.id, slotId);
+          } else if (socket.dataset.toolDropTarget === 'gathering') {
+            handleSocketGatheringTool(carriedResource.id, slotId);
+          }
+          return;
+        }
+        restoreCarriedStack(carriedResource);
+        resourceDragInFlightRef.current = false;
+        resourceDragResolvedRef.current = true;
+        setCarriedResource(null);
+        return;
+      }
       const target = getDropTarget(event);
       // Allow the event through — the slot's onPointerDown will handle placement
       if (acceptsCarriedResource(target)) return;
+      // The inspect backdrop owns closing the view. Let that handler restore an armed Chisel
+      // exactly once; restoring here as well would duplicate the reserved item from stale state.
+      if (
+        ((carriedResource.source === 'crafted' && carriedResource.id === 'gemsettersChisel')
+          || (carriedResource.source === 'gathered' && Boolean(GEM_RESOURCES_BY_ID[carriedResource.id])))
+        && event.target instanceof Element
+        && event.target.classList.contains('card-crafting-modal')
+      ) return;
       // Clicked elsewhere — cancel carry
       restoreCarriedStack(carriedResource);
+      if (carriedResource.source === 'crafted' && carriedResource.id === 'gemsettersChisel') {
+        setPendingCardCraftingItemId(null);
+      }
+      if (carriedResource.source === 'gathered' && GEM_RESOURCES_BY_ID[carriedResource.id]) {
+        setPendingSocketGemId(null);
+        setPendingSocketBinding(null);
+      }
       setCarriedResource(null);
     }
 
@@ -1570,6 +2181,21 @@ function GameApp({ savedState, account }) {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
       showResourceDropTarget(target);
+    }
+
+    function handleToolDragOver(event) {
+      if (!resourceDragInFlightRef.current || !event.dataTransfer?.types.includes('application/x-cards-of-arcana-tool')) return;
+      setCarriedResourceCursor({ x: event.clientX, y: event.clientY });
+      const target = event.target instanceof Element ? event.target : null;
+      const socket = target?.closest('[data-tool-drop-target]') ?? null;
+      if (!acceptsCarriedTool(socket)) {
+        showResourceDropTarget(null);
+        event.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      showResourceDropTarget(socket);
     }
 
     function handleResourceDrop(event) {
@@ -1598,6 +2224,7 @@ function GameApp({ savedState, account }) {
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('pointerdown', handlePointerDown, true);
     window.addEventListener('dragover', handleResourceDragOver);
+    window.addEventListener('dragover', handleToolDragOver);
     window.addEventListener('drop', handleResourceDrop);
     window.addEventListener('dragend', handleResourceDragEnd);
     return () => {
@@ -1606,12 +2233,13 @@ function GameApp({ savedState, account }) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('pointerdown', handlePointerDown, true);
       window.removeEventListener('dragover', handleResourceDragOver);
+      window.removeEventListener('dragover', handleToolDragOver);
       window.removeEventListener('drop', handleResourceDrop);
       window.removeEventListener('dragend', handleResourceDragEnd);
     };
   // Placement helpers are function declarations owned by this component. The carried/inventory state
   // dependencies above refresh their closures without tearing listeners down on every unrelated render.
-  }, [carriedResource, arcanaInventory, gatheredInventory, ingotInventory, oreInventory, processedInventory]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [carriedResource, arcanaInventory, craftedInventory, craftingGridSlots, gatheredInventory, gatheringSlots, ingotInventory, mineSlots, oreInventory, processedInventory, toolInventory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setMineSlots(prev =>
@@ -1664,6 +2292,16 @@ function GameApp({ savedState, account }) {
   }, [collection]);
 
   useEffect(() => {
+    setCraftingCardSlots(prev =>
+      prev.map(slot => {
+        if (!slot.card) return slot;
+        const updatedCard = collection.find(card => sameCardId(card.id, slot.card.id));
+        return updatedCard ? { ...slot, card: { ...updatedCard } } : { ...slot, card: null };
+      })
+    );
+  }, [collection]);
+
+  useEffect(() => {
     setExpeditionUnitSlots(prev =>
       prev.map(slot => {
         if (!slot.card) return slot;
@@ -1709,11 +2347,13 @@ function GameApp({ savedState, account }) {
     const ingredientRequired = recipe?.ingredient ?? null;
     const ingredientOk = !ingredientRequired || (
       ingredientSlot?.ingotType === ingredientRequired.type &&
+      (ingredientSlot?.source ?? 'ingot') === (ingredientRequired.source ?? 'ingot') &&
       (ingredientSlot?.count ?? 0) >= ingredientRequired.count
     );
     const inputsOk = Boolean(
-      cardSlot?.card &&
+      cardSlot?.card?.classType === recipe?.cardClass &&
       oreSlot?.oreType &&
+      (oreSlot.source ?? 'ore') === recipe?.inputSource &&
       (oreSlot.count ?? 0) >= oreRequired &&
       ingredientOk
     );
@@ -1722,11 +2362,15 @@ function GameApp({ savedState, account }) {
       cardSlot,
       fuelSlot,
       oreSlot,
+      ingredientSlot,
       oreRequired,
       ingredientRequired,
       ingredientOk,
       inputsOk,
-      hasFuel: fuelSlot.loadedCoal > 0 && fuelSlot.currentCoalCharges > 0,
+      hasFuel: fuelSlot.loadedCoal > 0
+        && fuelSlot.currentCoalCharges > 0
+        && (fuelSlot.fuelType ?? FORGE_FUEL_TYPE) === recipe?.fuelType,
+      recipe,
     };
   }
 
@@ -1741,7 +2385,9 @@ function GameApp({ savedState, account }) {
       if (!row || row.fuelSlot.endsAt) return;
       if (!row.inputsOk || !row.hasFuel) return;
       setForgeFuelSlots(prev =>
-        prev.map((slot, index) => index === slotIndex ? startForgeCycle(slot, cardSlot.slotId, now, cardSlot.card) : slot)
+            prev.map((slot, index) => index === slotIndex
+              ? startForgeCycle(slot, cardSlot.slotId, now, cardSlot.card, getForgeBoosterSpeedPercent(row.ingredientSlot))
+              : slot)
       );
     });
   }, [forgeCardSlots, forgeOreSlots, forgeIngredientSlots, forgeFuelSlots]);
@@ -1757,7 +2403,7 @@ function GameApp({ savedState, account }) {
       const { due } = partitionStagedLoot(mineLootStages, Date.now());
       if (due.length === 0) return;
       const dueIds = new Set(due.map(event => event.id));
-      setMineClaimQueue(current => addOreCounts(current, aggregateStagedCounts(due, 'loot')));
+      setMineClaimQueue(current => addMineCounts(current, aggregateStagedCounts(due, 'loot')));
       setMineRewardQueue(current => mergeBonusRewardQueue(current, aggregateStagedCounts(due, 'rewards')));
       setMineLootStages(current => current.filter(event => !dueIds.has(event.id)));
     }, Math.max(0, nextReleaseAt - Date.now()) + 16);
@@ -1783,7 +2429,7 @@ function GameApp({ savedState, account }) {
       forgeCardSlotsRef.current.forEach((cardSlot, slotIndex) => {
         const row = getForgeRowState(slotIndex);
         if (!row) return;
-        const { fuelSlot, oreSlot, oreRequired, ingredientRequired, inputsOk } = row;
+        const { fuelSlot, oreSlot, oreRequired, ingredientRequired, inputsOk, recipe } = row;
 
         if (!fuelSlot.endsAt || fuelSlot.endsAt > now) return;
         if (!inputsOk) {
@@ -1793,7 +2439,7 @@ function GameApp({ savedState, account }) {
           return;
         }
 
-        const ingotId = ORE_TO_INGOT[oreSlot.oreType];
+        const outputId = recipe.outputId;
         const nextOreCount = Math.max(0, (oreSlot.count ?? 0) - oreRequired);
 
         const attunementBonus = rollAttunementBonus(cardSlot.card, 'smeltingAttunement');
@@ -1808,23 +2454,30 @@ function GameApp({ savedState, account }) {
           return {
             ...slot,
             oreType: nextOreCount > 0 ? slot.oreType : null,
+            source: nextOreCount > 0 ? slot.source : null,
             count: nextOreCount,
           };
         }));
 
-        if (ingredientRequired) {
+        if (ingredientRequired || getForgeBoosterSpeedPercent(row.ingredientSlot) > 0) {
           setForgeIngredientSlots(prev => prev.map((slot, index) => {
             if (index !== slotIndex) return slot;
-            const remaining = (slot.count ?? 0) - ingredientRequired.count;
-            return remaining > 0 ? { ...slot, count: remaining } : { ...slot, ingotType: null, count: 0 };
+            let next = slot;
+            if (ingredientRequired) {
+              const remaining = (slot.count ?? 0) - ingredientRequired.count;
+              next = remaining > 0
+                ? { ...next, count: remaining }
+                : { ...next, ingotType: null, source: null, count: 0 };
+            }
+            return consumeForgeBoosterCharge(next);
           }));
         }
 
         setForgeOutputQueues(prev => addProductionOutput(
           prev,
           cardSlot.slotId,
-          ingotId,
-          1 + attunementBonus,
+          outputId,
+          1 + attunementBonus + (rollSocketEffect(cardSlot.card, 'ruby') ? 1 : 0),
         ));
         audioEngine.play(SOUND_IDS.smeltComplete);
 
@@ -1832,7 +2485,7 @@ function GameApp({ savedState, account }) {
           prev.map((slot, index) => {
             if (index !== slotIndex) return slot;
             const consumed = consumeForgeFuelCharge({ ...slot, activeSlotId: null, startedAt: null, endsAt: null });
-            return { ...consumed, activeSlotId: null, startedAt: null, endsAt: null };
+            return { ...consumed, activeSlotId: null, startedAt: null, endsAt: null, sapphireReady: true };
           })
         );
       });
@@ -1881,13 +2534,13 @@ function GameApp({ savedState, account }) {
 
     function tickProcessing(now) {
       if (!anyDue(processingSlotsRef.current, now)) return;
-      const { nextSlots, completedBySlot, completedCount, goldEarned, elementalDrops } = resolveCompletedProcessingSlots(processingSlotsRef.current, now);
+      const { nextSlots, completedBySlot, completedCount, goldEarned, elementalDrops, bonusOutputs } = resolveCompletedProcessingSlots(processingSlotsRef.current, now);
       if (!completedCount) return;
       setProcessingSlots(nextSlots);
       audioEngine.play(SOUND_IDS.smeltComplete);
       setProcessingOutputQueues(prev => mergeProductionOutputs(prev, completedBySlot));
-      if (goldEarned > 0 || Object.values(elementalDrops).some(amount => amount > 0)) {
-        setProcessingRewardQueue(prev => mergeBonusRewardQueue(prev, { coins: goldEarned, ...elementalDrops }));
+      if (goldEarned > 0 || Object.values(elementalDrops).some(amount => amount > 0) || Object.values(bonusOutputs).some(amount => amount > 0)) {
+        setProcessingRewardQueue(prev => mergeBonusRewardQueue(prev, { coins: goldEarned, ...elementalDrops, ...bonusOutputs }));
       }
     }
 
@@ -1983,16 +2636,21 @@ function GameApp({ savedState, account }) {
    * Buys a material from the shop's goods shelf.
    *
    * The price and quantity come from `SHOP_MATERIALS`, never from the caller — the same reason
-   * `handleBuyPack` recomputes its own discount. A handler that accepts an amount from the UI is a handler
+   * `handleBuyPack` recomputes its own rotating price. A handler that accepts an amount from the UI is a handler
    * that can be told to charge nothing.
    *
    * Routing by `inventory` rather than guessing from the id is what keeps a bought ore out of the Gathered
    * section: ores and ingots have exactly one canonical home each, and the shop has to respect it or the
    * goods appear somewhere the player does not look. See `GATHERED_CANONICAL_TARGET` in wilderness.js.
    */
-  function handleBuyMaterial(materialId) {
-    const material = SHOP_MATERIALS.find(m => m.id === materialId);
-    if (!material || balance < material.cost) return false;
+  function handleBuyMaterial(shopId) {
+    const now = Date.now();
+    const material = SHOP_MATERIALS.find(m => m.shopId === shopId);
+    const rotation = getGoodsRotation(now);
+    const purchases = normalizeShopPurchases(shopPurchasesRef.current, now);
+    if (!material || !rotation.offers.some(offer => offer.materialId === shopId)) return false;
+    const price = getEscalatingShopPrice(material.cost, purchases.goods[shopId] ?? 0);
+    if (shopBalanceRef.current < price) return false;
 
     const add = setter => setter(prev => ({
       ...prev,
@@ -2004,6 +2662,7 @@ function GameApp({ savedState, account }) {
       case 'ingot':     add(setIngotInventory); break;
       case 'gathered':  add(setGatheredInventory); break;
       case 'processed': add(setProcessedInventory); break;
+      case 'crafted':   add(setCraftedInventory); break;
       case 'resource':  add(setResources); break;
       default:
         // An unroutable material must not take the player's gold. `findUnsellableMaterials` warns about
@@ -2012,7 +2671,14 @@ function GameApp({ savedState, account }) {
         return false;
     }
 
-    applyGoldDelta(`shop:material:${material.id}`, -material.cost);
+    const nextPurchases = {
+      ...purchases,
+      goods: { ...purchases.goods, [shopId]: (purchases.goods[shopId] ?? 0) + 1 },
+    };
+    shopBalanceRef.current = Math.round((shopBalanceRef.current - price) * 100) / 100;
+    shopPurchasesRef.current = nextPurchases;
+    applyGoldDelta(`shop:material:${material.id}`, -price);
+    setShopPurchases(nextPurchases);
     audioEngine.play(SOUND_IDS.packBuy);
     return true;
   }
@@ -2023,26 +2689,38 @@ function GameApp({ savedState, account }) {
     /**
      * The price is computed HERE, not passed in from the shelf.
      *
-     * A rotation deal can be discounted, and the discount has to be applied where the gold is actually
-     * taken — otherwise the shelf shows one number and the balance moves by another. Recomputing it from
+     * Rotation prices rise after every purchase, and that increase has to be applied where the gold is
+     * actually taken — otherwise the shelf shows one number and the balance moves by another. Recomputing it from
      * the same pure function the shelf uses means the two cannot disagree, and it keeps the client from
      * being able to name its own price, which is the shape the server phase needs anyway.
      */
-    const { offers } = getRotationOffers(Date.now());
-    const discountPct = offers.find(o => o.packId === packTypeId)?.discountPct ?? 0;
-    const price = discountedCost(pt.cost, discountPct);
+    const now = Date.now();
+    const rotation = getRotationOffers(now);
+    const purchases = normalizeShopPurchases(shopPurchasesRef.current, now);
+    const isPermanentBlankSlate = packTypeId === 'blankSlate';
+    if (!isPermanentBlankSlate && !rotation.offers.some(offer => offer.packId === packTypeId)) return false;
+    const price = getEscalatingShopPrice(pt.cost, purchases.packs[packTypeId] ?? 0);
 
-    if (balance < price) return;
-    if (packs.length >= MAX_HELD_PACKS) return;
+    if (shopBalanceRef.current < price) return false;
+    if (shopHeldPackCountRef.current >= MAX_HELD_PACKS) return false;
+    const nextPurchases = {
+      ...purchases,
+      packs: { ...purchases.packs, [packTypeId]: (purchases.packs[packTypeId] ?? 0) + 1 },
+    };
+    shopBalanceRef.current = Math.round((shopBalanceRef.current - price) * 100) / 100;
+    shopPurchasesRef.current = nextPurchases;
+    shopHeldPackCountRef.current += 1;
     applyGoldDelta('pack:buy', -price);
     // A UUID for the same reason cards get one: `Date.now() + Math.random()` is a float keyed to the
     // wall clock, so it is neither stable across clients nor safe to round-trip. Held packs persist,
     // and a later phase has the server minting them.
     setPacks(prev => [...prev, { id: newId(), packTypeId }]);
+    setShopPurchases(nextPurchases);
     audioEngine.play(SOUND_IDS.packBuy);
+    return true;
   }
 
-  function handleOpenPack(packId, options = {}) {
+  function handleOpenPack(packId) {
     const pack = packs.find(p => p.id === packId);
     if (!pack) return false;
     const boosted = packsOpened < 3;
@@ -2061,7 +2739,7 @@ function GameApp({ savedState, account }) {
       const result = openBlankSlatePack({
         packTypeId: pack.packTypeId,
         boosted,
-        attunementLoadout: options.attunementLoadout ?? null,
+        attunementItemIds: getPackAttunementItemIds(pack),
         arcanaInventory,
         resourceBalances: resources,
       });
@@ -2078,24 +2756,83 @@ function GameApp({ savedState, account }) {
     }
 
     setPacks(prev => prev.filter(p => p.id !== packId));
-    /**
-     * A card pack's foil tears here, at the moment it is committed. A treasure cache is silent at this point
-     * on purpose: it does not tear, and its own sound belongs to the press that BREAKS it, which happens a
-     * beat later when the player clicks the chest — see `handleSplit` in PackOpening. Playing `pack.open`
-     * here too would give a cache a paper sound it has no business making, and then a second sound on top.
-     */
-    if (getPackGroup(pack.packTypeId) !== 'treasure') {
-      audioEngine.play(SOUND_IDS.packOpen);
-    }
+    // Both sounds belong to this Open Pack confirmation. The mounted reveal starts in its matching animated
+    // state, so sound and motion begin together without asking for another click on the pack or cache.
+    audioEngine.play(
+      getPackGroup(pack.packTypeId) === 'treasure' ? SOUND_IDS.treasureOpen : SOUND_IDS.packOpen,
+    );
     setPendingCards(cards);
     setPendingPackType(getPackTypeById(pack.packTypeId));
     setPacksOpened(n => n + 1);
     return true;
   }
 
+  function handleConfirmPackAttunement(packId, loadout) {
+    const pack = packs.find(candidate => candidate.id === packId);
+    if (!pack || pack.packTypeId !== 'blankSlate') return { ok: false, reason: 'wrong_pack' };
+
+    const existing = getPackAttunementItemIds(pack);
+    const cost = getNextAttunementCost(pack);
+    if (existing.length >= MAX_PACK_ATTUNEMENTS || cost == null) {
+      return { ok: false, reason: 'max_attunements' };
+    }
+
+    const validation = validateAttunementLoadout(loadout, arcanaInventory, {
+      requireAllSlotsFilled: true,
+    });
+    if (!validation.ok || !validation.isComplete) return { ok: false, reason: 'incomplete_loadout' };
+    if (shopBalanceRef.current < cost) return { ok: false, reason: 'insufficient_gold' };
+
+    const consumption = consumeSlottedItemsOnPackOpen(loadout, arcanaInventory);
+    if (consumption.consumedItems.length !== 3 || consumption.missingInventoryEntryIds.length > 0) {
+      return { ok: false, reason: 'missing_items' };
+    }
+
+    const attunementItemIds = [
+      ...existing,
+      ...consumption.consumedItems.map(item => item.itemId),
+    ].slice(0, MAX_PACK_ATTUNEMENTS);
+    const nextPack = { ...pack, attunementItemIds };
+    shopBalanceRef.current = Math.round((shopBalanceRef.current - cost) * 100) / 100;
+    applyGoldDelta(`pack:attune:${existing.length / 3 + 1}`, -cost);
+    setArcanaInventory(consumption.nextInventory);
+    setPacks(current => current.map(candidate => candidate.id === packId ? nextPack : candidate));
+    return { ok: true, pack: nextPack, cost };
+  }
+
   function handlePackDone() {
     setCollection(prev => [...prev, ...pendingCards]);
     const goldFromRewards = pendingResourceCards.reduce((sum, reward) => sum + ((reward?.type === 'coins') ? (reward.amount ?? 0) : 0), 0);
+    const treasureIngots = {};
+    const treasureGathered = {};
+    const treasureCrafted = {};
+    pendingResourceCards.forEach(reward => {
+      if (reward?.type !== 'resource' || !reward.resourceId || !(reward.amount > 0)) return;
+      const target = reward.source === 'ingot'
+        ? treasureIngots
+        : reward.source === 'gathered'
+          ? treasureGathered
+          : reward.source === 'crafted'
+            ? treasureCrafted
+            : null;
+      if (!target) return;
+      target[reward.resourceId] = (target[reward.resourceId] ?? 0) + reward.amount;
+    });
+    if (Object.keys(treasureIngots).length > 0) {
+      setIngotInventory(prev => ({
+        ...prev,
+        ...Object.fromEntries(Object.entries(treasureIngots).map(([id, amount]) => [id, (prev[id] ?? 0) + amount])),
+      }));
+    }
+    if (Object.keys(treasureGathered).length > 0) {
+      setGatheredInventory(prev => addGatheredCounts(prev, treasureGathered));
+    }
+    if (Object.keys(treasureCrafted).length > 0) {
+      setCraftedInventory(prev => ({
+        ...prev,
+        ...Object.fromEntries(Object.entries(treasureCrafted).map(([id, amount]) => [id, (prev[id] ?? 0) + amount])),
+      }));
+    }
     if (goldFromRewards > 0) {
       // The coins already burst where their cards sat (see onCoinPop), so the balance effect must not
       // also stream them into the corner — that would show the same gold arriving twice.
@@ -2108,56 +2845,38 @@ function GameApp({ savedState, account }) {
     setPendingPackType(null);
   }
 
-  function handleRingCraft(itemId, placedResourceIds = []) {
-    const item = ARCANA_ITEMS_BY_ID[itemId];
-    if (!item) return { ok: false, reason: 'unknown_item' };
-
-    const nextResources = { ...resources };
-    for (const resourceId of placedResourceIds) {
-      const have = nextResources[resourceId] ?? 0;
-      if (have < 1) return { ok: false, reason: 'insufficient_resources' };
-      nextResources[resourceId] = have - 1;
-    }
-
-    const newEntry = {
-      inventoryEntryId: `arcana-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      itemId,
-      name: item.name,
-      category: item.category,
-      description: item.description,
-      effect: item.effect,
-      craftedAt: new Date().toISOString(),
-    };
-
-    setResources({ ...DEFAULT_RESOURCES, ...nextResources });
-    setArcanaInventory(prev => [...prev, newEntry]);
-    return { ok: true, craftedCount: 1 };
-  }
-
   function removeFromPocket(cardId) {
     setPocket(prev => prev.filter(card => !sameCardId(card.id, cardId)));
   }
 
   function clearMiningCards(cardIds) {
     const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
+    const returnedTools = mineSlots
+      .filter(slot => slot.card && ids.some(cardId => sameCardId(slot.card.id, cardId)) && slot.tool)
+      .map(slot => ({ ...slot.tool }));
     setMineSlots(prev =>
       prev.map(slot =>
         slot.card && ids.some(cardId => sameCardId(slot.card.id, cardId))
-          ? { ...slot, card: null, startedAt: null, endsAt: null, oreType: null }
+          ? { ...slot, card: null, tool: null, momentumStacks: 0, startedAt: null, endsAt: null, oreType: null }
           : slot
       )
     );
+    if (returnedTools.length > 0) setToolInventory(prev => [...prev, ...returnedTools]);
   }
 
   function clearGatheringCards(cardIds) {
     const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
+    const returnedTools = gatheringSlots
+      .filter(slot => slot.card && ids.some(cardId => sameCardId(slot.card.id, cardId)) && slot.tool)
+      .map(slot => ({ ...slot.tool }));
     setGatheringSlots(prev =>
       prev.map(slot =>
         slot.card && ids.some(cardId => sameCardId(slot.card.id, cardId))
-          ? { ...slot, card: null, startedAt: null, endsAt: null, resourceId: null }
+          ? { ...slot, card: null, tool: null, momentumStacks: 0, startedAt: null, endsAt: null, resourceId: null }
           : slot
       )
     );
+    if (returnedTools.length > 0) setToolInventory(prev => [...prev, ...returnedTools]);
   }
 
   function clearProcessingCards(cardIds) {
@@ -2179,6 +2898,17 @@ function GameApp({ savedState, account }) {
           ? { ...slot, card: null }
           : slot
       )
+    );
+  }
+
+  function clearCraftingCards(cardIds) {
+    const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
+    setCraftingCardSlots(prev =>
+      prev.map(slot => (
+        slot.card && ids.some(cardId => sameCardId(slot.card.id, cardId))
+          ? { ...slot, card: null }
+          : slot
+      ))
     );
   }
 
@@ -2211,6 +2941,7 @@ function GameApp({ savedState, account }) {
     clearGatheringCards(cardId);
     clearProcessingCards(cardId);
     clearExpeditionCards(cardId);
+    clearCraftingCards(cardId);
     setPocket(prev => [...prev, { ...card }]);
     signalCardPlaced(card, { echo: false });   // into the hand — sound only
     return true;
@@ -2239,7 +2970,185 @@ function GameApp({ savedState, account }) {
   }
 
   function handlePocketRemove(cardId) {
+    if (sameCardId(focusedCardId, cardId)) {
+      setFocusedCardId(null);
+      setPendingSocketGemId(null);
+      setPendingSocketBinding(null);
+      setPendingCardCraftingItemId(null);
+    }
     removeFromPocket(cardId);
+  }
+
+  function handleInspectHandCard(cardId) {
+    if (!pocket.some(card => sameCardId(card.id, cardId))) return;
+    setCarriedResource(null);
+    setPendingSocketGemId(null);
+    setPendingSocketBinding(null);
+    setPendingCardCraftingItemId(null);
+    setFocusedCardId(cardId);
+    setInventoryOpen(true);
+  }
+
+  function handleSocketGemOnFocusedCard(gemId, binding = {}) {
+    const card = collection.find(entry => sameCardId(entry.id, focusedCardId));
+    const gem = GEM_RESOURCES_BY_ID[gemId];
+    if (!card || !gem || getCardSocketCount(card) <= 0) return false;
+    if (carriedResource?.source !== 'gathered' || carriedResource.id !== gemId) return false;
+    const family = getGemFamily(gemId);
+    if (family === 'diamond' && !(card.affixes ?? []).some(affix => affix.id === binding.boundAffixId)) return false;
+    if (family === 'topaz') {
+      if (!binding.boundResourceId || !binding.boundSource) return false;
+      if ((Number(binding.targetTier) || 1) > gem.tier) return false;
+      const targetOwned = getAvailableResourceCount(binding.boundSource, binding.boundResourceId);
+      if (targetOwned < 1) return false;
+    }
+
+    const updated = socketGemOnCard(card, gemId, binding);
+    if (!updated) return false;
+
+    setCollection(prev => prev.map(entry => sameCardId(entry.id, card.id) ? { ...updated } : entry));
+    setPocket(prev => prev.map(entry => sameCardId(entry.id, card.id) ? { ...updated } : entry));
+
+    if (family === 'topaz') {
+      const count = getAvailableResourceCount(binding.boundSource, binding.boundResourceId);
+      setInventoryResourceCount(binding.boundSource, binding.boundResourceId, count - 1);
+    }
+    audioEngine.play(SOUND_IDS.cardPlace);
+    setCarriedResource(null);
+    setPendingSocketGemId(null);
+    setPendingSocketBinding(null);
+    return true;
+  }
+
+  function handleCardCraftingResource({ source, id, cursor = null }) {
+    const card = collection.find(entry => sameCardId(entry.id, focusedCardId));
+    if (!card) return false;
+
+    if (source === 'crafted' && id === 'gemsettersChisel') {
+      if ((craftedInventory[id] ?? 0) <= 0) return true;
+      if (!addCardSocket(card)) return true;
+      setPendingSocketGemId(null);
+      setPendingSocketBinding(null);
+      setPendingCardCraftingItemId(id);
+      if (!(carriedResource?.source === source && carriedResource?.id === id)) {
+        handleBeginCarry({
+          source,
+          id,
+          name: CRAFTED_RESOURCES_BY_ID[id]?.name ?? "Gemsetter's Chisel",
+          amount: 1,
+          cursor,
+        });
+      }
+      return true;
+    }
+
+    if (source === 'crafted' && id === 'gemExtractor') {
+      if ((craftedInventory[id] ?? 0) > 0) {
+        setPendingSocketGemId(null);
+        setPendingSocketBinding(null);
+        setPendingCardCraftingItemId(current => current === id ? null : id);
+      }
+      return true;
+    }
+
+    const clickedGem = source === 'gathered' ? GEM_RESOURCES_BY_ID[id] : null;
+    const pendingGem = GEM_RESOURCES_BY_ID[pendingSocketGemId];
+    const pendingFamily = getGemFamily(pendingSocketGemId);
+
+    if (pendingGem && pendingFamily === 'topaz') {
+      const target = resolveCardFocusTarget(card, source, id);
+      if (target && (target.tier ?? 1) <= pendingGem.tier) {
+        setPendingSocketBinding({
+          boundResourceId: id,
+          boundSource: source,
+          boundName: target.name,
+          targetTier: target.tier ?? 1,
+        });
+        return true;
+      }
+    }
+
+    if (clickedGem) {
+      if (!socketGemOnCard(card, clickedGem.id, {})) return true;
+      setPendingCardCraftingItemId(null);
+      setPendingSocketBinding(null);
+      setPendingSocketGemId(clickedGem.id);
+      if (!(carriedResource?.source === source && carriedResource?.id === id)) {
+        handleBeginCarry({
+          source,
+          id,
+          name: clickedGem.name,
+          amount: 1,
+          cursor,
+        });
+      }
+      return true;
+    }
+
+    return Boolean(pendingGem);
+  }
+
+  function handleCardCraftingCardSelect() {
+    if (
+      pendingCardCraftingItemId !== 'gemsettersChisel'
+      && pendingSocketGemId
+      && carriedResource?.source === 'gathered'
+      && carriedResource.id === pendingSocketGemId
+    ) {
+      return handleSocketGemOnFocusedCard(pendingSocketGemId, pendingSocketBinding ?? {});
+    }
+
+    if (
+      pendingCardCraftingItemId === 'gemsettersChisel'
+      && carriedResource?.source === 'crafted'
+      && carriedResource?.id === 'gemsettersChisel'
+    ) {
+      const card = collection.find(entry => sameCardId(entry.id, focusedCardId));
+      if (!card) return false;
+      const updated = addCardSocket(card);
+      if (!updated) return false;
+      setCollection(prev => prev.map(entry => sameCardId(entry.id, card.id) ? { ...updated } : entry));
+      setPocket(prev => prev.map(entry => sameCardId(entry.id, card.id) ? { ...updated } : entry));
+      setCarriedResource(null);
+      setPendingCardCraftingItemId(null);
+      audioEngine.play(SOUND_IDS.cardPlace);
+      return true;
+    }
+
+    return false;
+  }
+
+  function handleCardCraftingSocketSelect(socketIndex) {
+    if (pendingCardCraftingItemId !== 'gemExtractor') return;
+    const card = collection.find(entry => sameCardId(entry.id, focusedCardId));
+    if (!card || (craftedInventory.gemExtractor ?? 0) <= 0) return;
+    const extracted = extractSocketedGem(card, socketIndex);
+    if (!extracted) return;
+    setCollection(prev => prev.map(entry => sameCardId(entry.id, card.id) ? { ...extracted.card } : entry));
+    setPocket(prev => prev.map(entry => sameCardId(entry.id, card.id) ? { ...extracted.card } : entry));
+    setCraftedInventory(prev => ({ ...prev, gemExtractor: Math.max(0, (prev.gemExtractor ?? 0) - 1) }));
+    setGatheredInventory(prev => ({ ...prev, [extracted.gemId]: (prev[extracted.gemId] ?? 0) + 1 }));
+    setPendingCardCraftingItemId(null);
+    audioEngine.play(SOUND_IDS.cardPlace);
+  }
+
+  function handleCardCraftingAffixSelect(affixId) {
+    if (getGemFamily(pendingSocketGemId) !== 'diamond') return;
+    setPendingSocketBinding({ boundAffixId: affixId });
+  }
+
+  function closeCardCrafting() {
+    if (
+      (carriedResource?.source === 'crafted' && carriedResource.id === 'gemsettersChisel')
+      || (carriedResource?.source === 'gathered' && GEM_RESOURCES_BY_ID[carriedResource.id])
+    ) {
+      restoreCarriedStack(carriedResource);
+      setCarriedResource(null);
+    }
+    setFocusedCardId(null);
+    setPendingSocketGemId(null);
+    setPendingSocketBinding(null);
+    setPendingCardCraftingItemId(null);
   }
 
   function getAvailableResourceCount(source, id) {
@@ -2247,6 +3156,7 @@ function GameApp({ savedState, account }) {
     if (source === 'ingot') return ingotInventory[id] ?? 0;
     if (source === 'gathered') return gatheredInventory[id] ?? 0;
     if (source === 'processed') return processedInventory[id] ?? 0;
+    if (source === 'crafted') return craftedInventory[id] ?? 0;
     if (source === 'arcana') return resources[id] ?? 0;
     if (source === 'arcana-item') return arcanaInventory.filter(item => item.itemId === id).length;
     return 0;
@@ -2270,6 +3180,10 @@ function GameApp({ savedState, account }) {
       setProcessedInventory(prev => ({ ...prev, [id]: safeCount }));
       return;
     }
+    if (source === 'crafted') {
+      setCraftedInventory(prev => ({ ...prev, [id]: safeCount }));
+      return;
+    }
     if (source === 'arcana') {
       setResources(prev => ({ ...prev, [id]: safeCount }));
     }
@@ -2277,6 +3191,11 @@ function GameApp({ savedState, account }) {
 
   function restoreCarriedStack(stack) {
     if (!stack) return;
+    if (stack.source === 'tool') {
+      const tool = stack.entries?.[0];
+      if (tool) setToolInventory(prev => prev.some(entry => entry.id === tool.id) ? prev : [...prev, { ...tool }]);
+      return;
+    }
     if (stack.source === 'arcana-item') {
       if (!Array.isArray(stack.entries) || stack.entries.length === 0) return;
       setArcanaInventory(prev => [...prev, ...stack.entries]);
@@ -2324,13 +3243,13 @@ function GameApp({ savedState, account }) {
     if (!requested) return false;
     const slot = forgeFuelSlots.find(s => s.slotId === slotId);
     if (!slot || slot.loadedCoal < requested) return false;
+    const fuelType = slot.fuelType ?? FORGE_FUEL_TYPE;
+    const source = fuelType === 'gemdust' ? 'gathered' : 'ore';
+    const remaining = slot.loadedCoal - requested;
     setForgeFuelSlots(prev => prev.map(s =>
-      s.slotId === slotId ? { ...s, loadedCoal: s.loadedCoal - requested } : s
+      s.slotId === slotId ? { ...s, loadedCoal: remaining, ...(remaining > 0 ? null : { fuelType: null, currentCoalCharges: 0 }) } : s
     ));
-    // `ore`, not `gathered`. Coal is canonically an ore now (see GATHERED_CANONICAL_TARGET), and
-    // hardcoding `gathered` here is what made coal visibly jump from the Ores section to the
-    // Gathered section just for having passed through the forge.
-    setCarriedResource({ key: 'ore:coal', source: 'ore', id: FORGE_FUEL_TYPE, name: 'Coal', count: requested });
+    setCarriedResource({ key: `${source}:${fuelType}`, source, id: fuelType, name: fuelType === 'gemdust' ? 'Gemdust' : 'Coal', count: requested });
     return true;
   }
 
@@ -2342,16 +3261,19 @@ function GameApp({ savedState, account }) {
     const remaining = slot.count - requested;
     setForgeOreSlots(prev => prev.map(s =>
       s.slotId === slotId
-        ? remaining > 0 ? { ...s, count: remaining } : { ...s, oreType: null, count: 0 }
+        ? remaining > 0 ? { ...s, count: remaining } : { ...s, oreType: null, source: null, count: 0 }
         : s
     ));
-    const ore = ORE_TYPES.find(o => o.id === slot.oreType);
-    setCarriedResource({ key: `ore:${slot.oreType}`, source: 'ore', id: slot.oreType, name: ore?.name ?? slot.oreType, count: requested });
+    const source = slot.source ?? 'ore';
+    const resource = source === 'gathered'
+      ? ALL_GATHERING_RESOURCES.find(entry => entry.id === slot.oreType)
+      : ORE_TYPES.find(entry => entry.id === slot.oreType);
+    setCarriedResource({ key: `${source}:${slot.oreType}`, source, id: slot.oreType, name: resource?.name ?? slot.oreType, count: requested });
     return true;
   }
 
   function handleLoadForgeIngredientFromCarry(slotId) {
-    if (!carriedResource || carriedResource.source !== 'ingot') return false;
+    if (!carriedResource || !['ingot', 'arcana'].includes(carriedResource.source)) return false;
     const slotIndex = forgeIngredientSlots.findIndex(s => s.slotId === slotId);
     if (slotIndex < 0) return false;
     const oreSlot = forgeOreSlots[slotIndex];
@@ -2367,13 +3289,13 @@ function GameApp({ savedState, account }) {
      * Once a recipe IS known the type is still enforced, so a wrong ingot cannot be pushed into a
      * row whose requirement is already visible on the slot.
      */
-    if (required && required.type !== carriedResource.id) return false;
+    if (required && (required.type !== carriedResource.id || (required.source ?? 'ingot') !== carriedResource.source)) return false;
     const ingSlot = forgeIngredientSlots[slotIndex];
-    if (ingSlot.ingotType && ingSlot.ingotType !== carriedResource.id) return false;
+    if (ingSlot.ingotType && (ingSlot.ingotType !== carriedResource.id || (ingSlot.source ?? 'ingot') !== carriedResource.source)) return false;
     setForgeIngredientSlots(prev =>
       prev.map(s =>
         s.slotId === slotId
-          ? { ...s, ingotType: carriedResource.id, count: (s.count ?? 0) + carriedResource.count }
+          ? { ...s, ingotType: carriedResource.id, source: carriedResource.source, count: (s.count ?? 0) + carriedResource.count }
           : s
       )
     );
@@ -2386,11 +3308,11 @@ function GameApp({ savedState, account }) {
     setForgeIngredientSlots(prev =>
       prev.map(s => {
         if (s.slotId !== slotId || !s.ingotType || !(s.count > 0)) return s;
-        removed = { id: s.ingotType, count: s.count };
-        return { ...s, ingotType: null, count: 0 };
+        removed = { source: s.source ?? 'ingot', id: s.ingotType, count: s.count };
+        return { ...s, ingotType: null, source: null, count: 0 };
       })
     );
-    if (removed) setIngotInventory(prev => ({ ...prev, [removed.id]: (prev[removed.id] ?? 0) + removed.count }));
+    if (removed) setInventoryResourceCount(removed.source, removed.id, getAvailableResourceCount(removed.source, removed.id) + removed.count);
     return Boolean(removed);
   }
 
@@ -2402,11 +3324,53 @@ function GameApp({ savedState, account }) {
     const remaining = slot.count - requested;
     setForgeIngredientSlots(prev => prev.map(s =>
       s.slotId === slotId
-        ? remaining > 0 ? { ...s, count: remaining } : { ...s, ingotType: null, count: 0 }
+        ? remaining > 0 ? { ...s, count: remaining } : { ...s, ingotType: null, source: null, count: 0 }
         : s
     ));
-    const ingot = INGOT_RESOURCES[slot.ingotType];
-    setCarriedResource({ key: `ingot:${slot.ingotType}`, source: 'ingot', id: slot.ingotType, name: ingot?.name ?? slot.ingotType, count: requested });
+    const source = slot.source ?? 'ingot';
+    const ingredient = source === 'ingot' ? INGOT_RESOURCES[slot.ingotType] : null;
+    setCarriedResource({ key: `${source}:${slot.ingotType}`, source, id: slot.ingotType, name: ingredient?.name ?? slot.ingotType, count: requested });
+    return true;
+  }
+
+  function handleLoadForgeBoosterFromCarry(slotId) {
+    if (carriedResource?.source !== 'crafted' || !['flux', 'arcaneFlux'].includes(carriedResource.id)) return false;
+    const slotIndex = forgeIngredientSlots.findIndex(slot => slot.slotId === slotId);
+    if (slotIndex < 0 || forgeFuelSlots[slotIndex]?.endsAt) return false;
+    const current = forgeIngredientSlots[slotIndex];
+    if (current.boosterId && current.boosterId !== carriedResource.id && current.boosterCount > 0) return false;
+    setForgeIngredientSlots(prev => prev.map((slot, index) => (
+      index === slotIndex ? addForgeBooster(slot, carriedResource.id, carriedResource.count) : slot
+    )));
+    setCarriedResource(null);
+    return true;
+  }
+
+  function handleUnsocketForgeBooster(slotId) {
+    const slotIndex = forgeIngredientSlots.findIndex(slot => slot.slotId === slotId);
+    const slot = forgeIngredientSlots[slotIndex];
+    if (slotIndex < 0 || !slot?.boosterId || !slot.boosterCount || forgeFuelSlots[slotIndex]?.endsAt) return false;
+    setCraftedInventory(prev => ({ ...prev, [slot.boosterId]: (prev[slot.boosterId] ?? 0) + slot.boosterCount }));
+    setForgeIngredientSlots(prev => prev.map((entry, index) => (
+      index === slotIndex ? { ...entry, boosterId: null, boosterCount: 0, boosterCharges: 0 } : entry
+    )));
+    return true;
+  }
+
+  function handlePickUpForgeBooster(slotId) {
+    const slotIndex = forgeIngredientSlots.findIndex(slot => slot.slotId === slotId);
+    const slot = forgeIngredientSlots[slotIndex];
+    if (slotIndex < 0 || !slot?.boosterId || !slot.boosterCount || forgeFuelSlots[slotIndex]?.endsAt || carriedResource) return false;
+    setForgeIngredientSlots(prev => prev.map((entry, index) => (
+      index === slotIndex ? { ...entry, boosterId: null, boosterCount: 0, boosterCharges: 0 } : entry
+    )));
+    setCarriedResource({
+      key: `crafted:${slot.boosterId}`,
+      source: 'crafted',
+      id: slot.boosterId,
+      name: CRAFTED_RESOURCES_BY_ID[slot.boosterId]?.name ?? slot.boosterId,
+      count: slot.boosterCount,
+    });
     return true;
   }
 
@@ -2418,14 +3382,146 @@ function GameApp({ savedState, account }) {
     return true;
   }
 
+  function handleLoadCraftingMaterialFromCarry(slotId) {
+    return handleDistributeCraftingMaterialFromCarry([slotId]);
+  }
+
+  function handleDistributeCraftingMaterialFromCarry(slotIds) {
+    if (!carriedResource || !CRAFTING_RESOURCE_SOURCES.includes(carriedResource.source)) return false;
+    const distribution = distributeCraftingStack(craftingGridSlots, carriedResource, slotIds);
+    if (!distribution.placed) return false;
+    setCraftingGridSlots(distribution.slots);
+    setCarriedResource(null);
+    return true;
+  }
+
+  function handlePickUpCraftingMaterial(slotId, amount) {
+    if (carriedResource) return false;
+    const requested = Math.max(1, Math.floor(Number(amount) || 0));
+    const slot = craftingGridSlots.find(entry => entry.slotId === slotId);
+    if (!slot?.id || !slot.source || !requested || slot.count < requested) return false;
+    const remaining = slot.count - requested;
+    setCraftingGridSlots(prev => prev.map(entry => (
+      entry.slotId !== slotId
+        ? entry
+        : remaining > 0
+          ? { ...entry, count: remaining }
+          : { ...entry, source: null, id: null, name: '', count: 0 }
+    )));
+    setCarriedResource({
+      key: `${slot.source}:${slot.id}`,
+      source: slot.source,
+      id: slot.id,
+      name: slot.name || slot.id,
+      count: requested,
+    });
+    return true;
+  }
+
+  function returnCraftingMaterial(slot) {
+    if (!slot?.source || !slot.id || !(slot.count > 0)) return;
+    const add = updater => updater(prev => ({ ...prev, [slot.id]: (prev[slot.id] ?? 0) + slot.count }));
+    if (slot.source === 'ore') add(setOreInventory);
+    else if (slot.source === 'ingot') add(setIngotInventory);
+    else if (slot.source === 'gathered') add(setGatheredInventory);
+    else if (slot.source === 'processed') add(setProcessedInventory);
+    else if (slot.source === 'crafted') add(setCraftedInventory);
+    else if (slot.source === 'arcana') add(setResources);
+  }
+
+  function handleUnloadCraftingMaterial(slotId) {
+    const slot = craftingGridSlots.find(entry => entry.slotId === slotId);
+    if (!slot?.id || !(slot.count > 0)) return false;
+    returnCraftingMaterial(slot);
+    setCraftingGridSlots(prev => prev.map(entry => (
+      entry.slotId === slotId
+        ? { ...entry, source: null, id: null, name: '', count: 0 }
+        : entry
+    )));
+    return true;
+  }
+
+  function handleClearCraftingMaterials() {
+    const filled = craftingGridSlots.filter(slot => slot.id && slot.count > 0);
+    if (filled.length === 0) return false;
+    filled.forEach(returnCraftingMaterial);
+    setCraftingGridSlots(createCraftingGridSlots());
+    return true;
+  }
+
+  function handleCraftGridRecipe({ max = false } = {}) {
+    const result = craftGridRecipe(craftingGridSlots, max ? Infinity : 1);
+    if (!result.recipe || !result.output) return false;
+    setCraftingGridSlots(result.slots);
+    if (result.output.kind === 'tool') {
+      const rolledTools = Array.from({ length: result.output.count }, () => rollTool(
+        result.output.toolType,
+        result.output.tier,
+        {
+          materialQuality: result.output.materialQuality,
+          components: result.output.components,
+          materialScore: result.output.materialScore,
+        },
+      )).filter(Boolean);
+      setToolInventory(prev => [...prev, ...rolledTools]);
+      return rolledTools.length > 0;
+    }
+    if (result.output.kind === 'arcana') {
+      setResources(prev => ({
+        ...prev,
+        [result.output.id]: (prev[result.output.id] ?? 0) + result.output.count,
+      }));
+      return true;
+    }
+    if (result.output.kind === 'calling') {
+      setArcanaInventory(prev => {
+        let next = [...prev];
+        for (let index = 0; index < result.output.count; index += 1) {
+          next = [...next, createCraftedInventoryItem(result.output.id, {
+            inventory: next,
+            craftedAt: new Date().toISOString(),
+          })];
+        }
+        return next;
+      });
+      return true;
+    }
+    if (result.output.kind === 'gathered') {
+      setGatheredInventory(prev => ({
+        ...prev,
+        [result.output.id]: (prev[result.output.id] ?? 0) + result.output.count,
+      }));
+      return true;
+    }
+    if (result.output.kind === 'tieredCrafted') {
+      setCraftedInventory(prev => ({
+        ...prev,
+        [result.output.id]: (prev[result.output.id] ?? 0) + result.output.count,
+      }));
+      return true;
+    }
+    setCraftedInventory(prev => ({
+      ...prev,
+      [result.output.id]: (prev[result.output.id] ?? 0) + result.output.count,
+    }));
+    return true;
+  }
+
   function handleLoadForgeFuelFromCarry(slotId) {
-    if (!carriedResource || carriedResource.id !== FORGE_FUEL_TYPE) return false;
+    if (!carriedResource) return false;
+    const isCoal = carriedResource.source === 'ore' && carriedResource.id === FORGE_FUEL_TYPE;
+    const isGemdust = carriedResource.source === 'gathered' && carriedResource.id === 'gemdust';
+    if (!isCoal && !isGemdust) return false;
     const slot = forgeFuelSlots.find(s => s.slotId === slotId);
     if (!slot) return false;
+    const slotIndex = forgeFuelSlots.findIndex(s => s.slotId === slotId);
+    const recipe = SMELT_RECIPES[forgeOreSlots[slotIndex]?.oreType];
+    if (recipe && recipe.fuelType !== carriedResource.id) return false;
+    if (slot.loadedCoal > 0 && (slot.fuelType ?? FORGE_FUEL_TYPE) !== carriedResource.id) return false;
     setForgeFuelSlots(prev =>
       prev.map(s =>
         s.slotId === slotId
-          ? { slotId: s.slotId, ...addForgeFuel(s, carriedResource.count), activeSlotId: s.slotId }
+          ? { slotId: s.slotId, ...addForgeFuel(s, carriedResource.count, carriedResource.id), activeSlotId: s.slotId }
           : s
       )
     );
@@ -2514,12 +3610,15 @@ function GameApp({ savedState, account }) {
 
   function handleSocketPocketCardToMine(cardId, slotId) {
     const card = pocket.find(entry => sameCardId(entry.id, cardId));
-    if (!card) return false;
+    if (!card || !isMiningCardCompatible(card)) return false;
     const target = mineSlots.find(slot => slot.slotId === slotId);
     if (!target) return false;
     if (sameCardId(target.card?.id, cardId)) return false;
     // Read the outgoing card before mutating, so the swap stays pure.
     const displaced = target.card ? { ...target.card } : null;
+    const displacedTool = target.tool && !isToolCompatibleWithStation(target.tool, 'mine', card)
+      ? { ...target.tool }
+      : null;
     const now = Date.now();
 
     setMineSlots(prev =>
@@ -2527,26 +3626,31 @@ function GameApp({ savedState, account }) {
         ? startMiningSlots([{
             ...slot,
             card: { ...card },
+            tool: displacedTool ? null : slot.tool,
+            momentumStacks: 0,
             startedAt: null,
             endsAt: null,
             oreType: null,
           }], now)[0]
         : slot)
     );
+    if (displacedTool) setToolInventory(prev => [...prev, displacedTool]);
     resolveSlotSwap(cardId, displaced);
     return true;
   }
 
   function handleUnsocketMineCard(slotId) {
-    let removedCard = null;
+    const existing = mineSlots.find(slot => slot.slotId === slotId);
+    const removedCard = existing?.card ? { ...existing.card } : null;
+    const removedTool = existing?.tool ? { ...existing.tool } : null;
     setMineSlots(prev =>
       prev.map(slot => {
         if (slot.slotId !== slotId || !slot.card) return slot;
-        removedCard = { ...slot.card };
-        return { ...slot, card: null, startedAt: null, endsAt: null, oreType: null };
+        return { ...slot, card: null, tool: null, momentumStacks: 0, startedAt: null, endsAt: null, oreType: null };
       })
     );
     if (!removedCard) return false;
+    if (removedTool) setToolInventory(prev => [...prev, removedTool]);
     /**
      * Released to the COLLECTION, not the Hand. Station slots hold copies of collection cards and
      * `collection` always still has the original, so clearing the slot IS returning it — no state to
@@ -2555,6 +3659,52 @@ function GameApp({ savedState, account }) {
      * were about to drag something else into. Drag a card out of a slot onto the Hand when that is
      * what you want; see handleAddToHandFromStation.
      */
+    return true;
+  }
+
+  function handleBeginToolDrag(tool, cursor = null) {
+    if (!tool?.id || !toolInventory.some(entry => entry.id === tool.id)) return false;
+    if (cursor) setCarriedResourceCursor(cursor);
+    setToolInventory(prev => prev.filter(entry => entry.id !== tool.id));
+    setCarriedResource({
+      key: `tool:${tool.id}`,
+      source: 'tool',
+      id: tool.id,
+      name: tool.name,
+      count: 1,
+      artKey: tool.artKey,
+      entries: [{ ...tool }],
+    });
+    resourceDragInFlightRef.current = true;
+    resourceDragResolvedRef.current = false;
+    return true;
+  }
+
+  function handleSocketMineTool(toolId, slotId) {
+    const carriedTool = carriedResource?.source === 'tool' ? carriedResource.entries?.[0] : null;
+    if (!carriedTool || carriedTool.id !== toolId) return false;
+    const target = mineSlots.find(slot => slot.slotId === slotId);
+    if (!target?.card || !isToolCompatibleWithStation(carriedTool, 'mine', target.card)) return false;
+    const displaced = target.tool ? { ...target.tool } : null;
+    const now = Date.now();
+    setMineSlots(prev => prev.map(slot => slot.slotId === slotId
+      ? startMiningSlots([{ ...slot, tool: { ...carriedTool }, momentumStacks: 0, startedAt: null, endsAt: null, oreType: null }], now)[0]
+      : slot));
+    if (displaced) setToolInventory(prev => [...prev, displaced]);
+    resourceDragInFlightRef.current = false;
+    resourceDragResolvedRef.current = true;
+    setCarriedResource(null);
+    return true;
+  }
+
+  function handleUnsocketMineTool(slotId) {
+    const tool = mineSlots.find(slot => slot.slotId === slotId)?.tool;
+    if (!tool) return false;
+    const now = Date.now();
+    setMineSlots(prev => prev.map(slot => slot.slotId === slotId
+      ? startMiningSlots([{ ...slot, tool: null, momentumStacks: 0, startedAt: null, endsAt: null, oreType: null }], now)[0]
+      : slot));
+    setToolInventory(prev => [...prev, { ...tool }]);
     return true;
   }
 
@@ -2613,8 +3763,12 @@ function GameApp({ savedState, account }) {
   // behind the click. See handleCollectQueue in Foundry.jsx.
   function handleCollectMinedOre() {
     const queue = mineClaimQueueRef.current;
-    if (!hasQueuedOre(queue) && !hasQueuedBonusRewards(mineRewardQueue)) return;
-    setOreInventory(prev => addOreCounts(prev, queue));
+    if (!hasQueuedMineResources(queue) && !hasQueuedBonusRewards(mineRewardQueue)) return;
+    const mined = splitMinedResources(queue);
+    setOreInventory(prev => addOreCounts(prev, mined.ore));
+    if (Object.keys(mined.gathered).length > 0) {
+      setGatheredInventory(prev => addGatheredCounts(prev, mined.gathered));
+    }
     if (hasQueuedBonusRewards(mineRewardQueue)) {
       const { coins = 0, ...elementalDrops } = mineRewardQueue;
       if (coins > 0) {
@@ -2623,13 +3777,13 @@ function GameApp({ savedState, account }) {
       }
       setResources(prev => mergeResourceCounts(prev, elementalDrops));
     }
-    setMineClaimQueue({ ...DEFAULT_ORE_INVENTORY });
+    setMineClaimQueue({ ...DEFAULT_MINE_CLAIM_QUEUE });
     setMineRewardQueue({ ...DEFAULT_BONUS_REWARD_QUEUE });
   }
 
   function handleSocketForgeCard(cardId, slotId) {
     const card = collection.find(entry => sameCardId(entry.id, cardId));
-    if (!card) return false;
+    if (!card || !['blacksmith', 'gemcutter'].includes(card.classType)) return false;
     const target = forgeCardSlots.find(slot => slot.slotId === slotId);
     if (!target) return false;
     if (sameCardId(target.card?.id, cardId)) return false;
@@ -2654,33 +3808,58 @@ function GameApp({ savedState, account }) {
     return removed;
   }
 
+  function handleSocketCraftingCard(cardId, slotId) {
+    const card = pocket.find(entry => sameCardId(entry.id, cardId));
+    if (!card) return false;
+    const target = craftingCardSlots.find(slot => slot.slotId === slotId);
+    if (!target || sameCardId(target.card?.id, cardId)) return false;
+    const displaced = target.card ? { ...target.card } : null;
+    setCraftingCardSlots(prev => prev.map(slot => (
+      slot.slotId === slotId ? { ...slot, card: { ...card } } : slot
+    )));
+    resolveSlotSwap(cardId, displaced);
+    return true;
+  }
+
+  function handleUnsocketCraftingCard(slotId) {
+    let removed = false;
+    setCraftingCardSlots(prev => prev.map(slot => {
+      if (slot.slotId !== slotId || !slot.card) return slot;
+      removed = true;
+      return { ...slot, card: null };
+    }));
+    return removed;
+  }
+
   function handleSocketForgeOre(oreType, slotId) {
-    if (!ORE_TO_INGOT[oreType]) return false;
+    const recipe = SMELT_RECIPES[oreType];
+    if (!recipe || recipe.inputSource !== 'ore') return false;
     const pending = forgeOutputQueues[String(slotId)] ?? {};
-    if (Object.entries(pending).some(([ingotId, count]) => count > 0 && ingotId !== ORE_TO_INGOT[oreType])) return false;
+    if (Object.entries(pending).some(([outputId, count]) => count > 0 && outputId !== recipe.outputId)) return false;
     let changed = false;
     setForgeOreSlots(prev =>
       prev.map(slot => {
         if (slot.slotId !== slotId) return slot;
         changed = true;
-        return { ...slot, oreType, count: Math.max(1, slot.count ?? 0) };
+        return { ...slot, oreType, source: 'ore', count: Math.max(1, slot.count ?? 0) };
       })
     );
     return changed;
   }
 
   function handleLoadForgeOreFromCarry(slotId) {
-    if (!carriedResource || carriedResource.source !== 'ore') return false;
-    if (!SMELT_RECIPES[carriedResource.id]) return false; // stone/coal are not smeltable
+    if (!carriedResource) return false;
+    const recipe = SMELT_RECIPES[carriedResource.id];
+    if (!recipe || recipe.inputSource !== carriedResource.source) return false;
     const slot = forgeOreSlots.find(s => s.slotId === slotId);
     if (!slot) return false;
-    if (slot.oreType && slot.oreType !== carriedResource.id) return false;
+    if (slot.oreType && (slot.oreType !== carriedResource.id || (slot.source ?? 'ore') !== carriedResource.source)) return false;
     const pending = forgeOutputQueues[String(slotId)] ?? {};
-    if (Object.entries(pending).some(([ingotId, count]) => count > 0 && ingotId !== ORE_TO_INGOT[carriedResource.id])) return false;
+    if (Object.entries(pending).some(([outputId, count]) => count > 0 && outputId !== recipe.outputId)) return false;
     setForgeOreSlots(prev =>
       prev.map(s =>
         s.slotId === slotId
-          ? { ...s, oreType: carriedResource.id, count: (s.count ?? 0) + carriedResource.count }
+          ? { ...s, oreType: carriedResource.id, source: carriedResource.source, count: (s.count ?? 0) + carriedResource.count }
           : s
       )
     );
@@ -2693,12 +3872,12 @@ function GameApp({ savedState, account }) {
     setForgeOreSlots(prev =>
       prev.map(slot => {
         if (slot.slotId !== slotId || !slot.oreType || !(slot.count > 0)) return slot;
-        removedOre = { id: slot.oreType, count: slot.count };
-        return { ...slot, oreType: null, count: 0 };
+        removedOre = { source: slot.source ?? 'ore', id: slot.oreType, count: slot.count };
+        return { ...slot, oreType: null, source: null, count: 0 };
       })
     );
     if (removedOre) {
-      setOreInventory(prev => ({ ...prev, [removedOre.id]: (prev[removedOre.id] ?? 0) + removedOre.count }));
+      setInventoryResourceCount(removedOre.source, removedOre.id, getAvailableResourceCount(removedOre.source, removedOre.id) + removedOre.count);
     }
     return Boolean(removedOre);
   }
@@ -2707,26 +3886,39 @@ function GameApp({ savedState, account }) {
     const slot = forgeFuelSlots.find(entry => entry.slotId === slotId);
     if (!slot?.loadedCoal) return false;
     const returnedCount = slot.loadedCoal;
+    const fuelType = slot.fuelType ?? FORGE_FUEL_TYPE;
     setForgeFuelSlots(prev =>
       prev.map(entry => entry.slotId === slotId ? { slotId: entry.slotId, ...createForgeFuelState() } : entry)
     );
     // Ore inventory, matching where a carried pick-up returns it. Unloading used to put coal into
     // `gatheredInventory` while loading could take it from either, so the same coal moved sections
     // depending on which button you used.
-    setOreInventory(prev => ({ ...prev, [FORGE_FUEL_TYPE]: (prev[FORGE_FUEL_TYPE] ?? 0) + returnedCount }));
+    const source = fuelType === 'gemdust' ? 'gathered' : 'ore';
+    setInventoryResourceCount(source, fuelType, getAvailableResourceCount(source, fuelType) + returnedCount);
     return true;
   }
 
   function handleCollectIngotOutput(slotId) {
     const collected = { ...(forgeOutputQueues[String(slotId)] ?? {}) };
     if (!hasProductionOutput(collected)) return false;
-    setIngotInventory(prev => {
-      const next = { ...prev };
-      Object.entries(collected).forEach(([ingotId, count]) => {
-        next[ingotId] = (next[ingotId] ?? 0) + count;
-      });
-      return next;
+    const ingots = {};
+    const gathered = {};
+    const crafted = {};
+    Object.entries(collected).forEach(([outputId, count]) => {
+      const outputSource = getForgeOutputSource(outputId);
+      if (outputSource === 'gathered') gathered[outputId] = (gathered[outputId] ?? 0) + count;
+      else if (outputSource === 'crafted') crafted[outputId] = (crafted[outputId] ?? 0) + count;
+      else ingots[outputId] = (ingots[outputId] ?? 0) + count;
     });
+    if (Object.keys(ingots).length) {
+      setIngotInventory(prev => ({ ...prev, ...Object.fromEntries(Object.entries(ingots).map(([id, count]) => [id, (prev[id] ?? 0) + count])) }));
+    }
+    if (Object.keys(gathered).length) {
+      setGatheredInventory(prev => ({ ...prev, ...Object.fromEntries(Object.entries(gathered).map(([id, count]) => [id, (prev[id] ?? 0) + count])) }));
+    }
+    if (Object.keys(crafted).length) {
+      setCraftedInventory(prev => ({ ...prev, ...Object.fromEntries(Object.entries(crafted).map(([id, count]) => [id, (prev[id] ?? 0) + count])) }));
+    }
     // Subtract the press-time snapshot rather than clearing the row. A cycle that finishes during the
     // flight belongs to the next collection and must remain waiting on this same output.
     setForgeOutputQueues(prev => subtractProductionOutputs(prev, slotId, collected));
@@ -2750,6 +3942,9 @@ function GameApp({ savedState, account }) {
     if (!target) return false;
     if (sameCardId(target.card?.id, cardId)) return false;
     const displaced = target.card ? { ...target.card } : null;
+    const displacedTool = target.tool && !isToolCompatibleWithStation(target.tool, 'gathering', card)
+      ? { ...target.tool }
+      : null;
     const now = Date.now();
 
     setGatheringSlots(prev =>
@@ -2757,26 +3952,31 @@ function GameApp({ savedState, account }) {
         ? startGatheringSlots([{
             ...slot,
             card: { ...card },
+            tool: displacedTool ? null : slot.tool,
+            momentumStacks: 0,
             startedAt: null,
             endsAt: null,
             resourceId: null,
           }], now)[0]
         : slot)
     );
+    if (displacedTool) setToolInventory(prev => [...prev, displacedTool]);
     resolveSlotSwap(cardId, displaced);
     return true;
   }
 
   function handleUnsocketGatheringCard(slotId) {
-    let removedCard = null;
+    const existing = gatheringSlots.find(slot => slot.slotId === slotId);
+    const removedCard = existing?.card ? { ...existing.card } : null;
+    const removedTool = existing?.tool ? { ...existing.tool } : null;
     setGatheringSlots(prev =>
       prev.map(slot => {
         if (slot.slotId !== slotId || !slot.card) return slot;
-        removedCard = { ...slot.card };
-        return { ...slot, card: null, startedAt: null, endsAt: null, resourceId: null };
+        return { ...slot, card: null, tool: null, momentumStacks: 0, startedAt: null, endsAt: null, resourceId: null };
       })
     );
     if (!removedCard) return false;
+    if (removedTool) setToolInventory(prev => [...prev, removedTool]);
     /**
      * Released to the COLLECTION, not the Hand. Station slots hold copies of collection cards and
      * `collection` always still has the original, so clearing the slot IS returning it — no state to
@@ -2785,6 +3985,34 @@ function GameApp({ savedState, account }) {
      * were about to drag something else into. Drag a card out of a slot onto the Hand when that is
      * what you want; see handleAddToHandFromStation.
      */
+    return true;
+  }
+
+  function handleSocketGatheringTool(toolId, slotId) {
+    const carriedTool = carriedResource?.source === 'tool' ? carriedResource.entries?.[0] : null;
+    if (!carriedTool || carriedTool.id !== toolId) return false;
+    const target = gatheringSlots.find(slot => slot.slotId === slotId);
+    if (!target?.card || !isToolCompatibleWithStation(carriedTool, 'gathering', target.card)) return false;
+    const displaced = target.tool ? { ...target.tool } : null;
+    const now = Date.now();
+    setGatheringSlots(prev => prev.map(slot => slot.slotId === slotId
+      ? startGatheringSlots([{ ...slot, tool: { ...carriedTool }, momentumStacks: 0, startedAt: null, endsAt: null, resourceId: null }], now)[0]
+      : slot));
+    if (displaced) setToolInventory(prev => [...prev, displaced]);
+    resourceDragInFlightRef.current = false;
+    resourceDragResolvedRef.current = true;
+    setCarriedResource(null);
+    return true;
+  }
+
+  function handleUnsocketGatheringTool(slotId) {
+    const tool = gatheringSlots.find(slot => slot.slotId === slotId)?.tool;
+    if (!tool) return false;
+    const now = Date.now();
+    setGatheringSlots(prev => prev.map(slot => slot.slotId === slotId
+      ? startGatheringSlots([{ ...slot, tool: null, momentumStacks: 0, startedAt: null, endsAt: null, resourceId: null }], now)[0]
+      : slot));
+    setToolInventory(prev => [...prev, { ...tool }]);
     return true;
   }
 
@@ -2837,10 +4065,14 @@ function GameApp({ savedState, account }) {
 
   function handleSocketPocketCardToProcessing(cardId, slotId) {
     const card = pocket.find(entry => sameCardId(entry.id, cardId));
-    if (!card) return false;
+    if (!card || !isProcessingCardCompatible(card)) return false;
     const target = processingSlots.find(slot => slot.slotId === slotId);
     if (!target) return false;
     if (sameCardId(target.card?.id, cardId)) return false;
+    const candidate = { ...target, card: { ...card } };
+    if ((target.inputId || target.ingredientId) && !getProcessingRecipe(candidate)) return false;
+    const loadedBooster = PROCESSING_BOOSTERS[target.boosterId];
+    if (loadedBooster && target.boosterCount > 0 && loadedBooster.classType !== card.classType) return false;
     const displaced = target.card ? { ...target.card } : null;
 
     setProcessingSlots(prev =>
@@ -2879,26 +4111,18 @@ function GameApp({ savedState, account }) {
   }
 
   function handleLoadProcessingInputFromCarry(slotId) {
-    if (!carriedResource || carriedResource.source !== 'gathered') return false;
-    const recipe = PROCESSING_RECIPES[carriedResource.id];
-    if (!recipe) return false;
+    if (!carriedResource || !['gathered', 'crafted'].includes(carriedResource.source)) return false;
     const slot = processingSlots.find(entry => entry.slotId === slotId);
-    if (!slot) return false;
-    if (slot.inputId && slot.inputId !== carriedResource.id) return false;
-    const nextOutputId = PROCESSING_RECIPES[carriedResource.id]?.outputId;
+    if (!slot || !processingSlotAcceptsMaterial(slot, carriedResource.source, carriedResource.id)) return false;
+    const loaded = addProcessingMaterial(slot, carriedResource.source, carriedResource.id, carriedResource.count);
+    const recipe = getProcessingRecipe(loaded);
+    if (!recipe) return false;
     const pending = processingOutputQueues[String(slotId)] ?? {};
-    if (Object.entries(pending).some(([outputId, count]) => count > 0 && outputId !== nextOutputId)) return false;
+    if (Object.entries(pending).some(([outputId, count]) => count > 0 && outputId !== recipe.outputId)) return false;
     setProcessingSlots(prev =>
       prev.map(entry =>
         entry.slotId === slotId
-          ? startProcessingSlot({
-              ...entry,
-              inputId: carriedResource.id,
-              inputCount: (entry.inputCount ?? 0) + carriedResource.count,
-              outputId: recipe.outputId,
-              startedAt: null,
-              endsAt: null,
-            })
+          ? startProcessingSlot({ ...addProcessingMaterial(entry, carriedResource.source, carriedResource.id, carriedResource.count), startedAt: null, endsAt: null })
           : entry
       )
     );
@@ -2906,49 +4130,120 @@ function GameApp({ savedState, account }) {
     return true;
   }
 
-  function handleUnsocketProcessingInput(slotId) {
-    let removed = null;
-    setProcessingSlots(prev =>
-      prev.map(slot => {
-        if (slot.slotId !== slotId || !slot.inputId || !(slot.inputCount > 0)) return slot;
-        removed = { id: slot.inputId, count: slot.inputCount };
-        return { ...slot, inputId: null, inputCount: 0, outputId: null, startedAt: null, endsAt: null };
-      })
-    );
-    if (!removed) return false;
-    setGatheredInventory(prev => ({ ...prev, [removed.id]: (prev[removed.id] ?? 0) + removed.count }));
+  function handleLoadProcessingBoosterFromCarry(slotId) {
+    if (carriedResource?.source !== 'crafted' || carriedResource.id !== 'tannin') return false;
+    const slot = processingSlots.find(entry => entry.slotId === slotId);
+    if (!slot || slot.card?.classType !== 'tanner' || slot.endsAt) return false;
+    const loaded = addProcessingBooster(slot, carriedResource.id, carriedResource.count);
+    if (loaded === slot) return false;
+    setProcessingSlots(prev => prev.map(entry => entry.slotId === slotId ? startProcessingSlot(loaded) : entry));
+    setCarriedResource(null);
     return true;
   }
 
-  function handlePickUpProcessingInput(slotId, amount) {
+  function handleUnsocketProcessingBooster(slotId) {
+    const slot = processingSlots.find(entry => entry.slotId === slotId);
+    if (!slot?.boosterId || !slot.boosterCount || slot.endsAt) return false;
+    setCraftedInventory(prev => ({ ...prev, [slot.boosterId]: (prev[slot.boosterId] ?? 0) + slot.boosterCount }));
+    setProcessingSlots(prev => prev.map(entry => entry.slotId === slotId
+      ? { ...entry, boosterId: null, boosterCount: 0, boosterCharges: 0 }
+      : entry));
+    return true;
+  }
+
+  function handlePickUpProcessingBooster(slotId) {
+    const slot = processingSlots.find(entry => entry.slotId === slotId);
+    if (!slot?.boosterId || !slot.boosterCount || slot.endsAt || carriedResource) return false;
+    setProcessingSlots(prev => prev.map(entry => entry.slotId === slotId
+      ? { ...entry, boosterId: null, boosterCount: 0, boosterCharges: 0 }
+      : entry));
+    setCarriedResource({
+      key: `crafted:${slot.boosterId}`,
+      source: 'crafted',
+      id: slot.boosterId,
+      name: CRAFTED_RESOURCES_BY_ID[slot.boosterId]?.name ?? slot.boosterId,
+      count: slot.boosterCount,
+    });
+    return true;
+  }
+
+  function returnProcessingMaterial(source, id, count) {
+    if (source === 'crafted') {
+      setCraftedInventory(prev => ({ ...prev, [id]: (prev[id] ?? 0) + count }));
+    } else {
+      setGatheredInventory(prev => ({ ...prev, [id]: (prev[id] ?? 0) + count }));
+    }
+  }
+
+  function handleUnsocketProcessingInput(slotId, source, id) {
+    const slot = processingSlots.find(entry => entry.slotId === slotId);
+    if (!slot) return false;
+    const removeIngredient = slot.ingredientId === id && slot.ingredientSource === source;
+    const removePrimary = slot.inputId === id && slot.inputSource === source;
+    if (!removeIngredient && !removePrimary) return false;
+    const removed = removeIngredient
+      ? { source: slot.ingredientSource, id: slot.ingredientId, count: slot.ingredientCount }
+      : { source: slot.inputSource, id: slot.inputId, count: slot.inputCount };
+    setProcessingSlots(prev =>
+      prev.map(entry => {
+        if (entry.slotId !== slotId) return entry;
+        const next = removeIngredient
+          ? { ...entry, ingredientSource: null, ingredientId: null, ingredientCount: 0 }
+          : { ...entry, inputSource: null, inputId: null, inputCount: 0 };
+        const nextRecipe = getProcessingRecipe(next);
+        return { ...next, outputId: nextRecipe?.outputId ?? null, startedAt: null, endsAt: null };
+      })
+    );
+    returnProcessingMaterial(removed.source, removed.id, removed.count);
+    return true;
+  }
+
+  function handlePickUpProcessingInput(slotId, source, id, amount) {
     const requested = Math.max(1, Math.floor(Number(amount) || 0));
     if (!requested) return false;
     const slot = processingSlots.find(entry => entry.slotId === slotId);
-    if (!slot || !slot.inputId || slot.inputCount < requested) return false;
-    const remaining = slot.inputCount - requested;
+    if (!slot) return false;
+    const isIngredient = slot.ingredientSource === source && slot.ingredientId === id;
+    const available = isIngredient ? slot.ingredientCount : (slot.inputSource === source && slot.inputId === id ? slot.inputCount : 0);
+    if (available < requested) return false;
+    const remaining = available - requested;
     setProcessingSlots(prev =>
       prev.map(entry =>
         entry.slotId === slotId
-          ? {
+          ? startProcessingSlot({
               ...entry,
-              inputId: remaining > 0 ? entry.inputId : null,
-              inputCount: remaining,
-              outputId: remaining > 0 ? entry.outputId : null,
+              ...(isIngredient
+                ? { ingredientSource: remaining > 0 ? source : null, ingredientId: remaining > 0 ? id : null, ingredientCount: remaining }
+                : { inputSource: remaining > 0 ? source : null, inputId: remaining > 0 ? id : null, inputCount: remaining }),
               startedAt: null,
               endsAt: null,
-            }
+            })
           : entry
       )
     );
-    const resourceName = Object.values(PROCESSING_RECIPES).find(recipe => recipe.inputId === slot.inputId)?.inputId ?? slot.inputId;
-    setCarriedResource({ key: `gathered:${slot.inputId}`, source: 'gathered', id: slot.inputId, name: resourceName, count: requested });
+    setCarriedResource({ key: `${source}:${id}`, source, id, name: id, count: requested });
     return true;
   }
 
   function handleCollectProcessedOutput(slotId) {
     const collected = { ...(processingOutputQueues[String(slotId)] ?? {}) };
     if (!hasProductionOutput(collected)) return false;
-    setProcessedInventory(prev => addProcessedCounts(prev, collected));
+    const crafted = {};
+    const processed = {};
+    Object.entries(collected).forEach(([outputId, count]) => {
+      const target = CRAFTED_RESOURCES_BY_ID[outputId] ? crafted : processed;
+      target[outputId] = count;
+    });
+    if (Object.keys(processed).length > 0) {
+      setProcessedInventory(prev => addProcessedCounts(prev, processed));
+    }
+    if (Object.keys(crafted).length > 0) {
+      setCraftedInventory(prev => {
+        const next = { ...prev };
+        Object.entries(crafted).forEach(([id, count]) => { next[id] = (next[id] ?? 0) + count; });
+        return next;
+      });
+    }
     setProcessingOutputQueues(prev => subtractProductionOutputs(prev, slotId, collected));
     return true;
   }
@@ -2956,9 +4251,21 @@ function GameApp({ savedState, account }) {
   function handleCollectProcessingRewards() {
     const collected = { ...processingRewardQueue };
     if (!hasQueuedBonusRewards(collected)) return false;
-    const { coins = 0, ...elementalDrops } = collected;
+    const { coins = 0, ...itemDrops } = collected;
     if (coins > 0) applyGoldDelta('processing:coinProc', coins);
-    setResources(prev => mergeResourceCounts(prev, elementalDrops));
+    const craftedDrops = {};
+    const elementalDrops = {};
+    Object.entries(itemDrops).forEach(([id, count]) => {
+      (CRAFTED_RESOURCES_BY_ID[id] ? craftedDrops : elementalDrops)[id] = count;
+    });
+    if (Object.keys(craftedDrops).length > 0) {
+      setCraftedInventory(prev => {
+        const next = { ...prev };
+        Object.entries(craftedDrops).forEach(([id, count]) => { next[id] = (next[id] ?? 0) + count; });
+        return next;
+      });
+    }
+    if (Object.keys(elementalDrops).length > 0) setResources(prev => mergeResourceCounts(prev, elementalDrops));
     setProcessingRewardQueue(prev => subtractQueuedCounts(prev, collected));
     return true;
   }
@@ -3001,7 +4308,7 @@ function GameApp({ savedState, account }) {
   }
 
   function handleLoadExpeditionSupplyFromCarry(slotId) {
-    if (!carriedResource || !['gathered', 'processed'].includes(carriedResource.source)) return false;
+    if (!carriedResource || !['gathered', 'processed', 'crafted'].includes(carriedResource.source)) return false;
     const slot = expeditionSupplySlots.find(entry => entry.slotId === slotId);
     if (!slot) return false;
     if (slot.id && slot.id !== carriedResource.id) return false;
@@ -3011,7 +4318,9 @@ function GameApp({ savedState, account }) {
         ? DEFAULT_GATHERING_INVENTORY[carriedResource.id] != null
           ? ALL_GATHERING_RESOURCES.find(entry => entry.id === carriedResource.id)?.description ?? ''
           : ''
-        : PROCESSED_RESOURCES.find(entry => entry.id === carriedResource.id)?.description ?? '';
+        : carriedResource.source === 'crafted'
+          ? CRAFTED_RESOURCES_BY_ID[carriedResource.id]?.description ?? ''
+          : PROCESSED_RESOURCES.find(entry => entry.id === carriedResource.id)?.description ?? '';
     setExpeditionSupplySlots(prev =>
       prev.map(entry =>
         entry.slotId === slotId
@@ -3083,6 +4392,23 @@ function GameApp({ savedState, account }) {
       setCarriedResource(null);
     }
     return true;
+  }
+
+  function handleTakeCarriedAttunement(slotId) {
+    if (!carriedResource || carriedResource.source !== 'arcana-item') return null;
+    const entries = carriedResource.entries ?? [];
+    const entry = entries[0];
+    if (!entry || entry.effect?.slot !== slotId) return null;
+
+    // A summon socket is a draft reservation until the player pays to confirm it. Return the complete
+    // carried stack to Arcana inventory first; the loadout records the exact entry id and confirmation
+    // consumes only that reserved entry. This also means dragging one card out of a stacked Bag tile never
+    // strands the rest of the stack on the cursor.
+    setArcanaInventory(current => [...current, ...entries]);
+    resourceDragResolvedRef.current = true;
+    resourceDragInFlightRef.current = false;
+    setCarriedResource(null);
+    return entry;
   }
 
   function handleUnsocketExpeditionArcana(slotId) {
@@ -3168,6 +4494,7 @@ function GameApp({ savedState, account }) {
     const ingotAdds = {};
     const gatheredAdds = {};
     const processedAdds = {};
+    const craftedAdds = {};
     const arcanaAdds = {};
 
     rewardEntries.forEach(entry => {
@@ -3176,6 +4503,7 @@ function GameApp({ savedState, account }) {
       if (entry.source === 'ingot') ingotAdds[entry.id] = (ingotAdds[entry.id] ?? 0) + (entry.amount ?? 0);
       if (entry.source === 'gathered') gatheredAdds[entry.id] = (gatheredAdds[entry.id] ?? 0) + (entry.amount ?? 0);
       if (entry.source === 'processed') processedAdds[entry.id] = (processedAdds[entry.id] ?? 0) + (entry.amount ?? 0);
+      if (entry.source === 'crafted') craftedAdds[entry.id] = (craftedAdds[entry.id] ?? 0) + (entry.amount ?? 0);
       if (entry.source === 'arcana') arcanaAdds[entry.id] = (arcanaAdds[entry.id] ?? 0) + (entry.amount ?? 0);
     });
 
@@ -3194,6 +4522,13 @@ function GameApp({ savedState, account }) {
     }
     if (Object.keys(gatheredAdds).length > 0) setGatheredInventory(prev => addGatheredCounts(prev, gatheredAdds));
     if (Object.keys(processedAdds).length > 0) setProcessedInventory(prev => addProcessedCounts(prev, processedAdds));
+    if (Object.keys(craftedAdds).length > 0) {
+      setCraftedInventory(prev => {
+        const next = { ...prev };
+        Object.entries(craftedAdds).forEach(([id, count]) => { next[id] = (next[id] ?? 0) + count; });
+        return next;
+      });
+    }
     if (Object.keys(arcanaAdds).length > 0) setResources(prev => mergeResourceCounts(prev, arcanaAdds));
 
     const deadIds = [];
@@ -3223,6 +4558,7 @@ function GameApp({ savedState, account }) {
       clearGatheringCards(deadIds);
       clearProcessingCards(deadIds);
       clearForgeCards(deadIds);
+      clearCraftingCards(deadIds);
       clearExpeditionCards(deadIds);
     }
 
@@ -3253,6 +4589,7 @@ function GameApp({ savedState, account }) {
     clearProcessingCards(cardId);
     clearForgeCards(cardId);
     clearExpeditionCards(cardId);
+    clearCraftingCards(cardId);
   }
 
   function handleGrade(cardId, grade) {
@@ -3280,6 +4617,7 @@ function GameApp({ savedState, account }) {
     clearGatheringCards(cardIds);
     clearProcessingCards(cardIds);
     clearForgeCards(cardIds);
+    clearCraftingCards(cardIds);
   }
 
   function handleImprint(cardId, tag, success, newValue) {
@@ -3297,6 +4635,7 @@ function GameApp({ savedState, account }) {
       clearGatheringCards(cardId);
       clearProcessingCards(cardId);
       clearForgeCards(cardId);
+      clearCraftingCards(cardId);
     }
   }
 
@@ -3314,6 +4653,7 @@ function GameApp({ savedState, account }) {
     clearGatheringCards(cardId);
     clearProcessingCards(cardId);
     clearForgeCards(cardId);
+    clearCraftingCards(cardId);
   }
 
   function handleMarketSell(cardId, marketPrice) {
@@ -3325,6 +4665,7 @@ function GameApp({ savedState, account }) {
     clearGatheringCards(cardId);
     clearProcessingCards(cardId);
     clearForgeCards(cardId);
+    clearCraftingCards(cardId);
   }
 
   function handleBuyLegendarySlot() {
@@ -3353,6 +4694,7 @@ function GameApp({ savedState, account }) {
     ...gatheringSlots.filter(slot => slot.card).map(slot => slot.card.id),
     ...processingSlots.filter(slot => slot.card).map(slot => slot.card.id),
     ...forgeCardSlots.filter(slot => slot.card).map(slot => slot.card.id),
+    ...craftingCardSlots.filter(slot => slot.card).map(slot => slot.card.id),
     ...expeditionUnitSlots.filter(slot => slot.card).map(slot => slot.card.id),
   ];
 
@@ -3369,6 +4711,29 @@ function GameApp({ savedState, account }) {
     // overriding it on a later launch.
     setGraphicsSettings({ quality: nextQuality, autoDetected: false });
   }
+
+  const focusedCard = focusedCardId
+    ? collection.find(card => sameCardId(card.id, focusedCardId)) ?? null
+    : null;
+  const carriedTopazImprint = carriedResource?.source === 'gathered'
+    && getGemFamily(carriedResource.id) === 'topaz'
+    && pendingSocketBinding?.boundResourceId
+    ? {
+        key: `${pendingSocketBinding.boundSource}:${pendingSocketBinding.boundResourceId}`,
+        source: pendingSocketBinding.boundSource,
+        id: pendingSocketBinding.boundResourceId,
+        name: pendingSocketBinding.boundName ?? pendingSocketBinding.boundResourceId,
+        count: 1,
+        tier: pendingSocketBinding.targetTier ?? 1,
+      }
+    : null;
+  const carriedPreviewWidth = carriedTopazImprint ? 232 : 112;
+  const carriedPreviewLeft = carriedResource
+    ? Math.max(12, Math.min(
+        carriedResourceCursor.x + 18,
+        (globalThis.innerWidth ?? 1920) - carriedPreviewWidth - 12,
+      ))
+    : 0;
 
   return (
     <GraphicsContext.Provider value={graphicsFeatures}>
@@ -3459,11 +4824,11 @@ function GameApp({ savedState, account }) {
           let label;
           // One page for buying and opening. The diamond on this tab means "you are holding unopened
           // packs" — pending until consumed, the same semantics the Summon tab's carried.
-          if (v === VIEWS.SHOP) label = 'Cards';
+          if (v === VIEWS.SHOP) label = 'Shop';
           // No count. The diamond says "something new is in here", which is the part a player acts on;
           // a running total is noise on a bar with ~6px of slack at 1024px (see CLAUDE.md).
           else if (v === VIEWS.COLLECTION) label = 'Collection';
-          else if (v === VIEWS.ARCANA) label = 'Arcana';
+          else if (v === VIEWS.ARCANA) label = 'Crafting';
           else if (v === VIEWS.MARKET) label = 'Market';
           else if (v === VIEWS.FOUNDRY) label = 'Foundry';
           else if (v === VIEWS.WILDERNESS) label = 'Wilderness';
@@ -3541,6 +4906,7 @@ function GameApp({ savedState, account }) {
         className={[
           'main',
           FIT_VIEWS.has(view) ? 'main--fit' : '',
+          view === VIEWS.SHOP ? 'main--shop' : '',
           view === VIEWS.COLLECTION ? 'main--collection' : '',
           view === VIEWS.ARCANA ? 'main--arcana' : '',
           view === VIEWS.EXPEDITION ? 'main--expedition' : '',
@@ -3563,6 +4929,8 @@ function GameApp({ savedState, account }) {
                 upgrades={shopUpgrades}
                 onBuyUpgrade={handleBuyUpgrade}
                 packsNavRef={summonAltarRef}
+                inventoryTargetRef={inventoryHeaderRef}
+                shopPurchases={shopPurchases}
                 packsHeld={packs.length}
                 maxPacks={MAX_HELD_PACKS}
               />
@@ -3570,6 +4938,7 @@ function GameApp({ savedState, account }) {
             <div className="shop-summon__altar">
               <UnpackPage
                 packs={packs}
+                balance={balance}
                 arcanaInventory={arcanaInventory}
                 pendingCards={pendingCards}
                 pendingResourceCards={pendingResourceCards}
@@ -3577,6 +4946,9 @@ function GameApp({ savedState, account }) {
                 pendingEssenceDrops={pendingEssenceDrops}
                 pendingPackType={pendingPackType}
                 onOpenPack={handleOpenPack}
+                onConfirmAttunement={handleConfirmPackAttunement}
+                carriedResource={carriedResource}
+                onTakeCarriedAttunement={handleTakeCarriedAttunement}
                 onPackDone={handlePackDone}
                 collectionBtnRef={collectionBtnRef}
                 inventoryTargetRef={inventoryHeaderRef}
@@ -3596,11 +4968,17 @@ function GameApp({ savedState, account }) {
         )}
         {view === VIEWS.ARCANA && (
           <Arcana
-            resources={resources}
-            pocket={pocket}
-            onRingCraft={handleRingCraft}
+            craftingCardSlots={craftingCardSlots}
+            craftingGridSlots={craftingGridSlots}
             carriedResource={carriedResource}
-            onPlaceCarriedResource={handlePlaceCarriedResource}
+            onSocketCard={handleSocketCraftingCard}
+            onUnsocketCard={handleUnsocketCraftingCard}
+            onLoadMaterial={handleLoadCraftingMaterialFromCarry}
+            onDistributeMaterial={handleDistributeCraftingMaterialFromCarry}
+            onPickUpMaterial={handlePickUpCraftingMaterial}
+            onUnloadMaterial={handleUnloadCraftingMaterial}
+            onClearMaterials={handleClearCraftingMaterials}
+            onCraft={handleCraftGridRecipe}
           />
         )}
         {view === VIEWS.FOUNDRY && (
@@ -3626,6 +5004,8 @@ function GameApp({ savedState, account }) {
             onUnsocketMineCard={handleUnsocketMineCard}
             onUnlockMineSlot={handleUnlockMineSlot}
             onCollectMinedOre={handleCollectMinedOre}
+            onSocketMineTool={handleSocketMineTool}
+            onUnsocketMineTool={handleUnsocketMineTool}
             onSocketForgeCard={handleSocketForgeCard}
             onUnsocketForgeCard={handleUnsocketForgeCard}
             onSocketForgeOre={handleSocketForgeOre}
@@ -3638,6 +5018,9 @@ function GameApp({ savedState, account }) {
             onPickUpForgeFuel={handlePickUpForgeFuel}
             onPickUpForgeOre={handlePickUpForgeOre}
             onPickUpForgeIngredient={handlePickUpForgeIngredient}
+            onLoadForgeBooster={handleLoadForgeBoosterFromCarry}
+            onUnsocketForgeBooster={handleUnsocketForgeBooster}
+            onPickUpForgeBooster={handlePickUpForgeBooster}
             onCollectIngotOutput={handleCollectIngotOutput}
             onCollectForgeRewards={handleCollectForgeRewards}
             carriedResource={carriedResource}
@@ -3662,11 +5045,16 @@ function GameApp({ savedState, account }) {
             onSocketGatheringCard={handleSocketPocketCardToGathering}
             onUnsocketGatheringCard={handleUnsocketGatheringCard}
             onCollectGatheredResources={handleCollectGatheredResources}
+            onSocketGatheringTool={handleSocketGatheringTool}
+            onUnsocketGatheringTool={handleUnsocketGatheringTool}
             onSocketProcessingCard={handleSocketPocketCardToProcessing}
             onUnsocketProcessingCard={handleUnsocketProcessingCard}
             onLoadProcessingInput={handleLoadProcessingInputFromCarry}
             onUnsocketProcessingInput={handleUnsocketProcessingInput}
             onPickUpProcessingInput={handlePickUpProcessingInput}
+            onLoadProcessingBooster={handleLoadProcessingBoosterFromCarry}
+            onUnsocketProcessingBooster={handleUnsocketProcessingBooster}
+            onPickUpProcessingBooster={handlePickUpProcessingBooster}
             onCollectProcessedOutput={handleCollectProcessedOutput}
             onCollectProcessingRewards={handleCollectProcessingRewards}
             carriedResource={carriedResource}
@@ -3728,13 +5116,31 @@ function GameApp({ savedState, account }) {
         ingotInventory={ingotInventory}
         gatheredInventory={gatheredInventory}
         processedInventory={processedInventory}
+        craftedInventory={craftedInventory}
+        toolInventory={toolInventory}
         arcanaInventory={arcanaInventory}
         onBeginCarry={handleBeginCarry}
         onPlaceCarriedResource={handlePlaceCarriedResource}
+        onBeginToolDrag={handleBeginToolDrag}
         carriedResource={carriedResource}
         open={inventoryOpen}
         onToggle={() => setInventoryOpen(prev => !prev)}
+        craftingActive={Boolean(focusedCard)}
+        onCardCraftingResource={handleCardCraftingResource}
       />
+
+      {focusedCard && (
+        <CardCraftingView
+          card={focusedCard}
+          pendingGemId={pendingSocketGemId}
+          chiselActive={pendingCardCraftingItemId === 'gemsettersChisel'}
+          extractorActive={pendingCardCraftingItemId === 'gemExtractor'}
+          onCardSelect={handleCardCraftingCardSelect}
+          onAffixSelect={handleCardCraftingAffixSelect}
+          onSocketSelect={handleCardCraftingSocketSelect}
+          onClose={closeCardCrafting}
+        />
+      )}
 
       <CardPocket
         pocket={pocket}
@@ -3747,32 +5153,20 @@ function GameApp({ savedState, account }) {
         onReorder={handlePocketReorder}
         onPlaceFromCollection={handlePocketPlaceFromCollection}
         onAddFromStation={handleAddToHandFromStation}
+        onInspect={handleInspectHandCard}
       />
 
       {carriedResource ? (
         <div
-          className="carried-resource-cursor card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned"
-          style={{ left: carriedResourceCursor.x + 18, top: carriedResourceCursor.y + 18 }}
+          className={`carried-resource-cursor-group${carriedTopazImprint ? ' carried-resource-cursor-group--linked' : ''}`}
+          style={{ left: carriedPreviewLeft, top: carriedResourceCursor.y + 18 }}
           role="status"
-          aria-label={`Holding ${carriedResource.count} ${carriedResource.name}`}
+          aria-label={carriedTopazImprint
+            ? `Holding ${carriedResource.name}, imprinted with ${carriedTopazImprint.name}`
+            : `Holding ${carriedResource.count} ${carriedResource.name}`}
         >
-          <div className="card-face-inner">
-            <div className="card-face-front foundry-square-resource__front">
-              <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
-                <span className="foundry-square-resource__count">{carriedResource.count}</span>
-              </div>
-              <div className="foundry-square-resource__art-wrap">
-                {getCarriedStackArt(carriedResource) ? (
-                  <img
-                    src={getCarriedStackArt(carriedResource)}
-                    alt=""
-                    className="foundry-square-resource__art"
-                  />
-                ) : null}
-              </div>
-              <span className="carried-resource-cursor__name">{carriedResource.name}</span>
-            </div>
-          </div>
+          <CarriedResourcePreviewTile stack={carriedResource} />
+          {carriedTopazImprint ? <CarriedResourcePreviewTile stack={carriedTopazImprint} /> : null}
         </div>
       ) : null}
       <div className="placement-echo-layer" aria-hidden="true">
@@ -3835,7 +5229,7 @@ export default function App() {
   /**
    * ── The boot sequence ──
    *
-   *   login  → only when online is configured and there is no session. Offers offline as a real choice.
+   *   login  → when there is no restored session. Presents SSF and Online as distinct choices.
    *   slots  → always. Three positions; the player picks or creates one.
    *   ready  → `savedState` is authoritative and `GameApp` mounts.
    *
@@ -3875,7 +5269,7 @@ export default function App() {
     let cancelled = false;
     (async () => {
       if (!isOnlineConfigured()) {
-        if (!cancelled) { await refreshSlots(null); setPhase('slots'); }
+        if (!cancelled) setPhase('login');
         return;
       }
       let session = null;
@@ -4024,7 +5418,7 @@ export default function App() {
     setPlayerName(null);
     // Straight back to the login page rather than to the picker: signing out is a statement about which
     // account you are using, and the offline saves are one click away on that screen anyway.
-    setPhase(isOnlineConfigured() ? 'login' : 'slots');
+    setPhase('login');
   }, []);
 
   if (phase === 'login') {
@@ -4033,6 +5427,7 @@ export default function App() {
         initialError={loginError}
         onSignedIn={handleSignedIn}
         onPlayOffline={handlePlayOffline}
+        onlineAvailable={isOnlineConfigured()}
       />
     );
   }

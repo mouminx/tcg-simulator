@@ -25,9 +25,13 @@ UI: `src/components/Foundry.jsx`
 ### Mine
 
 - cards from pocket can be socketed
+- only Miner and Prospector cards are accepted
+- Pickaxes can be equipped in the worker's Tool/Buff socket
 - mining starts automatically
 - mine queue must be collected manually
 - ore weights are driven by rarity tables in `foundry.js`
+- Miner has a small gem chance; Prospector uses a separate stone/gem-heavy table and Gem Find
+  multiplies only gemstone weights
 - mining rewards can also queue:
   - coins
   - elemental motes
@@ -265,6 +269,7 @@ UI: `src/components/Wilderness.jsx`
 ### Gathering
 
 - cards from pocket socket into gathering slots
+- Axes, Sickles, and Shortbows equip to Lumberjacks, Foragers, and Hunters respectively
 - gathering starts automatically
 - queue must be collected manually
 - gathering can produce:
@@ -303,8 +308,8 @@ three-column tile rail, `.foundry-forge-row__stem-host` for the lit-when-feeding
 tile size, stems dead on the slot centres, no horizontal overflow.
 
 ```text
-        MATERIAL   [aux] [material] [aux]
-                     └───────┬───────┘
+        MATERIAL   [ingredient] [material] [aux]
+                         └───────┬───────┘
                              ▼
                      Ready to process
         ────────◇────────
@@ -316,8 +321,8 @@ Three deliberate differences from the forge:
 
 - **No Fuel band** — processing burns nothing, so there is one ruled divider instead of two and the
   row is ~135px shorter.
-- **The real slot takes the MIDDLE column**, with the two unimplemented aux slots either side. The
-  forge puts ore in the middle for the same reason: the primary input belongs on the trunk's axis.
+- **The primary slot takes the MIDDLE column.** Tanner's Refined Leather recipe activates the left
+  ingredient branch for Rough Leather; single-material recipes leave it as a runic aux slot.
 - **A status line under the connector.** The forge shows remaining time on its fuel ring; a processing
   row has no fuel box, so without this the countdown existed only in a `title` tooltip.
 
@@ -327,14 +332,14 @@ a parallel cell class — the band is structurally the same thing.
 The four-across layout this replaced left `__body`, `__materials-stack`, `__aux` and the whole
 `__arrow` progress bar behind; all of that CSS is deleted.
 
-Processed outputs currently include:
+Only Weaver, Woodworker, and Tanner cards are accepted. Their recipes are Fiber → 2 Linen; Wood →
+2 Timber; Hardwood → 2 Lumber; Hide → 2 Rough Leather; and 2 Tough Hide + 1 Rough Leather →
+1 Refined Leather. Gathered and Crafted inputs retain their canonical inventory source while loaded.
+All outputs route into Crafted.
 
-- timber
-- cloth
-- sealant
-- alkahest
-- mycelial extract
-- leather
+Specialist Efficiency is a chance to preserve the complete input batch, Bounty adds one primary
+output, and Luck queues one recipe-specific higher-grade output in the independent Processing Bonus
+Queue. Elemental attunement drops and Coin Generation use that same bonus queue.
 
 Pending processed output is stored in `processingOutputQueues[slotId]`, not one resource-wide map. Bench
 buttons collect only their own output; the Processing Bonus Queue has its own callback and cannot be swept
@@ -343,7 +348,17 @@ different output type, keeping the single output tile truthful.
 
 Material sockets display their live load as `placed / required`, using the selected recipe's actual cost.
 Forge ore, required secondary ingots (including `0 / required` while empty), and Processing inputs all use
-the same compact counter treatment. Inventory and output cards continue to show a plain owned count.
+the same compact counter treatment in the **bottom-right** corner, leaving the slot's top-right remove
+button unobstructed. Inventory and output cards continue to show a plain owned count.
+
+Square loot/resource artwork is clipped only by `.foundry-square-resource__art-wrap`, which inherits the
+front face's radius. The front face itself keeps visible overflow because it paints the outline above the
+bitmap; masking that parent also clips the frame's antialiased outer edge. The layer order is bitmap,
+overlay, then outline/UI. Every layer uses `--loot-card-radius: 16.36%`, the ratio of the signed-off 18px
+corner on the canonical 110px queue tile. It must stay proportional: the Loot workspace uses 42px tiles,
+where an absolute 18px radius becomes 43% of the width and makes the card nearly circular. The frame width
+likewise scales down from 2px to 1px. The dark `::before` tint uses the same rounded mask—leaving it
+full-size produces black square corners behind the gold frame even when the WEBP itself is clipped.
 
 Wilderness right rail shows:
 

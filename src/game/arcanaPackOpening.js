@@ -1,4 +1,4 @@
-import { ARCANA_SLOTS, DEFAULT_RESOURCES, ESSENCES, getElementResourceId } from './arcana';
+import { ARCANA_ITEMS_BY_ID, ARCANA_SLOTS, DEFAULT_RESOURCES, ESSENCES, getElementResourceId } from './arcana';
 import {
   createEmptyAttunementLoadout,
   consumeSlottedItemsOnPackOpen,
@@ -8,6 +8,20 @@ import {
 import { openPack } from './cards';
 
 export const DEFAULT_ATTUNED_PACK_TYPE_ID = 'blankSlate';
+export const MAX_PACK_ATTUNEMENTS = 9;
+export const ATTUNEMENTS_PER_RITUAL = 3;
+export const BLANK_SLATE_ATTUNEMENT_COSTS = Object.freeze([100, 250, 500]);
+
+export function getPackAttunementItemIds(pack) {
+  return Array.isArray(pack?.attunementItemIds)
+    ? pack.attunementItemIds.slice(0, MAX_PACK_ATTUNEMENTS)
+    : [];
+}
+
+export function getNextAttunementCost(pack) {
+  const round = Math.floor(getPackAttunementItemIds(pack).length / ATTUNEMENTS_PER_RITUAL);
+  return BLANK_SLATE_ATTUNEMENT_COSTS[round] ?? null;
+}
 
 /**
  * @typedef {{
@@ -210,6 +224,7 @@ export function openAttunedPack(params = {}) {
     arcanaInventory = [],
     resourceBalances = DEFAULT_RESOURCES,
     strictLoadoutValidation = true,
+    attunementItemIds = [],
   } = params;
 
   const normalizedLoadout = normalizeAttunementLoadout(attunementLoadout);
@@ -236,7 +251,17 @@ export function openAttunedPack(params = {}) {
   }
 
   const activeAttunement = resolveActiveAttunementItems(normalizedLoadout, arcanaInventory);
-  const packRollOptions = buildPackRollAttunementOptions(normalizedLoadout, arcanaInventory);
+  const draftOptions = buildPackRollAttunementOptions(normalizedLoadout, arcanaInventory);
+  const confirmedItems = (attunementItemIds ?? [])
+    .slice(0, MAX_PACK_ATTUNEMENTS)
+    .map(itemId => ARCANA_ITEMS_BY_ID[itemId])
+    .filter(Boolean);
+  const byCategory = category => confirmedItems.filter(item => item.category === category);
+  const packRollOptions = {
+    selectedCharm: [...byCategory('charm'), ...(draftOptions.selectedCharm ? [draftOptions.selectedCharm] : [])],
+    selectedCatalyst: [...byCategory('catalyst'), ...(draftOptions.selectedCatalyst ? [draftOptions.selectedCatalyst] : [])],
+    selectedSigil: [...byCategory('sigil'), ...(draftOptions.selectedSigil ? [draftOptions.selectedSigil] : [])],
+  };
   const cards = openPack(packTypeId, boosted, packRollOptions);
   const essenceDrops = packTypeId === DEFAULT_ATTUNED_PACK_TYPE_ID ? rollBlankSlateEssenceDrops() : [];
   const consumption = consumeSlottedItemsOnPackOpen(normalizedLoadout, arcanaInventory);

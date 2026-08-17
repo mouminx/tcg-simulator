@@ -1,3 +1,5 @@
+import LootTierBadge from './LootTierBadge';
+
 /**
  * A square loot card — the framed tile the Bag, the collection queues and the altar all use.
  *
@@ -11,7 +13,7 @@
  * `.card-face-wrapper.foundry-square-resource` sets `width: 100%` at specificity 0,2,0, and a single class
  * loses to it, leaving the tile to collapse against a content-sized parent.
  */
-export default function LootTile({ artSrc, name = '', size = 'sm', className = '', children }) {
+export default function LootTile({ artSrc, name = '', size = 'sm', tier = 1, className = '', children }) {
   return (
     <div
       className={`card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned held-loot held-loot--${size} ${className}`.trim()}
@@ -23,6 +25,7 @@ export default function LootTile({ artSrc, name = '', size = 'sm', className = '
               ? <img src={artSrc} alt={name} className="foundry-square-resource__art" draggable="false" />
               : <span className="held-loot__fallback" aria-hidden="true">✦</span>}
           </div>
+          <LootTierBadge tier={tier} />
         </div>
       </div>
       {/* Overlays that need to sit inside the card's frame — the white-out during a cache's charge-up. */}

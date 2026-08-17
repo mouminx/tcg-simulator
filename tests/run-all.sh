@@ -19,6 +19,11 @@ S="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ROOT="$(cd "$S/.." && pwd)"
 cd "$ROOT"
 
+node tests/test-tools.mjs
+node tests/test-processing-classes.mjs
+node tests/test-card-sockets.mjs
+node tests/test-callings.mjs
+
 # NOTE: every statement here must be guarded so it CANNOT fail.
 # This runs as the EXIT trap, and it used to read
 #   [ -f "$ROOT/.env.local.real" ] && mv -f ...
@@ -81,7 +86,7 @@ run_suite() {
 echo "############ LOCAL-PATH SUITES (online NOT configured) ############"
 rm -f "$ROOT/.env.local"
 start_vite
-for t in test-storage-web test-migration test-gold-seam test-drag-identity test-write-failure test-account-menu test-arc-and-collection test-echo-scope test-shop-rotation test-goods test-forge-selector test-processing-selector test-output-collection test-staged-loot test-merge test-upgrades test-shop-summon test-stacked-rows test-treasure; do
+for t in test-release-notes test-card-sockets-ui test-gemcutter-forge test-storage-web test-migration test-gold-seam test-drag-identity test-tools-ui test-write-failure test-account-menu test-arc-and-collection test-echo-scope test-shop-rotation test-goods test-forge-selector test-processing-selector test-output-collection test-staged-loot test-merge test-upgrades test-shop-summon test-crafting test-stacked-rows test-treasure; do
   run_suite "$t" "$t.mjs" || exit 1
 done
 

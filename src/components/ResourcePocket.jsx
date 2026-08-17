@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
+import LootTierBadge from './LootTierBadge';
+import { getLootTier } from '../game/lootTiers';
 
 const ORE_ART = Object.fromEntries(
   Object.entries(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' })).map(([path, src]) => [
@@ -68,6 +70,7 @@ function ResourcePocketTile({ entry, onRemove, onBeginCarry }) {
                 <img src={artSrc} alt={entry.name} className="foundry-square-resource__art" />
               ) : null}
             </div>
+            <LootTierBadge tier={getLootTier(entry.source, entry.id, entry)} />
           </div>
         </div>
         <button

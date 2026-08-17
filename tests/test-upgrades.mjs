@@ -32,7 +32,7 @@ async function boot(mutate={}) {
   if (await page.locator('.inventory-panel--open').count()){await page.locator('.drawer-tab.inventory-toggle').click();await page.waitForTimeout(400);}
 }
 const openUpgrades = async () => {
-  await page.locator('.tab-bar button',{hasText:'Cards'}).first().click(); await page.waitForTimeout(500);
+  await page.locator('.tab-bar button',{hasText:'Shop'}).first().click(); await page.waitForTimeout(500);
   await page.locator('.shop-category', {hasText:'Upgrades'}).click(); await page.waitForTimeout(400);
 };
 
@@ -59,9 +59,8 @@ check('the shelf lists the hand slot upgrade only', r.length===1, JSON.stringify
 check('Mine Slot is no longer offered', !r.some(x=>/Mine/i.test(x.label ?? '')), JSON.stringify(r.map(x=>x.label)));
 check('the hand slot shows current -> next and its price', r[0].level==='3→4' && Number(r[0].price)===20,
   `${r[0].level} @ ${r[0].price}`);
-const railCount = await page.evaluate(()=>[...document.querySelectorAll('.shop-category')]
-  .find(b=>/Upgrades/.test(b.textContent))?.querySelector('.shop-category__count')?.textContent);
-check('the rail count matches what is purchasable', railCount==='1', `count=${railCount}`);
+check('the category rail contains no stock counts', await page.locator('.shop-category__count').count()===0,
+  `${await page.locator('.shop-category__count').count()} badges`);
 
 // ── Buying it moves exactly the listed price, once ──
 const before = await readBalance();
