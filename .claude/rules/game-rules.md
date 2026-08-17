@@ -72,6 +72,10 @@ Two things to know before touching this:
 - mage
 - bard
 - forager
+- weaver
+- woodworker
+- tanner
+- prospector
 
 Each card stores:
 
@@ -153,7 +157,7 @@ Affixes are generated in `cards.js` from:
 
 ### Class-specific affixes
 
-Each class has three core affixes:
+Most original classes have three core affixes:
 
 - efficiency
 - attunement
@@ -162,6 +166,11 @@ Each class has three core affixes:
 Some gathering classes also have:
 
 - `Treasure Sense`
+
+Processing specialists use focused pools: Weaver and Woodworker roll Efficiency, Bounty, Luck,
+Production Speed, elemental attunements, and Coin Generation; Tanner rolls Tanning Speed plus its
+Efficiency/Bounty/Luck set, elemental attunements, and Coin Generation. Prospector shares Miner's
+Mining Efficiency/Attunement/Luck and adds Gem Find.
 
 Examples:
 
@@ -225,11 +234,11 @@ Treasure Sense can generate a `Treasure Pack` into the gathering queue.
 
 ---
 
-## Arcana System
+## Crafting System
 
-Arcana is data-driven and centered on:
+The player-facing Arcana page has been replaced by a Minecraft-style Crafting workspace centered on:
 
-- `src/game/arcana.js`
+- `src/game/crafting.js`
 - `src/components/Arcana.jsx`
 
 Related files:
@@ -265,21 +274,60 @@ Helpers:
 - `parseElementResourceId(resourceId)`
 - `getElementResourceDescription(resourceId)`
 
-### Arcana Station
+### Crafting Station
 
-The Arcana page uses a ring crafting layout:
+The Crafting page uses a workshop layout:
 
-- outer element slots
-- inner element slots
-- mage card corner slots
-- center result display
+- five horizontally arranged artisan card slots
+- a 3x3 material grid
+- a reserved result slot
 
 Current behavior:
 
-- Arcana resources are pulled from the main inventory, not a separate picker modal
-- dropped resources in slots render as inventory-style square resource cards
-- mage corner slots use cards from pocket
-- crafted items are appended into `arcanaInventory`
+- all material inventories can feed the grid through the Bag's click-to-carry or drag flow
+- matching materials stack in a cell; different materials are rejected
+- pressing and dragging a held stack across compatible cells distributes the entire stack evenly on release
+- right-clicking a placed material opens the shared quantity popover and carries only the selected amount
+- artisan slots use cards from the Hand and surface crafting/luck-related affixes
+- socketed artisans use the shared `--station-card-w` / `--station-card-h` dimensions used by Mine,
+  Forge, Gathering, and Processing
+- desktop Crafting always reserves the Bag's full drawer width, open or closed, so toggling inventory
+  never reflows the workbench
+- artisan and material slots persist in save 31, alongside dedicated crafted-material and tool inventories
+- recipes are exact 3x3 patterns unless declared shapeless; crafting consumes only each pattern's required amounts
+- Mushrooms, Resin, and Hyssop are shapeless Crafting refinements that each produce two Mycelial Extract,
+  Sealant, or Alkahest; one of each reagent in any three cells produces one Arcanic Infusion
+- Empty Callings use the full 3x3 frame of four stone blocks, two textiles, two leathers, and one central Arcanic
+  Infusion; the eight structural materials determine Tier I–V, while the Infusion stabilizes but adds no quality
+- Advanced Alkahest combines Alkahest with two Wildflowers, Advanced Mycelial Extract combines Mycelial
+  Extract with two Garlic, and Advanced Sealant combines Sealant with two Softwood Sap; one of each advanced
+  reagent creates an Advanced Arcanic Infusion
+- Empty Surges use four stone blocks, two textiles, two ingots, and one central Advanced Arcanic Infusion;
+  their eight structural materials determine Tier I–V while the advanced infusion adds no quality
+- eight Steel Ingots around a Polished Stone Block produce one Reinforced Stone Block; Stone Block,
+  Polished Stone Block, and Reinforced Stone Block contribute quality I, III, and V respectively
+- two Hide in any single cell makes Rough Leather; eight Tough Hide around Rough Leather makes Refined
+  Leather; eight Refined Leather around Tough Scales makes Premium Leather
+- legacy Cloth and Leather no longer exist as item identities; saved Cloth becomes Linen and saved Leather
+  becomes Rough Leather
+- current grid outputs include Stone Block, Polished Stone Block, Fiber, Linen, Sateen, Silk, Plank,
+  Stick, Voidwood/Arcanewood Sticks, Voidwood/Arcanewood Planks, Pickaxe, Axe, Sickle, and Shortbow
+- for every element, a full matching 3x3 upgrades 9 Motes → 1 Wisp, 9 Wisps → 1 Essence,
+  and 9 Essences → 1 Quintessence; mixed elements never match
+- Stick creates two per craft; all three stick recipes use a full vertical column of their plank
+- tool recipe slots match material families, so ingots and valid stick types can be mixed within one pattern
+- tool tier is the consumed component-quality score normalized across that recipe's attainable score range;
+  Steel/basic Stick/Fiber/Rough Leather are quality 1, Silver 2, Gold 3, Platinum/Voidwood Stick 4, and
+  Starsteel/Arcanewood Stick 5
+
+### Gathering tools
+
+- Pickaxe → Miner, Axe → Lumberjack, Sickle → Forager, Shortbow → Hunter
+- tools are unique square cards with tiers I–V and exactly one affix per tier
+- the ten-affix pool is Efficiency, Luck, Yield, Discovery, Elemental Resonance, Bounty, Momentum,
+  Material Affinity, Artisan Synergy, and Refinement
+- material quality biases affix values within the resulting tool tier; it does not bypass that tier's range
+- Refinement and Material Affinity never bypass the worker card's rarity-gated material pool
 
 ### Arcana inventory
 

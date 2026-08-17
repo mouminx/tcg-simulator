@@ -328,6 +328,10 @@ Important interactions:
 - `RESOURCE_DRAG_MIME` distinguishes Bag drags from card drags. The browser drag ghost is transparent;
   `carried-resource-cursor` is the single held visual and resolves the same artwork as the source tile
 - right-click split-stack / carry flow is implemented for resource inventories
+- placed Crafting materials use that same split-stack popover, and held stacks can be painted across
+  multiple compatible Crafting cells for an even distribution
+- Crafting owns one page-level split popover (ported to `document.body`), preventing transformed grid
+  geometry from offsetting it and preventing repeated right-clicks from mounting multiple menus
 - Arcana resources and Arcana crafted items use the same split-stack carry flow
 - counts animate upward when collected amounts increase
 

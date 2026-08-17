@@ -35,18 +35,25 @@ await page.evaluate(()=>localStorage.clear());
 await page.reload({waitUntil:'networkidle'}); await page.waitForTimeout(2400); await enterGame(page);
 await page.waitForFunction(()=>!!localStorage.getItem('tcg-sim'),null,{timeout:15000});
 
-// ── Two headings, each centred over its OWN column ──
+// ── Two matching composed header bands ──
 await boot(page, { balance: 5000, packs: mkPacks(3), graphicsSettings:{quality:'low'} });
 const heads = await page.evaluate(()=>[...document.querySelectorAll('.shop-summon h2')].map(h=>{
   const b=h.getBoundingClientRect();
-  const col=h.closest('.shop-summon__shop,.shop-summon__altar');
-  const cb=col.getBoundingClientRect();
-  return { text:h.textContent.trim(), off: Math.round(Math.abs((b.left+b.width/2)-(cb.left+cb.width/2))) };
+  return { text:h.textContent.trim(), x:Math.round(b.left+b.width/2), y:Math.round(b.top+b.height/2) };
 }));
 check('both halves are titled', heads.map(h=>h.text).join('+') === 'Shop+Summon', JSON.stringify(heads.map(h=>h.text)));
-// The altar carries a left border and padding, so "Summon" centres on its CONTENT, a little left of the
-// column's geometric centre. Anything beyond ~20px would mean it is centred on the page instead.
-check('each heading is centred over its own column', heads.every(h=>h.off<=20), JSON.stringify(heads));
+check('SHOP and SUMMON share one title baseline', Math.abs(heads[0].y-heads[1].y)<=1, JSON.stringify(heads));
+const topBand = await page.evaluate(()=>{
+  const shop=document.querySelector('.shop-topbar').getBoundingClientRect();
+  const summon=document.querySelector('.unpack-topbar').getBoundingClientRect();
+  const groups=document.querySelector('.unpack-groups').getBoundingClientRect();
+  const title=document.querySelector('.unpack-header').getBoundingClientRect();
+  const packItems=[...document.querySelectorAll('.unpack-pack-item')].map(item=>item.getBoundingClientRect());
+  const firstPackLeft=packItems.length ? Math.min(...packItems.map(item=>item.left)) : Infinity;
+  return {bottomOffset:Math.abs(shop.bottom-summon.bottom), ordered:groups.right<title.left && firstPackLeft>title.right};
+});
+check('Shop and Summon top bands end on the same line', topBand.bottomOffset<=1, `${topBand.bottomOffset}px`);
+check('Summon navigation, title, and packs occupy left/centre/right zones', topBand.ordered, JSON.stringify(topBand));
 
 // ── The stack fits at every count, with no scrolling ──
 const rowMetrics = () => page.evaluate(()=>{
@@ -129,12 +136,15 @@ check('no horizontal page overflow during a reveal', inPlace.overflowX===0, `${i
 
 // ── The 10-pack cap ──
 await boot(page, { balance: 5000, packs: mkPacks(10) });
+await page.locator('.shop-category',{hasText:'Card Packs'}).click(); await page.waitForTimeout(300);
 const capped = await page.evaluate(()=>({
   buysDisabled: [...document.querySelectorAll('.shelf-pack__grab')].every(b=>b.disabled),
-  subtitle: document.querySelector('.shop-subtitle')?.textContent ?? null,
+  headerLines: [...document.querySelector('.shop-summon__shop > .shop .shop-topbar > .shop-header').children]
+    .map(node=>node.textContent.trim()),
 }));
 check('at 10 packs every buy button is disabled', capped.buysDisabled, `${capped.buysDisabled}`);
-check('...and the shop says why, naming 10', /10 unopened/.test(capped.subtitle ?? ''), `"${capped.subtitle}"`);
+check('the compact shop header gains no extra cap warning line', capped.headerLines.length===3,
+  capped.headerLines.join(' | '));
 const b4 = await readBalance(page);
 await page.locator('.shelf-pack__grab').first().click({ force: true }).catch(()=>{});
 await page.waitForTimeout(600);
@@ -150,12 +160,16 @@ const goods = await page.evaluate(()=>{
   const grid=document.querySelector('.goods-grid');
   const cols=getComputedStyle(grid).gridTemplateColumns.split(' ').length;
   return { count:cards.length, withArt:cards.filter(c=>c.querySelector('img')).length, cols,
-    noArt: cards.filter(c=>!c.querySelector('img')).map(c=>c.querySelector('.goods-card__label')?.textContent),
-    qtyBadges: cards.filter(c=>/^×\d+$/.test(c.querySelector('.foundry-square-resource__count')?.textContent ?? '')).length };
+    noArt: cards.filter(c=>!c.querySelector('img')).map(c=>c.querySelector('.goods-card__buy')?.getAttribute('aria-label')),
+    qtyBadges: cards.filter(c=>c.querySelector('.foundry-square-resource__count')?.textContent?.trim() === '1').length };
 });
-check('all 9 goods render as resource cards', goods.count===9, `${goods.count}`);
-check('every good resolved its artwork', goods.withArt===9, `missing: ${goods.noArt.join(', ') || 'none'}`);
-check('each card shows the quantity sold', goods.qtyBadges===9, `${goods.qtyBadges}/9`);
+check('16 rotating goods render as resource cards', goods.count===16, `${goods.count}`);
+check('every good resolved its artwork', goods.withArt===16, `missing: ${goods.noArt.join(', ') || 'none'}`);
+check('each card shows one unit for sale', goods.qtyBadges===16, `${goods.qtyBadges}/16`);
+check('goods names are tooltip-only, not standing labels', await page.locator('.goods-card__label').count()===0,
+  `${await page.locator('.goods-card__label').count()} labels`);
+check('each price is an interactive overlay inside its loot card', await page.locator('.goods-card__tile .goods-card__buy').count()===16,
+  `${await page.locator('.goods-card__tile .goods-card__buy').count()}/16 overlays`);
 // The single-column collapse was the bug: `.shop-section` centres its flex children, shrink-wrapping the grid.
 check('the grid lays out in multiple columns', goods.cols>=4, `${goods.cols} columns`);
 

@@ -43,7 +43,7 @@ await boot({
   balance: 9000, packs: [], graphicsSettings:{quality:'low'},
   mineClaimQueue:{stone:12,coal:9,iron:7,silver:4,gold:3,platinum:2,starlit:1},
   mineRewardQueue:{coins:120,smoldering_mote:4,grounding_mote:3,jolting_mote:2},
-  gatheringClaimQueue:{wood:9,hardwood:5,resin:4,fiber:7,hide:3,bone:2,mushrooms:6,honey:2,stone:4,coal:3},
+  gatheringClaimQueue:{wood:9,hardwood:5,resin:4,fiberweed:7,hide:3,bone:2,mushrooms:6,honey:2,stone:4,coal:3},
   gatheringRewardQueue:{coins:80,blooming_mote:3,gusting_mote:2},
 });
 

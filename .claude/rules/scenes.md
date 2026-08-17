@@ -126,40 +126,16 @@ Both veils were re-tuned **in opposite directions** afterwards, measured against
 rather than guessed: the wilderness got heavier (it now shows far more sunlit ground) and the
 cavern lighter. See the veil note above — this is exactly the job it exists to do.
 
-### Splash scene notes
+### Splash backdrop notes
 
-Layered ridge silhouettes behind the title and the main menu. Three things decide whether it
-reads as mountains or as moorland:
+The title screen uses the supplied finished mountain artwork directly from
+`src/assets/environment/main-menu-mountains.png`. `SceneBackdrop` deliberately does not mount
+Three.js for `scene="splash"`, so the art is identical at every graphics tier and the menu has no
+GPU render loop. The existing DOM rune stream remains the only animated atmospheric layer.
 
-- **Peaks, not sines.** The profile is a set of overlapping triangular summits with randomised
-  height and half-width (`makePeaks` / `peakProfile`), giving sharp tops and deep saddles. Two
-  summed sines give evenly spaced rounded humps, which is a moor.
-- **Peak size is specified in WORLD units, not as a fraction of ridge width.** Sizing them
-  relatively made them scale with the ridge: a 1700-unit ridge got 250-unit-wide summits against
-  a 76-unit rise — a hill. Steepness is the whole effect, so it is set independently of width.
-- **Ridge widths are sized to the visible frame plus parallax margin.** The old 1700-unit ridges
-  put only two or three summits on screen, so the range read as a couple of broad humps.
-
-Each ridge is positioned by `baseY` / `saddleY` / `summitY` — where its silhouette should land in
-frame — rather than by an abstract amplitude, and the profile is normalised against its own
-maximum so `summitY` means what it says whatever the random peaks came out as. An earlier version
-scaled displacement as a fraction of body height; because the profile maximum varies, the near
-ridge's summits reached 469 units and filled the frame with flat dark purple, which looked
-exactly like an empty scene.
-
-Summits step **down** toward the viewer, which is how a real range reads — far peaks sit highest
-in frame. Rows are displaced in proportion to their height up the plane, not just the top edge,
-which is what leaves room for a snowline; with a single row there is nowhere to put one and the
-mountains look like cut paper. Material colour is white and the vertex colours carry the hue,
-for the usual reason.
-
-The sky's bands are compressed toward the horizon. Spread evenly, the warm dawn colour sat at the
-bottom of the sphere, entirely behind the ridges — so the sky read as flat night with the one
-thing that made it dawn permanently hidden.
-
-**Nothing moves in this scene but the camera.** It used to carry its own field of rising motes as
-well as the DOM rune stream, and two unrelated drifts crossing each other read as noise rather
-than as one effect. The screen's only particles are the diagonal stream in SplashScreen.jsx.
+The artwork uses `background-size: cover`: it fills any viewport without distortion and crops at
+the edges when the screen aspect differs from the source's 1616:973 ratio. Keep the focal peaks
+near the horizontal centre if the image is ever replaced, since narrow screens lose both sides.
 
 ### Cavern scene notes
 

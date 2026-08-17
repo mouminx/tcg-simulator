@@ -29,6 +29,8 @@ Important asset folders:
 - `src/assets/ores/`               384px square icons
 - `src/assets/ingots/`             384px long edge
 - `src/assets/resources/`          384px square icons
+- `src/assets/crafted/`            384px square crafted-item icons
+- `src/assets/tools/`              384px square tool icons
 - `src/assets/cards/charms/`       384px square icons
 - `src/assets/rarity-gems/`        SVG
 - `src/assets/tier-stars/`         SVG
@@ -44,6 +46,10 @@ doubled for 2x DPR:
 - card art at 330px in the viewer modal → 768x1152 detail
 - card art at 132px in the binder cell → 320x480 thumb
 - square icons at ~110px in sidebars → 384px long edge
+
+`npm run extract-colors` samples the optimized WebPs (not the source PNGs) and regenerates
+`src/game/cardColors.js`. Class-card filenames do not need numeric variant suffixes; one image in a
+class folder is a valid one-variant art set.
 
 `src/assets-original/` is not in git. To regenerate it, `git checkout` an older
 commit's `src/assets` or re-export from source art.

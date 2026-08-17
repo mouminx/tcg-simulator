@@ -121,8 +121,10 @@ src/components/AccountMenu.jsx in-game account + switch save (header)
 ## Save slots
 
 **Three positions (1–3), each holding at most one save, and each save is either SSF or online.** One
-list, one badge per entry. The boot sequence is `login → slots → game`; the login page only appears when
-online is configured and there is no session, so the desktop SSF build goes straight to the picker.
+list, one badge per entry. The boot sequence is `entry choice → slots → game`. Without a restored online
+session, the entry choice always presents Solo Self Found and Online as two side-by-side panels. The
+Online panel is marked **Coming Soon**, and both account actions are always disabled; Play Offline is
+the only interactive entry action. Restored online sessions can still continue to their slot picker.
 
 ### Positions can collide, and the local save is the one that yields
 
@@ -307,8 +309,9 @@ guarantees it exists and its absence means something is wrong server-side.
 
 ### Configuration, and the key that must never appear
 
-`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. **Unset is a supported state** — no sign-in screen, no
-account, SSF only, which is how a fresh clone runs with no Supabase project at all.
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. **Unset is a supported state** — the entry screen remains,
+and only Solo Self Found can proceed, which is how a fresh clone runs with no Supabase project at all.
+Online entry actions are disabled in every build while that mode is marked Coming Soon.
 
 Vite inlines every `VITE_`-prefixed var into the client bundle, so both of those are **public by
 construction** and cannot be hidden. That is fine; the security model is RLS plus `save_game()`, not key

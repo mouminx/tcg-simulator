@@ -29,12 +29,10 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { buildWildernessScene } from './wildernessScene';
 import { buildCavernScene } from './cavernScene';
-import { buildSplashScene } from './splashScene';
 
 const BUILDERS = {
   wilderness: buildWildernessScene,
   cavern: buildCavernScene,
-  splash: buildSplashScene,
 };
 
 const TARGET_FPS = 30;
@@ -73,6 +71,16 @@ export function mountBackdrop({ canvas, sceneId, resolution = 1 }) {
   renderer.setClearColor(0x000000, 1);
 
   const built = build(THREE);
+
+  // Static scene shadows are opt-in. The splash uses one directional shadow map to ground the
+  // volumetric mountains and trees; rendering it once is enough because the world and sun never
+  // move (only the camera drifts). Other scenes retain their existing shadow-free path.
+  if (built.shadows) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE[built.shadows.type] ?? THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = built.shadows.autoUpdate ?? false;
+    renderer.shadowMap.needsUpdate = true;
+  }
 
   // Tone mapping is opt-in per scene, like bloom below. The cavern needs it: a near-black
   // rock face lit by an open fire covers a dynamic range that clips ugly under the default

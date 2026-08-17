@@ -25,9 +25,10 @@ The merged Cards page: shelves, goods, upgrades, the summoning altar, pack and c
 
 Current visual rules:
 
-- top nameplate
-- art frame with larger embedded tab treatment
-- rarity gems use custom SVGs from `src/assets/rarity-gems`
+- full-bleed artwork with the name and affixes overlaid
+- the outer frame is the rarity signal: white, green, blue, purple, yellow, then red
+- First Edition overrides the rarity frame with the original raised gold treatment
+- there is no bottom rarity gem; that edge is reserved for real socketed gems
 - tier stars use custom SVGs from `src/assets/tier stars`
 - affixes render in the lower text body
 - rarity/tier presentation is custom and no longer the old text-chip system
@@ -65,10 +66,12 @@ Notable pack types:
 Buying a pack and opening it are one activity and they were two pages, so every purchase ended in a tab
 switch.
 
-**The altar is a RAIL, not an equal half, and that came from measurement.** An even split at 1366x768 gave
-each column ~650px, which pinned the shelf packs at 76px with unreadable descriptions. The shelf needs
-~700px for five legible packs; the altar's fan and summoning field are comfortable much narrower.
-`clamp(300px, 27%, 420px)` gives the shelf 849–1010px and packs of 109–141px, against 145px before the merge.
+**Summon is the wider half, and its room comes from Shop — never from the Bag.** The page once overrode the
+global `--drawer-width` from 248px to 140px to buy altar width, which compressed the Bag's normal three-column
+resource presentation. The override is gone. `.main--shop .shop-summon` instead gives the compact storefront
+the smaller track and Summon the larger one; Shop pays for that with a narrower category rail, tighter gaps,
+and slightly smaller goods tiles. At 1600x1000 the measured split is ~504px Shop / ~813px Summon with the Bag
+still exactly 248px; at 1366x768 it is ~440px / ~644px.
 
 **A reveal happens IN PLACE, inside the altar column.** `.shop-summon--opening` dims the shop side to 0.32
 and sets `pointer-events: none`; it does **not** hide it, and the grid does **not** re-proportion. It used to
@@ -145,8 +148,10 @@ card faces, pack items, the pack-count tile) render into these rows without each
    appears for 22px of permanent height in a half that has none to spare. The reveal queue keeps its padding,
    because the altar column around it does scroll.
 
-Per-consumer sizing: packs 110px wide / 58px bite; reveal cards 110px / 78px (twice the pack cap in a
-narrower column, so a tighter grouping); **collection-queue tiles 72px / 38px**.
+Per-consumer sizing: packs 110px wide / 58px bite; reveal cards use responsive native card proportions and
+overlap more tightly for the 20-card cap; **collection-queue tiles 72px / 38px**. The reveal line uses
+`justify-content: center`, so short and full draws are centred as a group rather than beginning at the tray's
+left edge.
 
 The queue tiles are 72px because that is exactly `.inventory-tile`'s size. A queued loot tile and the same
 resource sitting in the Bag are the same object and should read at the same scale; they were 112px here
@@ -162,6 +167,11 @@ The cap on held packs came down to 10 with this — see **Held-pack cap**.
 |---|---|---|
 | shelf purchase | the altar's pack fan (`summonAltarRef`) | it is on screen at the moment of purchase |
 | treasure pack claimed in Wilderness | the **Cards tab** (`shopBtnRef`) | the altar is only mounted on the shop page, so on the Wilderness that ref is null — and `animateGroup` bails on a null target, which would have silently dropped the animation rather than failing loudly |
+
+Selecting a held pack from the altar's top tray does **not** fly it into the summoning field. It is placed
+directly: that internal transition added delay and visual noise without communicating a state change the
+player did not already initiate. The tray itself is centred as a group and deliberately suppresses the
+per-rarity hover drop-shadows; those glows remain exclusive to Shop displays and the opening payoff.
 
 **`--shelf-pack-w` is gone.** It was `clamp(100px, calc(20vw - 161px), 210px)`, a viewport formula already
 recalibrated by hand twice — once when the section rail moved left, and it would have needed it again here.
@@ -210,10 +220,15 @@ string removal would have taken those with it.
 
 ### Rotation deals persist nothing
 
-`src/game/shop.js`. The window index is `floor(now / ROTATION_PERIOD_MS)` (4 hours), so the offers are a
+`src/game/shop.js`. The window index is `floor(now / ROTATION_PERIOD_MS)` (5 minutes), so the offers are a
 **pure function of the clock** — reloading cannot reroll them, there is no expiry to keep in the save, and
 no migration was needed. A stored seed would have required both and could drift out of step with the clock
 it described.
+
+Goods use five tier-specific shuffle bags with a 6/4/3/2/1 shelf split. Every rotation therefore contains
+Tier IV and Tier V stock, while each item waits for the rest of its tier's bag before becoming eligible to
+repeat. The catalogue covers ores, ingots, gathered resources, crafted materials, gems, and elemental
+resources; treasure packs remain in Summoning rather than being sold as a material.
 
 Packs are picked by walking the pool with a hash-derived **stride coprime with the pool size**, so a pack
 cannot appear twice in one window without a duplicate check. Discounts are 0–25% in 5% steps.

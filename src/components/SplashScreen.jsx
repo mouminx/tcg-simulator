@@ -90,6 +90,23 @@ export default function SplashScreen({ onDismiss, resumable = false }) {
   }, []);
 
   const release = RELEASE;
+  const noteSections = [
+    ['Changelog', 'changelog'],
+    ['Known Issues', 'known'],
+    ['Planned', 'planned'],
+  ];
+  const renderNoteColumns = (entry, keyPrefix) => (
+    <div className="splash__note-columns">
+      {noteSections.map(([heading, key]) => (entry[key]?.length ? (
+        <section key={`${keyPrefix}-${key}`} className={`splash__note-card splash__note-card--${key}`}>
+          <h3 className="splash__note-card__title">{heading}</h3>
+          <ul className="splash__note-card__list">
+            {entry[key].map(item => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+      ) : null))}
+    </div>
+  );
 
   return (
     <div
@@ -158,18 +175,29 @@ export default function SplashScreen({ onDismiss, resumable = false }) {
 
         {notesOpen && (
           <div className="splash__notes">
-            {[
-              ['Changelog', 'changelog', release.changelog],
-              ['Known Issues', 'known', release.known],
-              ['Planned', 'planned', release.planned],
-            ].map(([heading, key, items]) => (items?.length ? (
-              <section key={key} className={`splash__note-card splash__note-card--${key}`}>
-                <h3 className="splash__note-card__title">{heading}</h3>
-                <ul className="splash__note-card__list">
-                  {items.map(item => <li key={item}>{item}</li>)}
-                </ul>
-              </section>
-            ) : null))}
+            <div className="splash__release-heading">
+              <span className="splash__release-heading__version">Version {release.version}</span>
+              <span className="splash__release-heading__label">Latest update</span>
+            </div>
+            {renderNoteColumns(release, release.version)}
+
+            {release.history?.map(previous => (
+              <details key={previous.version} className="splash__release-history">
+                <summary className="splash__release-history__summary">
+                  <span>
+                    <strong>Version {previous.version}</strong>
+                    <small>{previous.stage} release notes</small>
+                  </span>
+                  <span className="splash__release-history__action">
+                    <span className="splash__release-history__action-open">Expand</span>
+                    <span className="splash__release-history__action-close">Collapse</span>
+                  </span>
+                </summary>
+                <div className="splash__release-history__body">
+                  {renderNoteColumns(previous, previous.version)}
+                </div>
+              </details>
+            ))}
           </div>
         )}
 

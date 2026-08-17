@@ -72,7 +72,16 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(2500);
 
 // ── 1. Login page, then offline ──────────────────────────────────────────────
-check('the login page is shown first', await page.locator('.gate__tab').count() === 2);
+check('the entry screen shows two side-by-side play-mode panels',
+  await page.locator('.gate__choice').count() === 2
+    && await page.locator('.gate__choice').first().boundingBox().then(a =>
+      page.locator('.gate__choice').nth(1).boundingBox().then(b => Boolean(a && b && b.x > a.x + a.width))));
+check('the entry modes are Solo Self Found and Online',
+  (await page.locator('.gate__choice h2').allTextContents()).join('|') === 'Solo Self Found|Online');
+check('Online is marked Coming Soon and both account actions are disabled',
+  /coming soon/i.test(await page.locator('.gate__choice--online').textContent())
+    && await page.locator('.gate__tab').count() === 2
+    && await page.locator('.gate__tab:disabled').count() === 2);
 check('the game has not mounted behind it', await page.locator('.app').count() === 0);
 await playOffline();
 check('offline goes to the slot picker', await page.locator('.slots__list').count() === 1);
@@ -122,16 +131,20 @@ const email = `slotui-${stamp}@example.test`;
 const name = `Mouminx${stamp % 100000}`;
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(2500);
-await page.locator('.gate__tab', { hasText: 'Create Account' }).click();
-await page.waitForTimeout(200);
-await page.locator('.gate__input[type="text"]').fill(name);
-await page.waitForTimeout(1400); // debounced availability check
-check('a free player name reports as available',
-  /available/i.test(await page.locator('.gate__name-state').first().textContent()),
-  await page.locator('.gate__name-state').first().textContent());
-await page.locator('.gate__input[type="email"]').fill(email);
-await page.locator('.gate__input[type="password"]').fill('a-good-long-password');
-await page.locator('.gate__submit').click();
+const seededAccount = await page.evaluate(async ({ email, name }) => {
+  const acc = await import('/src/game/account.js');
+  const available = await acc.isDisplayNameAvailable(name);
+  try {
+    await acc.signUp({ email, password: 'a-good-long-password', displayName: name });
+    return { available, error: null };
+  } catch (error) {
+    return { available, error: error.message };
+  }
+}, { email, name });
+check('a free player name reports as available through the account adapter',
+  seededAccount.available === true, String(seededAccount.available));
+check('the account adapter creates a session', seededAccount.error === null, seededAccount.error ?? '');
+await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(5000);
 
 check('sign-up lands on the slot picker', await page.locator('.slots__list').count() === 1,
@@ -217,23 +230,28 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(5000);
 await page.locator('.gate__offline', { hasText: /Sign Out/i }).click();
 await page.waitForTimeout(2500);
-check('signing out returns to the login page', await page.locator('.gate__tab').count() === 2);
+check('signing out returns to the Coming Soon entry page',
+  await page.locator('.gate__tab:disabled').count() === 2
+    && /coming soon/i.test(await page.locator('.gate__choice--online').textContent()));
 
-await page.locator('.gate__tab', { hasText: 'Create Account' }).click();
-await page.waitForTimeout(200);
-await page.locator('.gate__input[type="text"]').fill(name);
-await page.waitForTimeout(1500);
-check('a taken player name reports as taken',
-  /taken/i.test(await page.locator('.gate__name-state').first().textContent()),
-  await page.locator('.gate__name-state').first().textContent());
-
-await page.locator('.gate__input[type="email"]').fill(`other-${stamp}@example.test`);
-await page.locator('.gate__input[type="password"]').fill('another-good-password');
-await page.locator('.gate__submit').click();
-await page.waitForTimeout(1200);
+const duplicateResult = await page.evaluate(async ({ stamp, name }) => {
+  const acc = await import('/src/game/account.js');
+  const available = await acc.isDisplayNameAvailable(name);
+  try {
+    await acc.signUp({
+      email: `other-${stamp}@example.test`,
+      password: 'another-good-password',
+      displayName: name,
+    });
+    return { available, error: null };
+  } catch (error) {
+    return { available, error: error.message };
+  }
+}, { stamp, name });
+check('a taken player name reports as taken through the account adapter',
+  duplicateResult.available === false, String(duplicateResult.available));
 check('submitting a taken name is refused with a clear message',
-  /already taken/i.test(await page.locator('.gate__error').textContent()),
-  await page.locator('.gate__error').textContent());
+  /already taken/i.test(duplicateResult.error ?? ''), duplicateResult.error ?? 'no error');
 check('the game did not mount', await page.locator('.app').count() === 0);
 
 // Signed out, the local SSF save is still reachable.

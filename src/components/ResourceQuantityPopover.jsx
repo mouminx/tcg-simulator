@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 function clampPopoverPosition(position) {
   if (typeof window === 'undefined') return position;
@@ -35,7 +36,7 @@ export default function ResourceQuantityPopover({
 
   const clamped = clampPopoverPosition(position);
 
-  return (
+  return createPortal(
     <div
       className="resource-quantity-popover"
       style={{ left: clamped.x, top: clamped.y }}
@@ -89,6 +90,7 @@ export default function ResourceQuantityPopover({
           </button>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

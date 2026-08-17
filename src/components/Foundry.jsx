@@ -29,17 +29,29 @@ import { socketedCardDragProps } from './CardPocket';
 import StationMerge from './StationMerge';
 import HoverCardPreview, { buildHoverCardPreview } from './HoverCardPreview';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
+import ToolCard from './ToolCard';
+import LootTierBadge from './LootTierBadge';
+import { getLootTier } from '../game/lootTiers';
 import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
+import { GEM_RESOURCES_BY_ID } from '../game/gems';
+import { GEMDUST_RESOURCE } from '../game/gemdust';
+import { getArcanaResourceArt, getCraftedArt, getResourceArt } from '../game/resourceArt';
+import { CRAFTED_RESOURCES_BY_ID } from '../game/crafting';
+import { ALL_GATHERING_RESOURCES } from '../game/wilderness';
 import {
-  FORGE_CYCLE_DURATION_SECONDS,
+  FORGE_BOOSTERS,
   FORGE_FUEL_TYPE,
-  FORGE_SMELTS_PER_COAL,
+  getForgeFuelChargesPerUnit,
   MAX_MINE_SLOT_CAPACITY,
+  MINING_RESOURCE_TYPES,
   ORE_TYPES,
   SMELT_RECIPES,
+  getForgeOutputSource,
+  getForgeBoosterSpeedPercent,
   getForgeFuelChargeFraction,
+  getMiningResourceSource,
   getMiningAffixBonusPercent,
-  hasQueuedOre,
+  hasQueuedMineResources,
 } from '../game/foundry';
 
 /** Forge row names. Roman numerals rather than "Forge 1" — the tabs are narrow and the game already
@@ -62,6 +74,10 @@ const ORE_ART = {
   gold: _gold,
   platinum: _platinum,
   starlit: _starlit,
+  ...Object.fromEntries(
+    Object.entries(import.meta.glob('../assets/gems/*.webp', { eager: true, import: 'default' }))
+      .map(([path, src]) => [path.split('/').pop().replace(/\.webp$/i, '').toLowerCase(), src]),
+  ),
 };
 
 const ELEMENT_ART = Object.fromEntries(
@@ -118,6 +134,35 @@ const INGOT_RESOURCES = {
     description: 'Celestial alloy forged from starlit ore, radiating faint arcane energy suited for legendary-tier crafting.',
   },
 };
+
+function getForgeResource(source, id) {
+  if (!id) return null;
+  if (source === 'ore') return ORE_TYPES.find(resource => resource.id === id) ?? null;
+  if (source === 'ingot') return INGOT_RESOURCES[id] ?? null;
+  if (source === 'gathered') return GEM_RESOURCES_BY_ID[id]
+    ?? (id === 'gemdust' ? GEMDUST_RESOURCE : null)
+    ?? ALL_GATHERING_RESOURCES.find(resource => resource.id === id)
+    ?? null;
+  if (source === 'crafted') return CRAFTED_RESOURCES_BY_ID[id] ?? null;
+  if (source === 'arcana') {
+    const { elementId, tier } = parseElementResourceId(id);
+    const baseName = ESSENCES_BY_ID[elementId]?.name?.replace(/\s+Essence$/i, '') ?? elementId;
+    return {
+      id,
+      name: `${baseName} ${tier.charAt(0).toUpperCase()}${tier.slice(1)}`,
+      description: getElementResourceDescription(id),
+    };
+  }
+  return null;
+}
+
+function getForgeResourceArt(source, id) {
+  if (source === 'ore') return ORE_ART[id] ?? null;
+  if (source === 'ingot') return INGOT_ART[id] ?? null;
+  if (source === 'arcana') return getArcanaResourceArt(id);
+  if (source === 'crafted') return getCraftedArt(CRAFTED_RESOURCES_BY_ID[id]?.artKey ?? id);
+  return getResourceArt(id);
+}
 
 const DIVIDER_RUNES = ['ᚠ', 'ᚱ', 'ᚨ', 'ᛊ', 'ᛏ', 'ᛒ', 'ᛖ', 'ᛞ', 'ᛟ', 'ᚲ', 'ᛗ', 'ᛚ', 'ᚾ', 'ᛜ', 'ᚦ', 'ᚹ'];
 const DIVIDER_REPEAT = 6;
@@ -194,27 +239,32 @@ function forgeRowStatus({ slot, oreSlot, ingredientSlot, fuelSlot, outputQueue =
   const ingredientRequired = recipe?.ingredient ?? null;
   const ingredientOk = !ingredientRequired
     || (ingredientSlot?.ingotType === ingredientRequired.type
+      && (ingredientSlot?.source ?? 'ingot') === (ingredientRequired.source ?? 'ingot')
       && (ingredientSlot?.count ?? 0) >= ingredientRequired.count);
-  const oreOk = Boolean(oreSlot?.oreType) && (oreSlot.count ?? 0) >= oreRequired;
-  const fuelOk = (fuelSlot?.loadedCoal ?? 0) > 0;
+  const oreOk = Boolean(oreSlot?.oreType)
+    && (oreSlot?.source ?? 'ore') === recipe?.inputSource
+    && (oreSlot.count ?? 0) >= oreRequired;
+  const fuelOk = (fuelSlot?.loadedCoal ?? 0) > 0
+    && (fuelSlot?.fuelType ?? FORGE_FUEL_TYPE) === recipe?.fuelType;
   const hasCard = Boolean(slot?.card);
+  const cardOk = hasCard && (!recipe || slot.card.classType === recipe.cardClass);
 
   const progress = getForgeRowProgress(fuelSlot, now);
   const running = progress > 0 && progress < 1;
-  const ready = hasCard && oreOk && ingredientOk && fuelOk;
+  const ready = cardOk && oreOk && ingredientOk && fuelOk;
 
   const hasOutput = hasProductionOutput(outputQueue);
 
   // Ordered by what the player has to do first, so the label names one next action rather than listing
   // everything missing at once.
-  const needs = !hasCard ? 'card'
-    : !fuelOk ? 'coal'
-      : !oreOk ? 'ore'
+  const needs = !cardOk ? 'card'
+    : !fuelOk ? (recipe?.fuelType ?? 'fuel')
+      : !oreOk ? (recipe?.kind === 'gemFusion' ? 'gems' : 'ore')
         : !ingredientOk ? 'ingredient'
           : null;
 
   return {
-    recipe, oreRequired, ingredientRequired, ingredientOk, oreOk, fuelOk, hasCard,
+    recipe, oreRequired, ingredientRequired, ingredientOk, oreOk, fuelOk, hasCard, cardOk,
     progress, running, ready, hasOutput, needs,
   };
 }
@@ -233,6 +283,7 @@ function SquareResourceCard({
   onContextMenu = null,
   onClick = null,
   dataDropTarget = null,
+  tier = 1,
 }) {
   const showsRequirement = Number.isFinite(requiredCount) && requiredCount > 0;
   const [tipPos, setTipPos] = useState(null);
@@ -273,7 +324,7 @@ function SquareResourceCard({
         ) : null}
         <div className="card-face-inner">
           <div className="card-face-front foundry-square-resource__front">
-            <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
+            <div className={`foundry-square-resource__header foundry-square-resource__header--count-only${showsRequirement ? ' foundry-square-resource__header--requirement' : ''}`}>
               <span
                 className={`foundry-square-resource__count${showsRequirement ? ' foundry-square-resource__count--requirement' : ''}`}
                 data-material-requirement={showsRequirement ? `${count ?? 0}/${requiredCount}` : undefined}
@@ -285,6 +336,7 @@ function SquareResourceCard({
             <div className="foundry-square-resource__art-wrap">
               {artSrc ? <img src={artSrc} alt={name} className="foundry-square-resource__art" /> : null}
             </div>
+            <LootTierBadge tier={tier} />
           </div>
         </div>
       </div>
@@ -316,19 +368,21 @@ function MineSlot({
   now,
   onPreviewEnter,
   onPreviewLeave,
+  onSocketTool,
+  onUnsocketTool,
 }) {
   const stagedTileRefs = useRef({});
   const stagedFlightsRef = useRef([]);
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
   const running = Boolean(slot.startedAt && slot.endsAt && remainingMs > 0);
-  const bonusPercent = slot.card ? getMiningAffixBonusPercent(slot.card) : 0;
+  const bonusPercent = slot.card ? getMiningAffixBonusPercent(slot.card, slot.tool, slot.momentumStacks) : 0;
   const durationMs = slot.startedAt && slot.endsAt ? Math.max(1, slot.endsAt - slot.startedAt) : 0;
   const progress = running && durationMs ? Math.max(0, Math.min(1, (now - slot.startedAt) / durationMs)) : 0;
   const clearTitle = returnsToPocket ? 'Remove and return to pocket' : 'Remove and return to collection';
   const stagedOre = aggregateStagedCounts(stagedLoot, 'loot');
   const stagedRewards = aggregateStagedCounts(stagedLoot, 'rewards');
-  const stagedOreEntries = ORE_TYPES.filter(ore => (stagedOre[ore.id] ?? 0) > 0);
+  const stagedOreEntries = MINING_RESOURCE_TYPES.filter(ore => (stagedOre[ore.id] ?? 0) > 0);
   const stagedRewardEntries = buildBonusRewardEntries(stagedRewards);
   const hasStagedLoot = stagedOreEntries.length > 0 || stagedRewardEntries.length > 0;
   const stagedKey = stagedLoot.map(event => event.id).join('|');
@@ -393,10 +447,33 @@ function MineSlot({
             <CardFace card={slot.card} visualMode="compact" className="foundry-mine-slot__card-face no-twirl" />
           </div>
           <div className="foundry-mine-slot__right">
-            <div className="station-tool-slot" aria-label="Mining tool or buff slot">
+            <div
+              className={`station-tool-slot${slot.tool ? ' station-tool-slot--filled' : ''}`}
+              aria-label="Mining tool or buff slot"
+              data-tool-drop-target="mine"
+              data-tool-slot-id={slot.slotId}
+              onDragOver={event => {
+                if (!event.dataTransfer.types.includes('application/x-cards-of-arcana-tool')) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onDrop={event => {
+                const toolId = event.dataTransfer.getData('application/x-cards-of-arcana-tool');
+                if (!toolId) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onSocketTool?.(toolId);
+              }}
+            >
               <span className="station-tool-slot__speed">+{bonusPercent}% Speed</span>
-              <div className="station-tool-slot__socket">
-                <span>Tool/Buff</span>
+              <div className={`station-tool-slot__socket${slot.tool ? ' station-tool-slot__socket--filled' : ''}`}>
+                {slot.tool ? (
+                  <ToolCard
+                    tool={slot.tool}
+                    className="station-tool-card"
+                    onClick={() => onUnsocketTool?.()}
+                  />
+                ) : <span>Tool/Buff</span>}
               </div>
             </div>
             <div className={`station-loot-stage${hasStagedLoot ? ' station-loot-stage--active' : ''}`}>
@@ -405,8 +482,9 @@ function MineSlot({
                   <div key={`mine-stage-${ore.id}`} className="station-loot-stage__item">
                     <SquareResourceCard
                       name={ore.name}
-                      artSrc={ORE_ART[ore.id]}
+                      artSrc={getForgeResourceArt(getMiningResourceSource(ore.id), ore.id)}
                       count={stagedOre[ore.id]}
+                      tier={getLootTier(getMiningResourceSource(ore.id), ore.id, ore)}
                       description={ore.description}
                       tileRef={element => { stagedTileRefs.current[`ore-${ore.id}`] = element; }}
                       className="station-loot-stage__card"
@@ -419,6 +497,7 @@ function MineSlot({
                       name={entry.name}
                       artSrc={entry.artSrc}
                       count={entry.count}
+                      tier={getLootTier(entry.id === 'coins' ? 'currency' : 'arcana', entry.id)}
                       description={entry.description}
                       tileRef={element => { stagedTileRefs.current[`reward-${entry.id}`] = element; }}
                       className="station-loot-stage__card"
@@ -501,7 +580,8 @@ function ForgeCardSlot({
 
 function ForgeOreSlot({ slot, isDragOver, onDragOver, onDragLeave, onDrop, onClear, onLoadFromCarry, onPickUp, carriedResource }) {
   const [pickUpPopover, setPickUpPopover] = useState(null);
-  const ore = slot.oreType ? ORE_TYPES.find(entry => entry.id === slot.oreType) : null;
+  const source = slot.source ?? 'ore';
+  const ore = slot.oreType ? getForgeResource(source, slot.oreType) : null;
   const requiredCount = slot.oreType ? SMELT_RECIPES[slot.oreType]?.oreCount ?? null : null;
 
   return (
@@ -513,7 +593,7 @@ function ForgeOreSlot({ slot, isDragOver, onDragOver, onDragLeave, onDrop, onCle
       onDrop={onDrop}
       onPointerDown={e => {
         if (e.button !== 0) return;
-        if (carriedResource?.source === 'ore') { onLoadFromCarry?.(); return; }
+        if (carriedResource && SMELT_RECIPES[carriedResource.id]?.inputSource === carriedResource.source) { onLoadFromCarry?.(); return; }
         if (!carriedResource && ore && (slot.count ?? 0) > 0) onPickUp?.(slot.count);
       }}
       onContextMenu={e => {
@@ -536,8 +616,9 @@ function ForgeOreSlot({ slot, isDragOver, onDragOver, onDragLeave, onDrop, onCle
           </button>
           <SquareResourceCard
             name={ore.name}
-            artSrc={ORE_ART[ore.id]}
+            artSrc={getForgeResourceArt(source, ore.id)}
             count={slot.count ?? 0}
+            tier={getLootTier(source, ore.id, ore)}
             requiredCount={requiredCount}
             description={ore.description}
             className="foundry-forge-ore-slot__resource"
@@ -546,7 +627,7 @@ function ForgeOreSlot({ slot, isDragOver, onDragOver, onDragLeave, onDrop, onCle
       ) : (
         <div className="foundry-forge-ore-slot__placeholder">
           <span className="foundry-forge-ore-slot__placeholder-rune" aria-hidden="true">⬡</span>
-          <span className="foundry-forge-ore-slot__placeholder-text">Place ore</span>
+          <span className="foundry-forge-ore-slot__placeholder-text">Place ore or gem</span>
         </div>
       )}
     </div>
@@ -571,8 +652,13 @@ function ForgeFuelBox({ forgeFuelSlot, now, onLoadFromCarry, onUnload, onPickUp,
   const loaded = forgeFuelSlot?.loadedCoal > 0;
   const running = Boolean(forgeFuelSlot?.startedAt && forgeFuelSlot?.endsAt && forgeFuelSlot.endsAt > now);
   const remainingMs = forgeFuelSlot?.endsAt ? Math.max(0, forgeFuelSlot.endsAt - now) : 0;
-  const cycleProgress = running ? Math.max(0, Math.min(1, remainingMs / (FORGE_CYCLE_DURATION_SECONDS * 1000))) : 0;
+  const cycleDurationMs = Math.max(1, (forgeFuelSlot?.endsAt ?? 0) - (forgeFuelSlot?.startedAt ?? 0));
+  const cycleProgress = running ? Math.max(0, Math.min(1, remainingMs / cycleDurationMs)) : 0;
   const fuelFraction = getForgeFuelChargeFraction(forgeFuelSlot);
+  const fuelType = forgeFuelSlot?.fuelType ?? FORGE_FUEL_TYPE;
+  const fuelChargesPerUnit = getForgeFuelChargesPerUnit(fuelType);
+  const fuelSource = fuelType === 'gemdust' ? 'gathered' : 'ore';
+  const fuel = fuelType === 'gemdust' ? GEMDUST_RESOURCE : getForgeResource('ore', FORGE_FUEL_TYPE);
 
   return (
     <>
@@ -580,7 +666,8 @@ function ForgeFuelBox({ forgeFuelSlot, now, onLoadFromCarry, onUnload, onPickUp,
       className={`foundry-fuel-box${loaded ? ' foundry-fuel-box--loaded' : ''}`}
       onPointerDown={e => {
         if (e.button !== 0) return;
-        if (carriedResource?.id === FORGE_FUEL_TYPE) { onLoadFromCarry?.(); return; }
+        if ((carriedResource?.source === 'ore' && carriedResource?.id === FORGE_FUEL_TYPE)
+          || (carriedResource?.source === 'gathered' && carriedResource?.id === 'gemdust')) { onLoadFromCarry?.(); return; }
         if (!carriedResource && loaded) onPickUp?.(forgeFuelSlot.loadedCoal);
       }}
       onContextMenu={e => {
@@ -605,10 +692,11 @@ function ForgeFuelBox({ forgeFuelSlot, now, onLoadFromCarry, onUnload, onPickUp,
             ✕
           </button>
           <SquareResourceCard
-            name="Coal"
-            artSrc={_coal}
+            name={fuel?.name ?? 'Fuel'}
+            artSrc={getForgeResourceArt(fuelSource, fuelType)}
             count={forgeFuelSlot.loadedCoal}
-            description="A carbon-rich mineral burned as fuel for the forge, providing sustained heat for smelting ore."
+            tier={getLootTier(fuelSource, fuelType, fuel)}
+            description={fuel?.description}
             className="foundry-fuel-box__resource"
           />
           <div className="foundry-fuel-box__status">
@@ -619,22 +707,22 @@ function ForgeFuelBox({ forgeFuelSlot, now, onLoadFromCarry, onUnload, onPickUp,
               <span className="foundry-fuel-box__ring-core" />
             </div>
             <div className="foundry-fuel-box__meta">
-              <span className="foundry-fuel-box__name">Coal</span>
-              <span className="foundry-fuel-box__cost">{forgeFuelSlot.currentCoalCharges}/{FORGE_SMELTS_PER_COAL} smelts</span>
+              <span className="foundry-fuel-box__name">{fuel?.name ?? 'Fuel'}</span>
+              <span className="foundry-fuel-box__cost">{forgeFuelSlot.currentCoalCharges}/{fuelChargesPerUnit} smelts</span>
             </div>
           </div>
         </div>
       ) : (
         <div className="foundry-fuel-box__empty">
           <span className="foundry-forge-ore-slot__placeholder-rune" aria-hidden="true">⬢</span>
-          <span className="foundry-forge-ore-slot__placeholder-text">Place coal</span>
+          <span className="foundry-forge-ore-slot__placeholder-text">Place fuel</span>
         </div>
       )}
     </div>
     <ResourceQuantityPopover
       open={Boolean(pickUpPopover)}
       position={pickUpPopover?.position ?? { x: 0, y: 0 }}
-      title="Carry Coal"
+      title={`Carry ${fuel?.name ?? 'Fuel'}`}
       max={pickUpPopover?.max ?? 0}
       mode="carry"
       onCancel={() => setPickUpPopover(null)}
@@ -651,7 +739,8 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
   const [pickUpPopover, setPickUpPopover] = useState(null);
   const recipe = oreSlot?.oreType ? SMELT_RECIPES[oreSlot.oreType] : null;
   const required = recipe?.ingredient ?? null;
-  const loadedIngot = ingredientSlot?.ingotType ? INGOT_RESOURCES[ingredientSlot.ingotType] : null;
+  const loadedSource = ingredientSlot?.source ?? 'ingot';
+  const loadedIngot = ingredientSlot?.ingotType ? getForgeResource(loadedSource, ingredientSlot.ingotType) : null;
 
   return (
     <>
@@ -667,7 +756,7 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
           // until the row's ore was already loaded — so every recipe that needs a secondary
           // ingredient (silver, gold, platinum, starlit) looked broken if you reached for the ingot
           // first, and the player was left holding a stack already deducted from the Bag.
-          if (carriedResource?.source === 'ingot') { onLoadFromCarry?.(); return; }
+          if (carriedResource && ['ingot', 'arcana'].includes(carriedResource.source)) { onLoadFromCarry?.(); return; }
           if (!carriedResource && loadedIngot && (ingredientSlot?.count ?? 0) > 0) onPickUp?.(ingredientSlot.count);
         }}
         onContextMenu={e => {
@@ -690,8 +779,9 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
             </button>
             <SquareResourceCard
               name={loadedIngot.name}
-              artSrc={INGOT_ART[loadedIngot.id]}
+              artSrc={getForgeResourceArt(loadedSource, loadedIngot.id)}
               count={ingredientSlot.count ?? 0}
+              tier={getLootTier(loadedSource, loadedIngot.id, loadedIngot)}
               requiredCount={required?.count ?? null}
               description={loadedIngot.description}
               className="foundry-forge-ingredient-slot__resource"
@@ -708,7 +798,7 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
             </span>
             <span className="foundry-forge-ingredient-slot__placeholder-rune" aria-hidden="true">ᚲ</span>
             <span className="foundry-forge-ingredient-slot__placeholder-text">
-              {INGOT_RESOURCES[required.type]?.name ?? required.type}
+              {getForgeResource(required.source ?? 'ingot', required.type)?.name ?? required.type}
             </span>
           </div>
         ) : (
@@ -736,11 +826,62 @@ function ForgeIngredientSlot({ ingredientSlot, oreSlot, onLoadFromCarry, onClear
   );
 }
 
+function ForgeBoosterSlot({ ingredientSlot, onLoadFromCarry, onClear, onPickUp, carriedResource }) {
+  const booster = FORGE_BOOSTERS[ingredientSlot?.boosterId] ?? null;
+  const resource = booster ? CRAFTED_RESOURCES_BY_ID[booster.id] : null;
+  const hasBooster = Boolean(resource && ingredientSlot?.boosterCount > 0);
+  const canLoad = carriedResource?.source === 'crafted' && Boolean(FORGE_BOOSTERS[carriedResource.id]);
+
+  return (
+    <div
+      className={`foundry-forge-ingredient-slot station-booster-slot${hasBooster ? ' foundry-forge-ingredient-slot--filled station-booster-slot--active' : ''}`}
+      onPointerDown={event => {
+        if (event.button !== 0) return;
+        if (canLoad) { onLoadFromCarry?.(); return; }
+        if (!carriedResource && hasBooster) onPickUp?.();
+      }}
+      data-resource-drop-target="forge-booster-slot"
+      data-forge-slot-id={ingredientSlot?.slotId}
+      aria-label={hasBooster ? `${resource.name}, ${booster.speedPercent}% smelting speed` : 'Place smelting flux'}
+    >
+      {hasBooster ? (
+        <div className="foundry-forge-ingredient-slot__placed">
+          <button
+            className="foundry-forge-ingredient-slot__clear"
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => { event.stopPropagation(); onClear?.(); }}
+            aria-label={`Remove ${resource.name}`}
+          >
+            ✕
+          </button>
+          <SquareResourceCard
+            name={resource.name}
+            artSrc={getCraftedArt(resource.artKey ?? resource.id)}
+            count={ingredientSlot.boosterCount}
+            tier={getLootTier('crafted', resource.id, resource)}
+            description={`${resource.description} +${booster.speedPercent}% smelting speed; one is consumed every ${booster.cyclesPerUnit} completed smelts.`}
+            className="foundry-forge-ingredient-slot__resource station-booster-slot__resource"
+          />
+          <span className="station-booster-slot__charges">
+            {ingredientSlot.boosterCharges}/{booster.cyclesPerUnit}
+          </span>
+        </div>
+      ) : (
+        <div className="foundry-forge-ingredient-slot__placeholder">
+          <span className="foundry-forge-ingredient-slot__placeholder-rune" aria-hidden="true">ᛚ</span>
+          <span className="foundry-forge-ingredient-slot__placeholder-text">Flux</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ForgeOutputSlot({ oreSlot, outputQueue, queueGain, tileRef = null }) {
-  const ore = oreSlot?.oreType ? ORE_TYPES.find(entry => entry.id === oreSlot.oreType) : null;
+  const recipe = oreSlot?.oreType ? SMELT_RECIPES[oreSlot.oreType] : null;
   const queuedEntries = Object.entries(outputQueue ?? {}).filter(([, count]) => count > 0);
-  const outputId = queuedEntries[0]?.[0] ?? ore?.ingotId ?? null;
-  const ingot = outputId ? INGOT_RESOURCES[outputId] : null;
+  const outputId = queuedEntries[0]?.[0] ?? recipe?.outputId ?? null;
+  const outputSource = getForgeOutputSource(outputId);
+  const ingot = outputId ? getForgeResource(outputSource, outputId) : null;
   if (!ingot) {
     return (
       <div className="foundry-forge-row__output-placeholder">
@@ -754,10 +895,11 @@ function ForgeOutputSlot({ oreSlot, outputQueue, queueGain, tileRef = null }) {
     <SquareResourceCard
       tileRef={tileRef}
       name={ingot.name}
-      artSrc={INGOT_ART[outputId]}
+      artSrc={getForgeResourceArt(outputSource, outputId)}
       count={queuedEntries.reduce((sum, [, count]) => sum + count, 0)}
+      tier={getLootTier(outputSource, outputId, ingot)}
       description={ingot.description}
-      gainLabel={queueGain ? `+ ${queueGain} ingot` : null}
+      gainLabel={queueGain ? `+ ${queueGain}` : null}
       className="foundry-forge-row__output-card"
     />
   );
@@ -788,6 +930,9 @@ function ForgeSmeltingRow({
   onPickUpFuel,
   onPickUpOre,
   onPickUpIngredient,
+  onLoadBooster,
+  onUnsocketBooster,
+  onPickUpBooster,
   carriedResource,
   onPreviewEnter,
   onPreviewLeave,
@@ -805,14 +950,15 @@ function ForgeSmeltingRow({
    *   live  loaded and feeding
    *
    * Drives both the stem in the connector below and a lit edge on the slot itself, so "in use" is
-   * legible from either. Aux is `off` unconditionally until that slot does something.
+   * legible from either. The right branch is the optional smelting booster.
    */
   // Keyed by POSITION for the shared connector, then mapped back onto the slots by name below so the
-  // markup stays readable. Ingredient sits left, ore in the middle, the unimplemented aux slot right.
+  // markup stays readable. Ingredient sits left, ore in the middle, and flux sits right.
+  const boosterLive = getForgeBoosterSpeedPercent(ingredientSlot) > 0;
   const stemStates = {
     left: !ingredientRequired ? 'off' : (ingredientOk ? 'live' : 'idle'),
     middle: oreOk ? 'live' : 'idle',
-    right: 'off',
+    right: boosterLive ? 'live' : 'off',
   };
   const slotStem = { ingredient: stemStates.left, ore: stemStates.middle, aux: stemStates.right };
 
@@ -885,9 +1031,13 @@ function ForgeSmeltingRow({
             />
           </div>
           <div className={`foundry-forge-row__stem-host foundry-forge-row__stem-host--${slotStem.aux}`}>
-            <div className="foundry-forge-row__aux-slot">
-              <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᛚ</span>
-            </div>
+            <ForgeBoosterSlot
+              ingredientSlot={ingredientSlot}
+              onLoadFromCarry={() => onLoadBooster?.(slot.slotId)}
+              onClear={() => onUnsocketBooster?.(slot.slotId)}
+              onPickUp={() => onPickUpBooster?.(slot.slotId)}
+              carriedResource={carriedResource}
+            />
           </div>
         </div>
 
@@ -926,8 +1076,9 @@ function QueueOreSlot({ ore, count, gainLabel = null, slotRef = null }) {
     <SquareResourceCard
       tileRef={slotRef}
       name={ore.name}
-      artSrc={ORE_ART[ore.id]}
+      artSrc={getForgeResourceArt(getMiningResourceSource(ore.id), ore.id)}
       count={count}
+      tier={getLootTier(getMiningResourceSource(ore.id), ore.id, ore)}
       description={ore.description}
       gainLabel={gainLabel}
       className="foundry-queue-slot"
@@ -942,6 +1093,7 @@ function QueueIngotSlot({ ingotId, count, gainLabel = null }) {
       name={resource.name}
       artSrc={INGOT_ART[ingotId]}
       count={count}
+      tier={getLootTier('ingot', ingotId)}
       description={resource.description}
       gainLabel={gainLabel}
       className="foundry-queue-slot foundry-queue-slot--ingot"
@@ -1001,8 +1153,13 @@ export default function Foundry({
   onPickUpForgeFuel,
   onPickUpForgeOre,
   onPickUpForgeIngredient,
+  onLoadForgeBooster,
+  onUnsocketForgeBooster,
+  onPickUpForgeBooster,
   onCollectIngotOutput,
   onCollectForgeRewards,
+  onSocketMineTool,
+  onUnsocketMineTool,
   carriedResource = null,
   onPlaceCarriedResource,
 }) {
@@ -1154,11 +1311,11 @@ export default function Foundry({
   // separate filters of the same predicate would eventually disagree, and the row would size for the wrong
   // number of tiles.
   const queuedOreTypes = useMemo(
-    () => ORE_TYPES.filter(ore => (mineClaimQueue[ore.id] ?? 0) > 0),
+    () => MINING_RESOURCE_TYPES.filter(ore => (mineClaimQueue[ore.id] ?? 0) > 0),
     [mineClaimQueue],
   );
   const forgeRewardEntries = useMemo(() => buildBonusRewardEntries(forgeRewardQueue), [forgeRewardQueue]);
-  const queueHasOre = hasQueuedOre(mineClaimQueue) || hasQueuedBonusRewards(mineRewardQueue);
+  const queueHasOre = hasQueuedMineResources(mineClaimQueue) || hasQueuedBonusRewards(mineRewardQueue);
   const queueHasForgeRewards = hasQueuedBonusRewards(forgeRewardQueue);
   /**
    * Every row's state, for the selector and the readiness hint alike.
@@ -1334,6 +1491,8 @@ export default function Foundry({
                     returnsToPocket={returnsMineCardsToPocket}
                     onPreviewEnter={(element, card) => setHoverPreview(buildHoverCardPreview(element, card))}
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
+                    onSocketTool={toolId => onSocketMineTool?.(toolId, slot.slotId)}
+                    onUnsocketTool={() => onUnsocketMineTool?.(slot.slotId)}
                   />
                 ))}
 
@@ -1380,7 +1539,9 @@ export default function Foundry({
                       key={`queued-${ore.id}`}
                       ore={ore}
                       count={mineClaimQueue[ore.id] ?? 0}
-                      gainLabel={queueGainByOre[ore.id] ? `+ ${queueGainByOre[ore.id]} ore` : null}
+                      gainLabel={queueGainByOre[ore.id]
+                        ? `+ ${queueGainByOre[ore.id]} ${ore.family === 'Gemstone' ? 'gem' : 'ore'}`
+                        : null}
                       slotRef={element => {
                         queueSlotRefs.current[ore.id] = element;
                       }}
@@ -1392,6 +1553,7 @@ export default function Foundry({
                       name={entry.name}
                       artSrc={entry.artSrc}
                       count={entry.count}
+                      tier={getLootTier(entry.id === 'coins' ? 'currency' : 'arcana', entry.id)}
                       description={entry.description}
                       gainLabel={queueGainByMineReward[entry.id] ? `+ ${queueGainByMineReward[entry.id]} ${entry.gainNoun}` : null}
                       tileRef={element => {
@@ -1422,7 +1584,7 @@ export default function Foundry({
                 <p className={`foundry-half__label${forgeReadyCount === 0 ? ' foundry-half__label--warn' : ''}`}>
                   {forgeReadyCount > 0
                     ? `${forgeReadyCount} of ${forgeCardSlots.length} rows ready · pick a row below`
-                    : 'Socket a card, load coal, then pair ore to smelt ingots.'}
+                    : 'Socket a Blacksmith or Gemcutter, then load the matching fuel and materials.'}
                 </p>
               </div>
 
@@ -1449,7 +1611,7 @@ export default function Foundry({
                       title={
                         status.running ? `Smelting — ${Math.round(status.progress * 100)}%`
                           : status.ready ? 'Ready to smelt'
-                            : status.needs === 'card' ? 'Empty — socket a blacksmith'
+                            : status.needs === 'card' ? 'Empty — socket a Blacksmith or Gemcutter'
                               : `Waiting for ${status.needs}`
                       }
                     >
@@ -1505,6 +1667,9 @@ export default function Foundry({
                     onPickUpFuel={onPickUpForgeFuel}
                     onPickUpOre={onPickUpForgeOre}
                     onPickUpIngredient={onPickUpForgeIngredient}
+                    onLoadBooster={onLoadForgeBooster}
+                    onUnsocketBooster={onUnsocketForgeBooster}
+                    onPickUpBooster={onPickUpForgeBooster}
                     carriedResource={carriedResource}
                     onPreviewEnter={(element, card) => setHoverPreview(buildHoverCardPreview(element, card))}
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
@@ -1535,6 +1700,7 @@ export default function Foundry({
                         name={entry.name}
                         artSrc={entry.artSrc}
                         count={entry.count}
+                        tier={getLootTier(entry.id === 'coins' ? 'currency' : 'arcana', entry.id)}
                         description={entry.description}
                         gainLabel={queueGainByForgeReward[entry.id] ? `+ ${queueGainByForgeReward[entry.id]} ${entry.gainNoun}` : null}
                         tileRef={element => {

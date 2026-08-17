@@ -255,6 +255,308 @@ optgroup {
   color: rgba(198, 176, 134, 0.68);
 }
 
+/* The entry screen presents the two save philosophies side by side. Online is a non-interactive
+   preview until that mode ships; Solo Self Found is the only route into a new session. */
+.gate__panel--entry {
+  position: relative;
+  width: min(100%, 62rem);
+  max-width: 62rem;
+  padding: 2rem 2.25rem 2.25rem;
+  overflow: hidden;
+}
+
+.gate__panel--entry > .gate__title {
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+}
+
+.gate__choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.15rem;
+  align-items: stretch;
+}
+
+.gate__choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 330px;
+  padding: 2.15rem 1.7rem 1.55rem;
+  border: 1px solid rgba(189, 144, 69, 0.3);
+  background:
+    radial-gradient(circle at 50% 16%, rgba(194, 139, 47, 0.13), transparent 42%),
+    linear-gradient(180deg, rgba(38, 26, 13, 0.88), rgba(15, 11, 7, 0.94));
+  box-shadow: inset 0 0 0 1px rgba(255, 230, 177, 0.025), 0 16px 30px rgba(0, 0, 0, 0.24);
+  isolation: isolate;
+}
+
+.gate__choice::before,
+.gate__choice::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.gate__choice::before {
+  inset: 8px;
+  border: 1px solid rgba(205, 164, 88, 0.08);
+}
+
+.gate__choice::after {
+  top: 0;
+  left: 50%;
+  width: 58%;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(241, 197, 112, 0.68), transparent);
+}
+
+.gate__choice--online {
+  border-color: rgba(111, 145, 178, 0.26);
+  background:
+    linear-gradient(180deg, rgba(8, 13, 18, 0.18), rgba(8, 12, 16, 0.62)),
+    radial-gradient(circle at 50% 16%, rgba(99, 147, 191, 0.12), transparent 44%),
+    linear-gradient(180deg, rgba(25, 30, 34, 0.88), rgba(12, 13, 15, 0.95));
+  filter: saturate(0.72);
+}
+
+.gate__choice--online::before {
+  border-color: rgba(133, 171, 205, 0.08);
+}
+
+.gate__choice--online::after {
+  background: linear-gradient(90deg, transparent, rgba(139, 184, 224, 0.5), transparent);
+}
+
+.gate__choice-mark {
+  display: grid;
+  place-items: center;
+  width: 82px;
+  height: 82px;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(207, 162, 81, 0.22);
+  border-radius: 50%;
+  color: rgba(225, 184, 104, 0.82);
+  background: radial-gradient(circle, rgba(173, 111, 29, 0.18), rgba(0,0,0,0.12) 68%);
+  box-shadow: 0 0 26px rgba(146, 89, 21, 0.12), inset 0 0 18px rgba(0,0,0,0.38);
+  font-family: var(--font-runic);
+  font-size: 2rem;
+}
+
+.gate__choice-mark--lock {
+  border-color: rgba(132, 169, 201, 0.2);
+  color: rgba(151, 186, 215, 0.58);
+  background: radial-gradient(circle, rgba(65, 107, 143, 0.15), rgba(0,0,0,0.16) 68%);
+  box-shadow: 0 0 26px rgba(56, 95, 128, 0.1), inset 0 0 18px rgba(0,0,0,0.42);
+}
+
+.gate__padlock {
+  position: relative;
+  display: block;
+  width: 25px;
+  height: 20px;
+  margin-top: 9px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+
+.gate__padlock::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 15px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0;
+  transform: translateX(-50%);
+}
+
+.gate__padlock::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 3px;
+  height: 7px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+.gate__choice-kicker {
+  margin: 0 0 0.35rem;
+  color: rgba(205, 165, 92, 0.62);
+  font-family: var(--font-caps);
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.gate__choice--online .gate__choice-kicker {
+  color: rgba(145, 180, 210, 0.52);
+}
+
+.gate__choice h2,
+.gate__auth-dialog h2 {
+  margin: 0;
+  color: #eddbb4;
+  font-family: var(--font-caps);
+  font-size: clamp(1rem, 1.8vw, 1.35rem);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.gate__choice--online h2 {
+  color: rgba(196, 213, 226, 0.76);
+}
+
+.gate__choice-description {
+  max-width: 25rem;
+  margin: 0.8rem auto 1.5rem;
+  color: rgba(213, 195, 159, 0.67);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.gate__choice--online .gate__choice-description {
+  color: rgba(177, 194, 207, 0.56);
+}
+
+.gate__choice .gate__offline,
+.gate__choice .gate__tabs {
+  margin-top: auto;
+}
+
+.gate__choice .gate__offline {
+  width: min(100%, 16rem);
+  min-height: 42px;
+  color: #f3dca9;
+  border-color: rgba(212, 168, 80, 0.5);
+  background: linear-gradient(180deg, rgba(96, 64, 18, 0.66), rgba(48, 31, 8, 0.72));
+}
+
+.gate__choice .gate__tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.gate__choice .gate__tab {
+  min-height: 42px;
+  padding-inline: 0.7rem;
+  color: rgba(189, 210, 227, 0.72);
+  border-color: rgba(115, 153, 186, 0.28);
+  background: rgba(4, 9, 13, 0.44);
+}
+
+.gate__choice .gate__tab:hover:not(:disabled) {
+  color: #d9ecf8;
+  border-color: rgba(139, 184, 224, 0.52);
+  background: rgba(23, 48, 68, 0.5);
+}
+
+.gate__tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.gate__lock {
+  position: absolute;
+  top: 0.65rem;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+  color: rgba(154, 183, 207, 0.55);
+  font-family: var(--font-caps);
+  font-size: 0.5rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.gate__entry-error {
+  margin: 1rem auto 0;
+  text-align: center;
+}
+
+.gate__auth-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(7, 6, 5, 0.88);
+  backdrop-filter: blur(7px);
+}
+
+.gate__auth-dialog {
+  position: relative;
+  width: min(100%, 25rem);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 2rem;
+  border: 1px solid rgba(130, 169, 202, 0.38);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(78, 126, 168, 0.14), transparent 44%),
+    linear-gradient(180deg, rgba(25, 29, 33, 0.98), rgba(11, 12, 14, 0.99));
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.72);
+  text-align: center;
+}
+
+.gate__auth-description {
+  margin: 0.45rem 0 1.3rem;
+  color: rgba(183, 202, 218, 0.58);
+  font-size: 0.74rem;
+}
+
+.gate__auth-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 1px solid rgba(143, 177, 205, 0.24);
+  border-radius: 50%;
+  color: rgba(197, 216, 231, 0.72);
+  background: rgba(0,0,0,0.25);
+  cursor: pointer;
+}
+
+.gate__auth-close:hover {
+  color: #eef8ff;
+  border-color: rgba(160, 199, 232, 0.5);
+}
+
+@media (max-width: 740px) {
+  .gate {
+    align-items: flex-start;
+  }
+
+  .gate__panel--entry {
+    padding: 1.45rem 1rem 1.15rem;
+  }
+
+  .gate__choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gate__choice {
+    min-height: 285px;
+  }
+}
+
 /* Live availability feedback on the player name, sitting inside the field's own label so it cannot
    shift the form's height as it appears and disappears. */
 .gate__name-state {
@@ -1157,8 +1459,11 @@ html[data-quality="medium"] .balance--pumping {
 }
 
 .main--arcana {
-  padding: 0.75rem 1.5rem 1.5rem;
-  max-width: none;
+  /* Match the station pages' actual content edges: the base `.main` gutter plus the 1.5rem inset
+     carried by `.foundry-page` / `.wilderness-page`. Crafting does not need their nested page wrapper,
+     so those two gutters are combined here. */
+  padding: 0.75rem calc(3.4rem + 1.5rem) 1.5rem calc(2rem + 1.5rem);
+  max-width: 1500px;
   display: flex;
   flex-direction: column;
 }
@@ -1262,6 +1567,31 @@ html[data-quality="medium"] .balance--pumping {
   user-select: none;
   flex-shrink: 0;
 }
+
+.pack-display__model,
+.pack-display__legacy {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pack-display__model {
+  display: block;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+
+.pack-display__legacy {
+  z-index: 0;
+  transition: opacity 0.24s ease;
+}
+
+.pack-display--model-live .pack-display__model { opacity: 1; }
+.pack-display--model-pending .pack-display__legacy { opacity: 0; }
+.pack-display.pack-display--model-pending[class*="pack-type-"] { background: transparent; }
 
 /* ── Pack type gradients ── */
 .pack-display.pack-type-dusk       { background: linear-gradient(160deg, #3b2f1e 0%, #241608 55%, #0e0906 100%); }
@@ -1473,6 +1803,13 @@ html[data-quality="medium"] .balance--pumping {
 .pack-display.pack-holo--spring {
   transform: perspective(700px) rotateX(calc(var(--rx) * 1deg)) rotateY(calc(var(--ry) * 1deg));
   will-change: transform;
+}
+
+/* High quality rotates the GLB itself. Avoid applying the old flat CSS tilt a
+   second time; container-level shelf/portal transforms still work normally. */
+.pack-display.pack-display--model-live.pack-holo--active,
+.pack-display.pack-display--model-live.pack-holo--spring {
+  transform: none;
 }
 
 /* Spring-back ease when mouse leaves */
@@ -1976,14 +2313,52 @@ html[data-quality="medium"] .balance--pumping {
 .shop-pack-card--nexusEd:hover     { border-color: rgba(170,  70, 255, 0.70); box-shadow: 0 8px 36px rgba(130, 30,220,0.35); }
 .shop-pack-card--prismaticEd:hover { border-color: rgba(220, 180, 255, 0.65); box-shadow: 0 8px 36px rgba(200,120,255,0.30); }
 
+/* These type-hover rules predate the shelf layout and paint a rounded shadow
+   around the entire button. The shop now uses the borderless radial backlight
+   behind the model, so the old rectangular shadow must not participate here. */
+.shelf-pack__grab[class*="shop-pack-card--"]:hover,
+.shelf-pack__grab[class*="shop-pack-card--"]:focus-visible {
+  box-shadow: none;
+}
+
 .shop-pack-preview {
+  position: relative;
+  isolation: isolate;
   flex-shrink: 0;
   /* `block`, not the default `inline`: a percentage-width child of an inline box has no definite width
      to resolve against, which is the other half of the zero-width shelf pack above. */
   display: block;
   width: 100%;
-  filter: drop-shadow(0 4px 12px rgba(99,102,241,0.35));
-  transition: filter 0.2s;
+}
+
+/* Shop-exclusive light pool. The colour lives behind the object instead of in
+   a rectangular blend layer over its artwork and foil geometry. */
+.shop-pack-preview::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 7% -20% 2%;
+  pointer-events: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 49%, color-mix(in srgb, var(--shop-pack-glow, #7d78ff) 72%, transparent) 0%, color-mix(in srgb, var(--shop-pack-glow, #7d78ff) 30%, transparent) 37%, transparent 72%),
+    radial-gradient(ellipse at 50% 68%, color-mix(in srgb, var(--shop-pack-glow-secondary, #36237e) 56%, transparent) 0%, transparent 68%);
+  filter: blur(13px);
+  opacity: 0.74;
+  transform: scale(0.92);
+  transition: opacity 0.22s ease, transform 0.22s ease, filter 0.22s ease;
+}
+
+.shop-pack-preview > .pack-display {
+  position: relative;
+  z-index: 1;
+}
+
+.shelf-pack__grab:hover:not(:disabled) .shop-pack-preview::before,
+.shelf-pack__grab:focus-visible .shop-pack-preview::before {
+  opacity: 1;
+  transform: scale(1.08);
+  filter: blur(17px);
 }
 
 .shop-pack-card .pack-info {
@@ -2006,49 +2381,27 @@ html[data-quality="medium"] .balance--pumping {
   font-size: 0.85rem;
 }
 
-.shop-pack-card--dusk .shop-pack-preview       { filter: drop-shadow(0 4px 10px rgba(180, 120,  50, 0.3)); }
-.shop-pack-card--welcome .shop-pack-preview    { filter: drop-shadow(0 4px 12px rgba(122, 201, 194, 0.42)); }
-.shop-pack-card--iron .shop-pack-preview       { filter: drop-shadow(0 4px 10px rgba( 99, 102, 241, 0.35)); }
-.shop-pack-card--blankSlate .shop-pack-preview { filter: drop-shadow(0 4px 10px rgba(148, 163, 184, 0.35)); }
-.shop-pack-card--arcane .shop-pack-preview     { filter: drop-shadow(0 4px 10px rgba(147,  51, 234, 0.4)); }
-.shop-pack-card--void .shop-pack-preview       { filter: drop-shadow(0 4px 10px rgba( 88,  28, 235, 0.45)); }
-.shop-pack-card--primordial .shop-pack-preview { filter: drop-shadow(0 4px 14px rgba(234, 179,   8, 0.5)); }
-.shop-pack-card--dawn .shop-pack-preview       { filter: drop-shadow(0 4px 12px rgba(255, 140,  20, 0.4)); }
-.shop-pack-card--steel .shop-pack-preview      { filter: drop-shadow(0 4px 12px rgba(140, 190, 240, 0.35)); }
-.shop-pack-card--mystic .shop-pack-preview     { filter: drop-shadow(0 4px 12px rgba( 40, 210, 200, 0.4)); }
-.shop-pack-card--abyss .shop-pack-preview      { filter: drop-shadow(0 4px 12px rgba( 40,  60, 220, 0.45)); }
-.shop-pack-card--eternal .shop-pack-preview    { filter: drop-shadow(0 4px 14px rgba(180, 140, 255, 0.45)); }
-.shop-pack-card--vault1 .shop-pack-preview     { filter: drop-shadow(0 4px 14px rgba(150, 190, 230, 0.45)); }
-.shop-pack-card--vault2 .shop-pack-preview     { filter: drop-shadow(0 4px 16px rgba(255, 200,   0, 0.55)); }
-.shop-pack-card--vault3 .shop-pack-preview     { filter: drop-shadow(0 4px 16px rgba(180, 120, 255, 0.55)); }
-.shop-pack-card--holoEd .shop-pack-preview      { filter: drop-shadow(0 4px 14px rgba(120, 220, 255, 0.5)); }
-.shop-pack-card--foilEd .shop-pack-preview      { filter: drop-shadow(0 4px 12px rgba(200, 218, 255, 0.42)); }
-.shop-pack-card--reverseEd .shop-pack-preview   { filter: drop-shadow(0 4px 14px rgba( 80, 240, 170, 0.45)); }
-.shop-pack-card--shadowEd .shop-pack-preview    { filter: drop-shadow(0 4px 14px rgba(140, 100, 255, 0.48)); }
-.shop-pack-card--nexusEd .shop-pack-preview     { filter: drop-shadow(0 4px 16px rgba(170,  70, 255, 0.55)); }
-.shop-pack-card--prismaticEd .shop-pack-preview { filter: drop-shadow(0 4px 16px rgba(220, 160, 255, 0.52)); }
-
-.shop-pack-card--dusk:hover .shop-pack-preview       { filter: drop-shadow(0 6px 18px rgba(180, 120,  50, 0.6)); }
-.shop-pack-card--welcome:hover .shop-pack-preview    { filter: drop-shadow(0 6px 22px rgba(122, 201, 194, 0.72)); }
-.shop-pack-card--iron:hover .shop-pack-preview       { filter: drop-shadow(0 6px 18px rgba( 99, 102, 241, 0.65)); }
-.shop-pack-card--blankSlate:hover .shop-pack-preview { filter: drop-shadow(0 6px 18px rgba(148, 163, 184, 0.65)); }
-.shop-pack-card--arcane:hover .shop-pack-preview     { filter: drop-shadow(0 6px 18px rgba(147,  51, 234, 0.7)); }
-.shop-pack-card--void:hover .shop-pack-preview       { filter: drop-shadow(0 6px 18px rgba( 88,  28, 235, 0.7)); }
-.shop-pack-card--primordial:hover .shop-pack-preview { filter: drop-shadow(0 6px 22px rgba(234, 179,   8, 0.8)); }
-.shop-pack-card--dawn:hover .shop-pack-preview       { filter: drop-shadow(0 6px 20px rgba(255, 140,  20, 0.75)); }
-.shop-pack-card--steel:hover .shop-pack-preview      { filter: drop-shadow(0 6px 18px rgba(140, 190, 240, 0.65)); }
-.shop-pack-card--mystic:hover .shop-pack-preview     { filter: drop-shadow(0 6px 20px rgba( 40, 210, 200, 0.7)); }
-.shop-pack-card--abyss:hover .shop-pack-preview      { filter: drop-shadow(0 6px 20px rgba( 40,  60, 220, 0.7)); }
-.shop-pack-card--eternal:hover .shop-pack-preview    { filter: drop-shadow(0 6px 22px rgba(180, 140, 255, 0.8)); }
-.shop-pack-card--vault1:hover .shop-pack-preview     { filter: drop-shadow(0 6px 22px rgba(150, 190, 230, 0.75)); }
-.shop-pack-card--vault2:hover .shop-pack-preview     { filter: drop-shadow(0 6px 26px rgba(255, 200,   0, 0.9)); }
-.shop-pack-card--vault3:hover .shop-pack-preview     { filter: drop-shadow(0 6px 26px rgba(200, 150, 255, 0.9)); }
-.shop-pack-card--holoEd:hover .shop-pack-preview      { filter: drop-shadow(0 6px 24px rgba(120, 220, 255, 0.8)); }
-.shop-pack-card--foilEd:hover .shop-pack-preview      { filter: drop-shadow(0 6px 22px rgba(200, 218, 255, 0.72)); }
-.shop-pack-card--reverseEd:hover .shop-pack-preview   { filter: drop-shadow(0 6px 24px rgba( 80, 240, 170, 0.78)); }
-.shop-pack-card--shadowEd:hover .shop-pack-preview    { filter: drop-shadow(0 6px 24px rgba(140, 100, 255, 0.80)); }
-.shop-pack-card--nexusEd:hover .shop-pack-preview     { filter: drop-shadow(0 6px 28px rgba(170,  70, 255, 0.88)); }
-.shop-pack-card--prismaticEd:hover .shop-pack-preview { filter: drop-shadow(0 6px 28px rgba(220, 160, 255, 0.88)); }
+.shop-pack-card--dusk       { --shop-pack-glow: #ffd76e; --shop-pack-glow-secondary: #8f5012; }
+.shop-pack-card--welcome    { --shop-pack-glow: #fff0bd; --shop-pack-glow-secondary: #56bdb7; }
+.shop-pack-card--iron       { --shop-pack-glow: #a9c9ff; --shop-pack-glow-secondary: #6547db; }
+.shop-pack-card--blankSlate { --shop-pack-glow: #e2e8f0; --shop-pack-glow-secondary: #64748b; }
+.shop-pack-card--arcane     { --shop-pack-glow: #ff8ee8; --shop-pack-glow-secondary: #8a2ad0; }
+.shop-pack-card--void       { --shop-pack-glow: #8658ff; --shop-pack-glow-secondary: #310887; }
+.shop-pack-card--primordial { --shop-pack-glow: #ffe06a; --shop-pack-glow-secondary: #c66d00; }
+.shop-pack-card--dawn       { --shop-pack-glow: #ffdc8c; --shop-pack-glow-secondary: #ff6b1e; }
+.shop-pack-card--steel      { --shop-pack-glow: #dcecff; --shop-pack-glow-secondary: #6f99d8; }
+.shop-pack-card--mystic     { --shop-pack-glow: #8cfff8; --shop-pack-glow-secondary: #1ab4bd; }
+.shop-pack-card--abyss      { --shop-pack-glow: #506eff; --shop-pack-glow-secondary: #1d31b8; }
+.shop-pack-card--eternal    { --shop-pack-glow: #eadfff; --shop-pack-glow-secondary: #9a6ee8; }
+.shop-pack-card--vault1     { --shop-pack-glow: #e6f0ff; --shop-pack-glow-secondary: #8eaed3; }
+.shop-pack-card--vault2     { --shop-pack-glow: #ffe264; --shop-pack-glow-secondary: #d48b00; }
+.shop-pack-card--vault3     { --shop-pack-glow: #f1e8ff; --shop-pack-glow-secondary: #9560e8; }
+.shop-pack-card--holoEd     { --shop-pack-glow: #78dcff; --shop-pack-glow-secondary: #d064ff; }
+.shop-pack-card--foilEd     { --shop-pack-glow: #e0ecff; --shop-pack-glow-secondary: #8fa9d8; }
+.shop-pack-card--reverseEd  { --shop-pack-glow: #70ffc0; --shop-pack-glow-secondary: #d951a0; }
+.shop-pack-card--shadowEd   { --shop-pack-glow: #a078ff; --shop-pack-glow-secondary: #4921a6; }
+.shop-pack-card--nexusEd    { --shop-pack-glow: #d05cff; --shop-pack-glow-secondary: #6820d0; }
+.shop-pack-card--prismaticEd { --shop-pack-glow: #fff; --shop-pack-glow-secondary: #d47cff; }
 
 /* ═══════════════════════════════════════
    Packs view
@@ -2164,6 +2517,68 @@ html[data-quality="medium"] .balance--pumping {
 
 .opening-stage--with-rewards {
   align-items: flex-start;
+}
+
+.pack-model-opening {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  cursor: pointer;
+  outline: none;
+}
+
+.pack-model-opening:focus-visible {
+  filter: drop-shadow(0 0 14px rgba(255, 220, 128, 0.88));
+}
+
+.pack-model-opening__fallback,
+.pack-model-opening__canvas,
+.pack-model-opening__halo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pack-model-opening__fallback {
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}
+
+.pack-model-opening__canvas {
+  z-index: 2;
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+
+.pack-model-opening--live .pack-model-opening__canvas { opacity: 1; }
+.pack-model-opening--webgl .pack-model-opening__fallback { opacity: 0; }
+
+.pack-model-opening__halo {
+  z-index: 0;
+  inset: 7% -18%;
+  width: auto;
+  height: auto;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse, rgba(255, 210, 100, 0.22), rgba(129, 78, 255, 0.09) 42%, transparent 72%);
+  filter: blur(14px);
+  transition: opacity 0.25s ease;
+}
+
+.pack-model-opening--live:hover .pack-model-opening__halo { opacity: 1; }
+.pack-model-opening--dissolving .pack-model-opening__halo {
+  opacity: 1;
+  animation: pack-model-halo-release 1.08s cubic-bezier(0.2, 0.7, 0.25, 1) forwards;
+}
+
+@keyframes pack-model-halo-release {
+  0%   { transform: scale(0.72); opacity: 0.35; }
+  48%  { transform: scale(1.08); opacity: 0.88; }
+  100% { transform: scale(1.48); opacity: 0; }
 }
 
 /* ── Split pack (two independent pieces) ── */
@@ -2304,8 +2719,8 @@ html[data-quality="medium"] .balance--pumping {
   position: relative;
 }
 
-/* 3D gradient border — lives on each face so it flips with the card.
-   Bright gold top-left → dark bronze bottom-right = raised frame look. */
+/* The frame is the rarity signal. First Edition supplies the original gold through
+   `--card-frame-color`; all other cards use their rarity colour. */
 .card-face-front::after,
 .card-face-back::after {
   content: '';
@@ -2313,7 +2728,13 @@ html[data-quality="medium"] .balance--pumping {
   inset: 0;
   border-radius: 10px;
   padding: 2px;
-  background: linear-gradient(145deg, #fff5a0 0%, #f0c040 30%, #c88010 65%, #7a4e00 100%);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--card-frame-color, #f4f2e8) 52%, white) 0%,
+    var(--card-frame-color, #f4f2e8) 34%,
+    color-mix(in srgb, var(--card-frame-color, #f4f2e8) 76%, #3a2500) 68%,
+    color-mix(in srgb, var(--card-frame-color, #f4f2e8) 46%, black) 100%
+  );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: destination-out;
@@ -2353,18 +2774,16 @@ html[data-quality="medium"] .balance--pumping {
   display: flex;
   flex-direction: column;
   border: none;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.4), 0 0 8px rgba(240,192,64,0.25);
+  box-shadow:
+    0 4px 18px rgba(0,0,0,0.4),
+    0 0 8px color-mix(in srgb, var(--card-frame-color, #f4f2e8) 28%, transparent);
   overflow: hidden;
 }
 
 .card-face-front {
   align-items: stretch;
   justify-content: flex-start;
-  padding:
-    calc(14px * var(--card-detail-scale))
-    calc(6px * var(--card-detail-scale))
-    calc(20px * var(--card-detail-scale));
-  gap: calc(3px * var(--card-detail-scale));
+  padding: 0;
 }
 
 .card-face-back {
@@ -2381,103 +2800,43 @@ html[data-quality="medium"] .balance--pumping {
   align-items: flex-start;
   justify-content: space-between;
   gap: calc(3px * var(--card-detail-scale));
-  flex-shrink: 0;
-  position: relative;
+  position: absolute;
+  top: calc(21px * var(--card-tag-scale));
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 8;
-  width: 90%;
-  align-self: center;
+  width: 86%;
 }
 
-/* Art window — 3:2.42 aspect ratio (bottom boundary lowered 10%) */
+/* The portrait is now the card face, not an inset window. Its two edge fades keep
+   identity and affix text readable without breaking the image into framed regions. */
 .card-art-frame {
-  width: 90%;
-  align-self: center;
-  margin-top: calc(3px * var(--card-detail-scale));
-  margin-bottom: calc(6px * var(--card-detail-scale));
-  position: relative;
-  z-index: 1;
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.card-art-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(4, 4, 7, 0.82) 0%, rgba(4, 4, 7, 0.34) 17%, transparent 37%),
+    linear-gradient(0deg, rgba(3, 3, 6, 0.94) 0%, rgba(3, 3, 6, 0.72) 27%, rgba(3, 3, 6, 0.14) 53%, transparent 70%);
 }
 
 .card-art-window {
   width: 100%;
-  aspect-ratio: 3 / 2.42;
+  height: 100%;
   border-radius: 0;
   overflow: hidden;
-  flex-shrink: 0;
   background: rgba(0,0,0,0.25);
-  position: relative;
-  border: 3px solid transparent;
-  /* 3D raised frame: bright gold top-left → dark bronze bottom-right */
-  border-image: linear-gradient(
-    145deg,
-    #fff5a0 0%,
-    #f0c040 25%,
-    #c88010 65%,
-    #7a4e00 100%
-  ) 1;
-  box-shadow:
-    /* inset recession — darkens the inside edge of the frame */
-    inset 1px 1px 3px rgba(0,0,0,0.45),
-    /* outer lift shadow */
-    0 3px 8px rgba(0,0,0,0.65),
-    /* ambient gold glow */
-    0 0 10px rgba(240,192,64,0.35);
-}
-
-.card-art-rarity-tab {
-  --tab-width: calc(34px * var(--card-detail-scale));
-  width: var(--tab-width);
-  height: calc(22px * var(--card-detail-scale));
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  transform: translateX(-50%);
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.36));
-}
-
-.card-art-rarity-tab::before {
-  content: '';
   position: absolute;
   inset: 0;
-  border-radius: 999px 999px 0 0;
-  background: linear-gradient(145deg, #fff5a0 0%, #f0c040 25%, #c88010 68%, #7a4e00 100%);
-}
-
-.card-art-rarity-tab::after {
-  content: '';
-  position: absolute;
-  inset: calc(1.5px * var(--card-detail-scale));
-  border-radius: 999px 999px 0 0;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.05) 26%, rgba(0,0,0,0.16) 100%),
-    linear-gradient(135deg, rgba(44, 34, 12, 0.22), rgba(10, 12, 18, 0.88) 60%, rgba(0,0,0,0.95) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.12),
-    inset 0 -1px 0 rgba(0,0,0,0.24);
-}
-
-.card-art-rarity-tab__well {
-  position: relative;
-  z-index: 2;
-  width: calc(16px * var(--card-detail-scale));
-  height: calc(16px * var(--card-detail-scale));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.card-art-rarity-tab__gem {
-  display: block;
-  width: calc(14px * var(--card-detail-scale));
-  height: calc(14px * var(--card-detail-scale));
-  object-fit: contain;
-  filter:
-    drop-shadow(0 1px 2px rgba(0,0,0,0.42))
-    drop-shadow(0 0 3px rgba(255,255,255,0.08));
 }
 
 .card-art-img {
@@ -2485,7 +2844,7 @@ html[data-quality="medium"] .balance--pumping {
   height: 100%;
   object-fit: cover;
   display: block;
-  transform: scale(1.07);
+  transform: scale(1.015);
 }
 
 .card-art-placeholder {
@@ -2532,22 +2891,22 @@ html[data-quality="medium"] .balance--pumping {
 }
 
 .card-affix-list {
-  width: 88%;
-  align-self: center;
-  margin-top: calc(3px * var(--card-detail-scale));
+  position: absolute;
+  left: 50%;
+  /* Keep the lower edge quiet for the socket rail. The old centred rarity gem is gone. */
+  bottom: calc(32px * var(--card-detail-scale));
+  transform: translateX(-50%);
+  width: 86%;
   display: flex;
   flex-direction: column;
   gap: calc(2px * var(--card-detail-scale));
-  position: relative;
   z-index: 8;
-  flex: 1 1 auto;
   justify-content: flex-start;
 }
 
 .card-affix-list--compact {
-  width: 90%;
+  width: 88%;
   gap: 1px;
-  margin-top: 2px;
 }
 
 .card-affix-line {
@@ -2596,6 +2955,58 @@ html[data-quality="medium"] .balance--pumping {
 .card-affix-list--compact .card-affix-line {
   font-size: calc(0.44rem * var(--card-detail-scale));
   opacity: 0.92;
+}
+
+/* Socket pips share the card's own scale variable, so the rail keeps identical
+   proportions in the Hand, reveal view, Collection and full-size crafting view. */
+.card-socket-rail {
+  position: absolute;
+  right: calc(10px * var(--card-detail-scale));
+  bottom: calc(10px * var(--card-detail-scale));
+  z-index: 11;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: calc(8px * var(--card-detail-scale));
+  pointer-events: auto;
+}
+
+.card-socket {
+  width: calc(26px * var(--card-detail-scale));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 50% 52%, #11141a 0 46%, #252a32 58%, #69717d 72%, #272b32 87%, #101217 100%);
+  border: calc(1.5px * var(--card-detail-scale)) solid #8f98a4;
+  box-shadow:
+    inset 0 calc(2px * var(--card-detail-scale)) calc(5px * var(--card-detail-scale)) rgba(0,0,0,0.96),
+    inset 0 calc(-1px * var(--card-detail-scale)) calc(2px * var(--card-detail-scale)) rgba(224,232,241,0.24),
+    0 1px calc(2px * var(--card-detail-scale)) rgba(0,0,0,0.9);
+}
+
+.card-socket--filled {
+  border-color: var(--socket-color, #d9d9d9);
+  box-shadow:
+    0 0 calc(7px * var(--card-detail-scale)) color-mix(in srgb, var(--socket-color) 70%, transparent),
+    inset 0 calc(2px * var(--card-detail-scale)) calc(5px * var(--card-detail-scale)) #000;
+}
+
+.card-socket--extractable {
+  cursor: crosshair;
+}
+
+.card-socket img {
+  width: 72%;
+  height: 72%;
+  object-fit: cover;
+  border-radius: 50%;
+  filter: drop-shadow(0 calc(1px * var(--card-detail-scale)) calc(2px * var(--card-detail-scale)) rgba(0,0,0,0.9));
+}
+
+.card-crafting-modal__face--socket-target {
+  cursor: crosshair !important;
 }
 
 .card-tag-pill {
@@ -2669,10 +3080,10 @@ html[data-quality="medium"] .balance--pumping {
   display: block;
 }
 
-.card-bottom-socket {
+.card-affix-stars {
   position: absolute;
   left: 50%;
-  bottom: 0;
+  top: 0;
   width: calc(48px * var(--card-tag-scale));
   height: calc(17px * var(--card-tag-scale));
   transform: translateX(-50%);
@@ -2681,31 +3092,31 @@ html[data-quality="medium"] .balance--pumping {
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.32));
 }
 
-.card-bottom-socket::before {
+.card-affix-stars::before {
   content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(145deg, #fff5a0 0%, #f0c040 25%, #c88010 68%, #7a4e00 100%);
-  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 92% 100%, 8% 100%);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.16),
     0 0 8px rgba(240,192,64,0.18);
 }
 
-.card-bottom-socket__well {
+.card-affix-stars__well {
   position: absolute;
   inset: calc(1.5px * var(--card-tag-scale));
-  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 92% 100%, 8% 100%);
   background:
     linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.05) 20%, rgba(0,0,0,0.18) 62%, rgba(255,255,255,0.03) 100%),
     linear-gradient(135deg, rgba(56, 46, 18, 0.24), rgba(12, 14, 18, 0.88) 55%, rgba(0,0,0,0.96) 100%);
 }
 
-.card-bottom-socket__well::after {
+.card-affix-stars__well::after {
   content: '';
   position: absolute;
   inset: calc(1.5px * var(--card-tag-scale)) calc(4px * var(--card-tag-scale)) calc(1.5px * var(--card-tag-scale));
-  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 92% 100%, 8% 100%);
   background:
     linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03) 24%, rgba(0,0,0,0.14) 100%),
     linear-gradient(135deg, rgba(62, 52, 18, 0.16), rgba(12, 14, 18, 0.88) 55%, rgba(0,0,0,0.95) 100%);
@@ -2715,7 +3126,7 @@ html[data-quality="medium"] .balance--pumping {
     0 0 6px rgba(240,192,64,0.12);
 }
 
-.card-bottom-socket__stars {
+.card-affix-stars__row {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -2729,7 +3140,7 @@ html[data-quality="medium"] .balance--pumping {
   overflow: hidden;
 }
 
-.card-bottom-socket__star {
+.card-affix-stars__star {
   display: block;
   width: calc(6.4px * var(--card-tag-scale));
   height: auto;
@@ -2740,11 +3151,11 @@ html[data-quality="medium"] .balance--pumping {
     drop-shadow(0 0 3px rgba(255,255,255,0.08));
 }
 
-.card-bottom-socket--tier-1 { width: calc(40px * var(--card-tag-scale)); }
-.card-bottom-socket--tier-2 { width: calc(46px * var(--card-tag-scale)); }
-.card-bottom-socket--tier-3 { width: calc(52px * var(--card-tag-scale)); }
-.card-bottom-socket--tier-4 { width: calc(58px * var(--card-tag-scale)); }
-.card-bottom-socket--tier-5 { width: calc(64px * var(--card-tag-scale)); }
+.card-affix-stars--tier-1 { width: calc(40px * var(--card-tag-scale)); }
+.card-affix-stars--tier-2 { width: calc(46px * var(--card-tag-scale)); }
+.card-affix-stars--tier-3 { width: calc(52px * var(--card-tag-scale)); }
+.card-affix-stars--tier-4 { width: calc(58px * var(--card-tag-scale)); }
+.card-affix-stars--tier-5 { width: calc(64px * var(--card-tag-scale)); }
 
 .card-tag-pill--tag {
   --tag-color: #a78bfa;
@@ -2924,7 +3335,7 @@ html[data-quality="medium"] .balance--pumping {
   cursor: default;
 }
 
-.opening-resource-card__front {
+.opening-resource-card__front .foundry-square-resource__art-wrap {
   background:
     linear-gradient(165deg, rgba(22,14,7,0.86), rgba(9,7,4,0.92));
 }
@@ -3038,6 +3449,26 @@ html[data-quality="medium"] .balance--pumping {
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 9999;
+}
+
+.flying-good {
+  position: fixed;
+  z-index: 12300;
+  width: 102px;
+  height: 102px;
+  pointer-events: none;
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+  transition: transform 0.58s cubic-bezier(0.35, 0, 0.7, 0.3), opacity 0.42s ease 0.12s;
+}
+
+.flying-good .goods-card__tile {
+  width: 100%;
+  height: 100%;
+}
+
+.shop-goods-tooltip {
+  transform: translate(14px, 14px);
 }
 
 /* Collection */
@@ -6815,7 +7246,7 @@ html[data-quality="medium"] .balance--pumping {
   transform: translateY(-2px);
 }
 
-.arcana-crafted-tile .foundry-square-resource__front {
+.arcana-crafted-tile .foundry-square-resource__art-wrap {
   background:
     linear-gradient(165deg, rgba(12,8,24,0.9), rgba(6,4,14,0.96));
 }
@@ -9684,6 +10115,7 @@ html[data-quality="medium"] .balance--pumping {
   font-weight: 700;
   letter-spacing: 0;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .station-tool-slot__socket {
@@ -9699,6 +10131,49 @@ html[data-quality="medium"] .balance--pumping {
   letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
+}
+
+.station-tool-slot__socket--filled {
+  border-style: solid;
+  border-color: rgba(216, 175, 103, 0.28);
+}
+
+.tool-card {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: grab;
+}
+
+.tool-card:active {
+  cursor: grabbing;
+}
+
+.station-tool-card {
+  width: min(58px, calc(100% - 0.2rem));
+}
+
+.inventory-tool-card {
+  width: 100%;
+}
+
+.tool-tooltip__quality {
+  color: rgba(225, 194, 128, 0.68);
+  font-family: var(--font-caps);
+  font-size: 0.66rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.tool-tooltip__affixes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  color: rgba(226, 214, 190, 0.82);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  list-style: none;
 }
 
 .station-loot-stage__stack {
@@ -11006,6 +11481,33 @@ html[data-quality="medium"] .balance--pumping {
   line-height: 1.2;
 }
 
+/* Optional consumable accelerants occupy the third process branch. They intentionally reuse the
+   square ingredient geometry so the shared rail and merge connector stay perfectly aligned. */
+.station-booster-slot--active {
+  border-color: rgba(173, 111, 224, 0.72);
+  box-shadow:
+    inset 0 0 0 1px rgba(209, 167, 246, 0.14),
+    0 0 14px rgba(126, 73, 174, 0.16);
+}
+
+.station-booster-slot__charges {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.25rem;
+  z-index: 5;
+  min-width: 1.7rem;
+  padding: 0.06rem 0.2rem;
+  border: 1px solid rgba(221, 184, 108, 0.34);
+  border-radius: 999px;
+  background: rgba(8, 5, 3, 0.88);
+  color: #efd48d;
+  font-family: var(--font-body);
+  font-size: 0.52rem;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+}
+
 /* ── Action row ── */
 .foundry-action-row {
   display: flex;
@@ -11268,9 +11770,15 @@ html[data-quality="medium"] .balance--pumping {
 }
 
 .card-face-wrapper.foundry-square-resource {
+  /* Corner geometry belongs to the card's proportions, not to one particular rendered size.
+     18px was the signed-off radius on the canonical 110px queue tile (18 / 110 = 16.36%).
+     Keeping that value in pixels made a 42px staged-loot tile 43% corner and nearly circular. */
+  --loot-card-radius: 16.36%;
+  --loot-card-frame-width: clamp(1px, 1.82%, 2px);
   width: 100%;
   height: auto;
   aspect-ratio: 1 / 1;
+  border-radius: var(--loot-card-radius);
   cursor: default;
   overflow: visible;
   isolation: isolate;
@@ -11289,11 +11797,13 @@ html[data-quality="medium"] .balance--pumping {
   height: 100%;
   padding: 0.38rem;
   /* Named because the treasure shatter has to cut its fragments out of this exact shape — a rounded square,
-     not a square. Two copies of `18px` would eventually disagree and the break would grow square corners. */
-  border-radius: var(--loot-card-radius, 18px);
-  overflow: hidden;
-  background:
-    linear-gradient(165deg, rgba(25,16,7,0.82), rgba(8,6,3,0.9));
+     not a square. Every layer inherits the same proportional curve from the wrapper. */
+  border-radius: var(--loot-card-radius);
+  /* This face is only a stacking context for art, labels and the frame. It must not paint an opaque
+     backing of its own: that extra square surface was visible in the transparent area outside the
+     rounded artwork, which is the black rectangle players saw behind the gold outline. */
+  overflow: visible;
+  background: transparent;
   box-shadow:
     inset 0 0 0 1px rgba(242,208,124,0.12),
     inset 0 1px 0 rgba(255,232,174,0.04);
@@ -11302,19 +11812,44 @@ html[data-quality="medium"] .balance--pumping {
 .foundry-square-resource__front::before {
   content: '';
   position: absolute;
+  /* This tint belongs to the artwork stack and follows its exact silhouette. */
   inset: 0;
   z-index: 1;
+  overflow: hidden;
+  border-radius: var(--loot-card-radius);
+  clip-path: inset(0 round var(--loot-card-radius));
   background:
     linear-gradient(180deg, rgba(10,6,3,0.78) 0%, rgba(10,6,3,0.28) 24%, rgba(10,6,3,0.1) 46%, rgba(10,6,3,0.18) 72%, rgba(10,6,3,0.56) 100%),
     radial-gradient(circle at 18% 14%, rgba(255,214,122,0.09), transparent 26%);
   pointer-events: none;
 }
 
+/* The generic card frame has fixed 10px corners and a fixed 2px stroke. Square loot cards override both:
+   their curve is proportional, while the stroke scales down to 1px for the 42px staging tiles. */
+.foundry-square-resource__front::after {
+  border-radius: var(--loot-card-radius);
+  padding: var(--loot-card-frame-width);
+}
+
 .foundry-square-resource--owned .foundry-square-resource__front {
   box-shadow:
     inset 0 0 0 1px rgba(242,208,124,0.22),
-    inset 0 1px 0 rgba(255,232,174,0.08),
-    0 0 20px rgba(212,168,80,0.12);
+    inset 0 1px 0 rgba(255,232,174,0.08);
+}
+
+/* The generic card hover adds a blurred drop-shadow to every `.card-face-wrapper`. On overlapping loot
+   cards that blur crosses the deliberate slice mask and looks like the artwork itself was cut off. The
+   gold outline supplies all the separation these square cards need. */
+.card-face-wrapper.foundry-square-resource:hover {
+  filter: none;
+}
+
+/* Square loot cards are already moved as complete objects by their own container (the stack-line lift,
+   Bag hover, or pocket shell). The generic `no-twirl` rule also translated `.card-face-inner`, separating
+   the rounded face from its square layout footprint and exposing the panel underneath as a black rectangle.
+   Keep every square card's frame, artwork and footprint locked together. */
+.card-face-wrapper.no-twirl.foundry-square-resource:hover .card-face-inner {
+  transform: none;
 }
 
 .foundry-square-resource--empty {
@@ -11355,6 +11890,29 @@ html[data-quality="medium"] .balance--pumping {
 
 .foundry-square-resource__header--count-only {
   justify-content: flex-end;
+}
+
+/* Every square loot object carries its progression tier in the same corner. This is a face overlay rather
+   than part of the header so quantity remains top-right and recipe requirements remain bottom-right. */
+.foundry-square-resource__tier {
+  position: absolute;
+  left: 0.42rem;
+  bottom: 0.38rem;
+  z-index: 5;
+  color: #f6dfa0;
+  font-family: var(--font-caps);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 3px #000, 0 0 8px rgba(221, 171, 66, 0.42);
+  pointer-events: none;
+}
+
+.station-loot-stage__card .foundry-square-resource__tier {
+  left: 0.24rem;
+  bottom: 0.22rem;
+  font-size: 0.48rem;
 }
 
 /* Resource card tooltip — rendered as a portal into document.body */
@@ -11421,11 +11979,18 @@ html[data-quality="medium"] .balance--pumping {
   color: #f4da98;
 }
 
-/* Material sockets use the card's existing count position for a recipe-aware placed/required value.
-   Keeping it inside the tile makes the number survive every compact station layout without adding a
-   second label over the artwork. */
+/* Recipe counters belong in the lower-right corner. The normal count header sits top-right, exactly where
+   station slots reveal their remove button, so placed/required values must leave that corner clear. */
+.foundry-square-resource__header--requirement {
+  position: static;
+}
+
 .foundry-square-resource__count--requirement,
 .foundry-crafting-requirement {
+  position: absolute;
+  right: 0.42rem;
+  bottom: 0.42rem;
+  z-index: 3;
   min-width: max-content;
   font-size: 0.72rem;
   font-weight: 700;
@@ -11436,10 +12001,6 @@ html[data-quality="medium"] .balance--pumping {
 
 /* Required secondary ingredients need a counter even while their card socket is empty. */
 .foundry-crafting-requirement {
-  position: absolute;
-  top: 0.42rem;
-  right: 0.42rem;
-  z-index: 3;
   font-family: var(--font-display);
   line-height: 1;
 }
@@ -11469,14 +12030,23 @@ html[data-quality="medium"] .balance--pumping {
 
 .foundry-square-resource__art-wrap {
   position: absolute;
+  /* The bitmap is the bottom card layer and fills the entire silhouette. The gold outline is painted
+     independently above it by `__front::after`; it must not change the bitmap's mask or leave a dark
+     backing visible between two different curves. */
   inset: 0;
   z-index: 0;
+  overflow: hidden;
+  border-radius: var(--loot-card-radius);
+  clip-path: inset(0 round var(--loot-card-radius));
+  background: linear-gradient(165deg, rgba(25,16,7,0.82), rgba(8,6,3,0.9));
 }
 
 .foundry-square-resource__art {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: inherit;
   filter: saturate(1.03) contrast(1.02);
 }
 
@@ -11953,7 +12523,7 @@ html[data-quality="medium"] .balance--pumping {
   filter: none;
 }
 
-.wilderness-square-resource .foundry-square-resource__front {
+.wilderness-square-resource .foundry-square-resource__art-wrap {
   background:
     linear-gradient(165deg, rgba(17,22,12,0.84), rgba(7,10,5,0.92));
 }
@@ -11972,7 +12542,7 @@ html[data-quality="medium"] .balance--pumping {
   color: #dce9bf;
 }
 
-.wilderness-square-resource--processed .foundry-square-resource__front {
+.wilderness-square-resource--processed .foundry-square-resource__art-wrap {
   background:
     linear-gradient(165deg, rgba(14,22,16,0.86), rgba(7,11,8,0.94));
 }
@@ -12599,6 +13169,219 @@ html[data-quality="medium"] .balance--pumping {
 
 .inventory-panel--open {
   transform: translateX(0);
+}
+
+.inventory-panel--crafting {
+  z-index: 12050;
+}
+
+/* ── Hand card crafting / gemstone socketing ───────────────────────────── */
+.card-crafting-modal {
+  position: fixed;
+  inset: 0 var(--drawer-width) 0 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 6rem 2rem calc(var(--dock-gutter) + 1rem);
+  box-sizing: border-box;
+  background: rgba(3, 2, 7, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.card-crafting-modal__panel {
+  position: relative;
+  width: min(940px, 96%);
+  max-height: 100%;
+  display: grid;
+  grid-template-columns: 350px minmax(340px, 1fr);
+  gap: 2rem;
+  padding: 1.6rem;
+  box-sizing: border-box;
+  overflow: auto;
+  background:
+    linear-gradient(135deg, rgba(95,61,22,0.2), transparent 38%),
+    rgba(12, 8, 12, 0.97);
+  border: 1px solid rgba(212, 164, 76, 0.42);
+  box-shadow: 0 28px 80px rgba(0,0,0,0.72), inset 0 0 70px rgba(122,72,23,0.08);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 12px);
+}
+
+.card-crafting-modal__close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.8rem;
+  z-index: 4;
+  border: 1px solid rgba(212,164,76,0.3);
+  background: rgba(10,7,8,0.88);
+  color: #d8bd81;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+  font-size: 1.3rem;
+}
+
+.card-crafting-modal__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.card-crafting-modal__eyebrow,
+.card-crafting-modal__socket-count {
+  margin: 0;
+  color: #b99149;
+  font-family: var(--font-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  font-size: 0.74rem;
+}
+
+.card-face-wrapper.card-crafting-modal__face {
+  --card-detail-scale: 1.5;
+  --card-tag-scale: 1.5;
+  width: 330px;
+  height: 480px;
+  cursor: default;
+  touch-action: none;
+}
+
+.card-crafting-modal__workbench {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  color: #e4d7bb;
+}
+
+.card-crafting-modal__workbench header {
+  padding: 0 2.5rem 0.9rem 0;
+  border-bottom: 1px solid rgba(212,164,76,0.24);
+}
+
+.card-crafting-modal__workbench h2,
+.card-crafting-modal__workbench h3 {
+  margin: 0 0 0.4rem;
+  color: #e5c277;
+  font-family: var(--font-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.card-crafting-modal__workbench p,
+.card-crafting-modal__workbench footer {
+  margin: 0;
+  color: rgba(228,215,187,0.64);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.card-crafting-modal__socket-row {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.card-crafting-modal__socket-row > span {
+  width: 38px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #8c9096;
+  background: radial-gradient(circle at 35% 30%, #747981, #24272d 72%);
+  box-shadow: inset 0 0 8px #000;
+}
+
+.card-crafting-modal__socket-row > span.is-filled {
+  border-color: var(--gem-color);
+  box-shadow: 0 0 13px color-mix(in srgb, var(--gem-color) 62%, transparent), inset 0 0 5px #000;
+}
+
+.card-crafting-modal__socket-row img {
+  width: 82%;
+  height: 82%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.card-crafting-modal__gems {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.card-crafting-modal__gems button,
+.card-crafting-modal__target-grid button,
+.card-crafting-modal__choices button {
+  border: 1px solid rgba(212,164,76,0.3);
+  background: rgba(31,22,22,0.76);
+  color: #e8dcc1;
+  cursor: pointer;
+  padding: 0.55rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: var(--font-ui);
+}
+
+.card-crafting-modal__gems button:hover,
+.card-crafting-modal__target-grid button:hover,
+.card-crafting-modal__choices button:hover {
+  border-color: #e5bb62;
+  background: rgba(78,49,24,0.74);
+}
+
+.card-crafting-modal__gems button:disabled { opacity: 0.35; cursor: default; }
+.card-crafting-modal__gems img,
+.card-crafting-modal__target-grid img { width: 62px; height: 62px; object-fit: cover; border-radius: 12px; }
+.card-crafting-modal__gems span,
+.card-crafting-modal__target-grid span { font-size: 0.76rem; text-align: center; }
+.card-crafting-modal__gems strong,
+.card-crafting-modal__target-grid strong,
+.card-crafting-modal__choices strong { color: #e6bd65; font-size: 0.72rem; }
+.card-crafting-modal__gems small { color: rgba(228,215,187,0.52); }
+
+.card-crafting-modal__binding { display: flex; flex-direction: column; gap: 0.8rem; min-height: 0; }
+.card-crafting-modal__target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; overflow: auto; }
+.card-crafting-modal__choices { display: flex; flex-direction: column; gap: 0.5rem; }
+.card-crafting-modal__choices button { flex-direction: row; justify-content: space-between; text-transform: capitalize; }
+.card-crafting-modal__back { align-self: flex-start; border: 1px solid rgba(212,164,76,0.35); background: transparent; color: #c8aa70; padding: 0.5rem 0.8rem; cursor: pointer; }
+.card-crafting-modal__workbench footer { margin-top: auto; padding-top: 0.85rem; border-top: 1px solid rgba(212,164,76,0.18); font-style: italic; }
+.card-crafting-modal__empty { padding: 2rem; text-align: center; border: 1px dashed rgba(212,164,76,0.22); }
+
+/* The actual crafting view is intentionally only the enlarged card. Inventory
+   remains the tool palette; no secondary station frame competes with the art. */
+.card-crafting-modal--minimal {
+  /* Inspect against the whole screen, not the gameplay width remaining beside
+     the Bag. The Bag is independently layered above this surface. */
+  inset: 0;
+  padding: 5rem 1rem calc(var(--dock-gutter) + 1rem);
+}
+
+.card-crafting-modal--minimal > .card-crafting-modal__face {
+  filter: drop-shadow(0 30px 60px rgba(0,0,0,0.72));
+}
+
+.card-affix-line--socket-target {
+  cursor: crosshair;
+  border-radius: 3px;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.card-affix-line--socket-target:hover {
+  color: #fff1b2;
+  background: rgba(218, 172, 72, 0.2);
+}
+
+@media (max-width: 1050px) {
+  .card-crafting-modal { padding-left: 0.7rem; padding-right: 0.7rem; }
+  .card-crafting-modal__panel { grid-template-columns: 270px minmax(280px, 1fr); gap: 1rem; padding: 1rem; }
+  .card-face-wrapper.card-crafting-modal__face { --card-detail-scale: 1.2; --card-tag-scale: 1.2; width: 264px; height: 384px; }
+  .card-crafting-modal__gems { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Bag tab: BOTTOM-left corner of its panel. Geometry and styling come from
@@ -13251,7 +14034,7 @@ html[data-quality="medium"] .balance--pumping {
   position: relative;
   width: var(--resource-pocket-card-size);
   height: var(--resource-pocket-card-size);
-  filter: drop-shadow(0 10px 16px rgba(0,0,0,0.35));
+  filter: none;
 }
 
 .resource-pocket__card-frame .foundry-square-resource__name {
@@ -13385,9 +14168,33 @@ html[data-quality="medium"] .balance--pumping {
   border-radius: 999px;
 }
 
-.card-face-wrapper.carried-resource-cursor {
+.carried-resource-cursor-group {
   position: fixed;
-  z-index: 12040;
+  z-index: 12060;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.carried-resource-cursor-group--linked::after {
+  content: '◇';
+  position: absolute;
+  z-index: 4;
+  left: 108px;
+  top: 50%;
+  width: 16px;
+  transform: translateY(-50%);
+  color: #f0c45d;
+  font-size: 1rem;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(238, 183, 64, 0.8), 0 2px 4px #000;
+}
+
+.carried-resource-cursor-group .card-face-wrapper.carried-resource-cursor {
+  position: relative;
+  z-index: 1;
   width: 112px;
   height: 112px;
   min-height: 112px;
@@ -13673,10 +14480,6 @@ html[data-quality="medium"] .balance--pumping {
   width: 14cqi !important;
   height: 14cqi !important;
   min-height: 0;
-}
-
-.arcana-ring-slot-resource-card .foundry-square-resource__front {
-  border-radius: 10px;
 }
 
 .arcana-ring-slot-resource-card .foundry-square-resource__count {
@@ -14416,10 +15219,6 @@ html[data-quality="medium"] .balance--pumping {
   font-size: 0.56rem;
   text-align: center;
   line-height: 1.2;
-}
-
-.expedition-resource-slot .foundry-square-resource__front {
-  border-radius: 14px;
 }
 
 .expedition-resource-slot .foundry-square-resource__count {
@@ -15377,18 +16176,19 @@ html[data-quality="low"] .tab-rune-stream {
    matching where those two lights sit in the 3D version. */
 .scene-backdrop--cavern .scene-backdrop__gradient {
   background:
-    radial-gradient(ellipse 46% 40% at 18% 74%, rgba(255, 138, 56, 0.46) 0%, transparent 62%),
-    radial-gradient(ellipse 26% 24% at 56% 46%, rgba(150, 190, 232, 0.20) 0%, transparent 64%),
-    radial-gradient(ellipse 76% 58% at 50% 50%, rgba(58, 50, 43, 0.85) 0%, transparent 72%),
-    linear-gradient(180deg, #100c0a 0%, #241d18 34%, #2d251e 58%, #191410 82%, #0b0908 100%);
+    radial-gradient(ellipse 24% 58% at 4% 58%, rgba(255, 100, 26, 0.58) 0%, transparent 68%),
+    radial-gradient(ellipse 28% 46% at 96% 68%, rgba(255, 82, 18, 0.52) 0%, transparent 70%),
+    radial-gradient(ellipse 34% 38% at 52% 45%, rgba(194, 106, 55, 0.32) 0%, transparent 70%),
+    linear-gradient(180deg, #100907 0%, #2d1c15 32%, #3a281f 58%, #20130e 82%, #090605 100%);
   background-color: #14100d;
 }
 
 .scene-backdrop--splash .scene-backdrop__gradient {
-  background:
-    radial-gradient(ellipse 90% 60% at 50% 96%, rgba(217, 154, 92, 0.55) 0%, transparent 66%),
-    linear-gradient(180deg, #150f22 0%, #2f2340 38%, #6b4a5c 72%, #b3794c 100%);
-  background-color: #1a1630;
+  background-image: url('./assets/environment/main-menu-mountains.png');
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-color: #23172e;
 }
 
 .scene-backdrop__canvas {
@@ -15418,11 +16218,13 @@ html[data-quality="low"] .tab-rune-stream {
    practice behind the translucent panels. */
 .scene-backdrop--cavern .scene-backdrop__veil {
   background:
-    linear-gradient(180deg, rgba(6, 4, 3, 0.30) 0%, rgba(6, 4, 3, 0.12) 40%, rgba(6, 4, 3, 0.30) 100%);
+    linear-gradient(180deg, rgba(6, 4, 3, 0.22) 0%, rgba(6, 4, 3, 0.07) 42%, rgba(6, 4, 3, 0.23) 100%);
 }
 
 .scene-backdrop--splash .scene-backdrop__veil {
-  background: radial-gradient(ellipse 66% 54% at 50% 42%, rgba(6, 4, 10, 0.34) 0%, rgba(6, 4, 10, 0.52) 100%);
+  background:
+    radial-gradient(ellipse 54% 45% at 50% 45%, rgba(5, 3, 9, 0.08) 0%, rgba(5, 3, 9, 0.2) 100%),
+    linear-gradient(180deg, rgba(5, 3, 9, 0.04) 0%, rgba(5, 3, 9, 0.02) 58%, rgba(5, 3, 9, 0.14) 100%);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -16152,20 +16954,54 @@ html[data-quality="low"] .tab-rune-stream {
   color: rgba(214, 196, 158, 0.7);
 }
 
-/* ── Release notes: three cards side by side ── */
-/* One card per section rather than one scrolling column. Three shorter lists read far faster
-   than a single long one, and it means the type can be a comfortable reading size instead of
-   being shrunk to fit everything into one panel. */
+/* ── Release notes: current release, then collapsed history ── */
+/* The outer pane owns scrolling so the previous release naturally sits at the bottom of the current
+   notes. Each release keeps the three-column Changelog / Known / Planned treatment inside it. */
 .splash__notes {
   width: min(1240px, 95vw);
   margin-top: 0.5rem;
+  padding: 0 0.35rem 0.35rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-height: 0;
+  max-height: min(64vh, 690px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  text-align: left;
+}
+
+.splash__release-heading {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.15rem 0 0.05rem;
+  font-family: var(--font-caps);
+  text-transform: uppercase;
+}
+
+.splash__release-heading__version {
+  color: #e8c878;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+.splash__release-heading__label {
+  color: rgba(154, 208, 198, 0.72);
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+}
+
+.splash__note-columns {
   display: grid;
   /* Equal columns. `1.25fr 1fr 1fr` gave the longest list more room, but three cards of
      different widths read as a layout accident — better that the long lines wrap. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
-  min-height: 0;
-  text-align: left;
+  align-items: stretch;
 }
 
 .splash__note-card {
@@ -16198,7 +17034,7 @@ html[data-quality="low"] .tab-rune-stream {
 .splash__note-card__list {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   margin: 0;
   padding: 0.75rem 0.95rem 0.85rem 1.85rem;
   display: flex;
@@ -16216,16 +17052,110 @@ html[data-quality="low"] .tab-rune-stream {
   color: rgba(190, 140, 60, 0.85);
 }
 
+.splash__release-history {
+  flex: 0 0 auto;
+  border: 1px solid rgba(180, 130, 50, 0.3);
+  border-radius: 9px;
+  background: rgba(8, 6, 4, 0.72);
+  overflow: hidden;
+}
+
+.splash__release-history__summary {
+  min-height: 58px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+  color: rgba(224, 200, 152, 0.9);
+  background:
+    linear-gradient(90deg, rgba(99, 67, 22, 0.2), transparent 38%),
+    rgba(0, 0, 0, 0.28);
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.splash__release-history__summary::-webkit-details-marker {
+  display: none;
+}
+
+.splash__release-history__summary:hover {
+  color: #f4e2ba;
+  background:
+    linear-gradient(90deg, rgba(132, 88, 25, 0.3), transparent 45%),
+    rgba(0, 0, 0, 0.34);
+}
+
+.splash__release-history__summary > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.splash__release-history__summary strong {
+  font-family: var(--font-caps);
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.splash__release-history__summary small {
+  color: rgba(190, 174, 142, 0.6);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-style: italic;
+  text-transform: capitalize;
+}
+
+.splash__release-history__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: rgba(224, 170, 82, 0.78);
+  font-family: var(--font-caps);
+  font-size: 0.58rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.splash__release-history__action::after {
+  content: '⌄';
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.splash__release-history__action-close {
+  display: none;
+}
+
+.splash__release-history[open] .splash__release-history__action-open {
+  display: none;
+}
+
+.splash__release-history[open] .splash__release-history__action-close {
+  display: inline;
+}
+
+.splash__release-history[open] .splash__release-history__action::after {
+  transform: rotate(180deg);
+}
+
+.splash__release-history__body {
+  padding: 0.85rem;
+  border-top: 1px solid rgba(180, 130, 50, 0.22);
+}
+
 /* Stacked below the point where three columns would be too narrow to read. */
 @media (max-width: 1000px) {
-  .splash__notes {
+  .splash__note-columns {
     grid-template-columns: minmax(0, 1fr);
-    overflow-y: auto;
   }
 
   .splash__note-card__list {
     font-size: 0.92rem;
-    overflow: visible;
   }
 }
 
@@ -16538,12 +17468,18 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
    differ overridden. An upgrade needs two things Goods does not: what you have now versus what you would
    have, and a line saying what the thing actually does. */
 .upgrade-shelf {
-  /* Wider tiles than Goods. These carry a description line, and at the goods' 13rem the text wrapped to
-     four lines and the row height doubled. */
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  /* Upgrade choices are a centred group, not a full-width ledger. `flex` lets the last (or only) option
+     remain centred instead of stretching from the left edge simply because an auto-fill grid has room. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 0.65rem;
 }
 
 .upgrade-item {
+  flex: 0 1 22rem;
+  width: min(100%, 22rem);
   align-items: flex-start;
 }
 
@@ -16661,9 +17597,43 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
 }
 
 .goods-card__buy {
-  width: 100%;
-  max-width: 6.4rem;
+  position: absolute;
+  z-index: 4;
+  left: var(--loot-card-frame-width);
+  right: var(--loot-card-frame-width);
+  top: var(--loot-card-frame-width);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: auto;
+  height: 42%;
+  max-width: none;
+  padding: 8% 0 0;
+  color: #f3d586;
   text-align: center;
+  background: linear-gradient(180deg, rgba(5, 3, 1, 0.9) 0%, rgba(5, 3, 1, 0.32) 68%, transparent 100%);
+  border: 0;
+  border-radius: calc(var(--loot-card-radius) * 0.82) calc(var(--loot-card-radius) * 0.82) 0 0;
+  box-shadow: none;
+  text-shadow: 0 1px 3px #000;
+}
+
+.goods-card__buy:hover:not(:disabled) {
+  color: #ffe7a3;
+  background: linear-gradient(180deg, rgba(45, 27, 5, 0.94) 0%, rgba(25, 15, 3, 0.36) 70%, transparent 100%);
+  border: 0;
+  box-shadow: inset 0 8px 18px rgba(207, 145, 31, 0.13);
+}
+
+.goods-card__buy:disabled {
+  color: rgba(205, 187, 145, 0.46);
+  background: linear-gradient(180deg, rgba(4, 3, 2, 0.94) 0%, rgba(4, 3, 2, 0.42) 68%, transparent 100%);
+}
+
+.goods-card__buy .gold-amount {
+  color: inherit;
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 /* The altar's title, matching the shop's. Both are centred over their OWN column rather than over the page:
@@ -16943,7 +17913,7 @@ html[data-quality="medium"] .gold-burst--pop .gold-burst__y {
 .treasure-piece__fill {
   position: absolute;
   inset: 0;
-  border-radius: var(--loot-card-radius, 18px);
+  border-radius: var(--loot-card-radius, 16.36%);
   background: #fff;
 }
 
@@ -17029,3 +17999,1888 @@ html[data-quality="medium"] .treasure-shard {
 /* The row is bottom-aligned for packs, whose tall shape defines the line. A square tile is shorter, so
    without this it floats above the packs' baseline when both are on screen during a tab switch. */
 .unpack-pack-row--line > .unpack-pack-item > .held-loot { align-self: flex-end; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CRAFTING — five artisans, a 3 × 3 material matrix, and a reserved output
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.crafting-page {
+  --craft-accent: #d8af67;
+  --craft-blue: #91bfe8;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(1480px, 100%);
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  color: #eadfc9;
+  overflow: hidden;
+}
+
+.crafting-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.9rem 0.75rem;
+  border-bottom: 1px solid rgba(216, 175, 103, 0.2);
+  background: linear-gradient(90deg, rgba(43, 31, 19, 0.34), transparent 72%);
+}
+
+.crafting-kicker,
+.crafting-subtitle {
+  margin: 0;
+}
+
+.crafting-kicker,
+.crafting-section-heading > span {
+  font-family: var(--font-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.crafting-kicker {
+  color: rgba(216, 175, 103, 0.7);
+  font-size: 0.62rem;
+}
+
+.crafting-header h2 {
+  margin: 0.1rem 0 0.18rem;
+  font-size: clamp(1.35rem, 2.2vw, 2rem);
+  color: #efd59b;
+}
+
+.crafting-subtitle {
+  color: rgba(237, 225, 201, 0.62);
+  font-size: 0.82rem;
+}
+
+.crafting-header__stats {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.crafting-header__stats span {
+  padding: 0.38rem 0.55rem;
+  border: 1px solid rgba(216, 175, 103, 0.14);
+  background: rgba(12, 10, 8, 0.48);
+  color: rgba(235, 221, 191, 0.58);
+  font-size: 0.67rem;
+  letter-spacing: 0.04em;
+}
+
+.crafting-header__stats strong {
+  color: #edcc87;
+}
+
+.crafting-workbench {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(180, 130, 40, 0.3) transparent;
+}
+
+.crafting-crafters,
+.crafting-pattern-workspace {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid rgba(180, 130, 40, 0.28);
+  clip-path: polygon(10px 0%, calc(100% - 10px) 0%, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0% calc(100% - 10px), 0% 10px);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(240, 180, 80, 0.045), transparent 28%),
+    repeating-linear-gradient(90deg, transparent 0 21px, rgba(255,255,255,0.009) 21px 22px),
+    linear-gradient(170deg, rgba(26, 17, 8, 0.96), rgba(19, 13, 6, 0.97), rgba(14, 10, 4, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(255, 231, 180, 0.025), 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.crafting-matrix-panel,
+.crafting-result-panel {
+  position: relative;
+  min-width: 0;
+  padding: 0.7rem;
+}
+
+.crafting-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-bottom: 0.38rem;
+  margin-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(216, 175, 103, 0.12);
+}
+
+.crafting-section-heading > span {
+  color: var(--craft-accent);
+  font-size: 0.72rem;
+}
+
+.crafting-section-heading small {
+  color: rgba(235, 221, 191, 0.42);
+  font-size: 0.62rem;
+  text-align: right;
+}
+
+.crafting-crafters__stack {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(var(--station-card-w), calc(var(--station-card-w) + 0.8rem)));
+  justify-content: space-evenly;
+  gap: 0.52rem;
+}
+
+.crafting-crafter-slot {
+  min-height: 0;
+  padding: 0.35rem;
+  border: 1px dashed rgba(145, 191, 232, 0.22);
+  background: radial-gradient(circle at 15% 50%, rgba(88, 142, 193, 0.09), transparent 54%), rgba(7, 12, 18, 0.48);
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.crafting-crafter-slot:hover {
+  border-color: rgba(145, 191, 232, 0.42);
+  background-color: rgba(13, 23, 33, 0.64);
+}
+
+.crafting-crafter-slot--filled {
+  border-style: solid;
+  border-color: rgba(145, 191, 232, 0.26);
+}
+
+.crafting-crafter-slot__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.25rem;
+  color: rgba(194, 220, 244, 0.78);
+  font-family: var(--font-caps);
+  font-size: 0.61rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.crafting-crafter-slot__heading small {
+  display: none;
+}
+
+.crafting-crafter-slot__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: var(--station-card-h);
+  color: rgba(180, 210, 237, 0.34);
+}
+
+.crafting-crafter-slot__empty span {
+  font-size: 1.65rem;
+}
+
+.crafting-crafter-slot__empty p {
+  display: none;
+}
+
+.crafting-crafter-slot__body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crafting-crafter-slot__card {
+  width: var(--station-card-w);
+  max-width: 100%;
+  cursor: grab;
+}
+
+.crafting-crafter-slot__card:active {
+  cursor: grabbing;
+}
+
+.crafting-crafter-slot__card > .card-face-wrapper {
+  --card-detail-scale: 0.82;
+  --card-tag-scale: 0.84;
+  width: min(var(--station-card-w), 100%) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  aspect-ratio: 94 / 136;
+}
+
+.crafting-crafter-slot__details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.crafting-crafter-slot__details strong {
+  overflow: hidden;
+  color: #eee0c3;
+  font-size: 0.76rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+}
+
+.crafting-crafter-slot__details ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crafting-crafter-slot__details li,
+.crafting-crafter-slot__quiet {
+  color: rgba(190, 216, 237, 0.58);
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.crafting-slot-remove,
+.crafting-material-slot__remove {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: rgba(16, 12, 9, 0.9);
+  color: rgba(244, 226, 193, 0.72);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.crafting-slot-remove {
+  top: -0.2rem;
+  right: -0.2rem;
+}
+
+.crafting-slot-remove:hover,
+.crafting-material-slot__remove:hover {
+  border-color: rgba(239, 144, 114, 0.55);
+  color: #ffb49c;
+}
+
+.crafting-matrix-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.crafting-pattern-workspace {
+  --crafting-table-size: clamp(300px, 38vh, 410px);
+  display: grid;
+  grid-template-columns: minmax(var(--crafting-table-size), 460px) 160px;
+  justify-content: center;
+  gap: clamp(3rem, 6vw, 6rem);
+  align-items: stretch;
+}
+
+.crafting-rune-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 0.75rem;
+  border-top: 1px solid rgba(180, 130, 40, 0.1);
+  border-bottom: 1px solid rgba(180, 130, 40, 0.1);
+  background: linear-gradient(90deg, transparent, rgba(10, 7, 2, 0.72) 16%, rgba(10, 7, 2, 0.72) 84%, transparent);
+  overflow: hidden;
+  user-select: none;
+}
+
+.crafting-rune-divider__sigil {
+  flex: 0 0 auto;
+  margin-right: 0.65rem;
+  color: rgba(201, 168, 76, 0.52);
+  font-family: var(--font-runic);
+  font-size: 0.9rem;
+}
+
+.crafting-rune-divider__stream {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(0.65rem, 1.8vw, 1.35rem);
+  overflow: hidden;
+  color: rgba(180, 130, 40, 0.2);
+  font-family: var(--font-runic);
+  font-size: 0.58rem;
+  line-height: 1.25;
+}
+
+.crafting-matrix-frame {
+  position: relative;
+  width: min(100%, var(--crafting-table-size));
+  aspect-ratio: 1;
+  margin: auto;
+  border: 1px solid rgba(216, 175, 103, 0.22);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(143, 112, 62, 0.13), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 11px),
+    #17120e;
+  box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.66), 0 12px 28px rgba(0,0,0,0.25);
+}
+
+.crafting-matrix-frame::before,
+.crafting-matrix-frame::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+.crafting-matrix-frame::before {
+  top: 50%;
+  left: 50%;
+  width: 70%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(216, 175, 103, 0.1);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.crafting-matrix-frame::after {
+  inset: 10%;
+  border-radius: 50%;
+  border: 1px solid rgba(145, 191, 232, 0.08);
+}
+
+.crafting-matrix {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: clamp(6px, 0.75vw, 9px);
+  width: 80%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+}
+
+.crafting-material-slot {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(216, 175, 103, 0.24);
+  background: linear-gradient(145deg, rgba(44, 34, 24, 0.96), rgba(15, 13, 12, 0.98));
+  box-shadow: inset 0 0 0 3px rgba(0,0,0,0.22), 0 7px 14px rgba(0,0,0,0.2);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+}
+
+.crafting-material-slot--filled {
+  overflow: visible;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.crafting-material-slot:hover,
+.crafting-material-slot--ready {
+  border-color: rgba(232, 200, 130, 0.58);
+  transform: translateY(-1px);
+}
+
+.crafting-material-slot--filled:hover,
+.crafting-material-slot--filled.crafting-material-slot--ready {
+  border-color: transparent;
+}
+
+.crafting-material-slot--ready {
+  box-shadow: inset 0 0 0 2px rgba(232, 200, 130, 0.14), 0 0 15px rgba(216, 175, 103, 0.12);
+}
+
+.crafting-material-slot--distribution-target {
+  z-index: 2;
+  border-color: rgba(255, 222, 143, 0.92);
+  background: linear-gradient(145deg, rgba(86, 63, 32, 0.98), rgba(24, 18, 12, 0.98));
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 224, 154, 0.28),
+    0 0 20px rgba(227, 178, 83, 0.34);
+  transform: translateY(-2px) scale(1.025);
+}
+
+.crafting-material-slot--filled.crafting-material-slot--distribution-target {
+  border-color: transparent;
+  background: transparent;
+}
+
+.crafting-material-slot__rune {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(216, 175, 103, 0.18);
+  font-family: var(--font-runic);
+  font-size: clamp(1.2rem, 2.8vw, 2rem);
+}
+
+.crafting-material-slot__art {
+  position: absolute;
+  inset: 5px;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle, color-mix(in srgb, var(--material-color) 20%, transparent), transparent 70%);
+}
+
+.crafting-material-slot > .crafting-resource-card {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.crafting-resource-card .crafting-material-slot__count {
+  position: static;
+  color: #fff2d1;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-shadow: 0 2px 4px #000;
+}
+
+.crafting-resource-card__fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--material-color, #d8af67);
+  font-family: var(--font-caps);
+  font-size: 1.5rem;
+}
+
+.crafting-material-slot__art img {
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 7px rgba(0,0,0,0.5));
+}
+
+.crafting-material-slot__art > span {
+  color: var(--material-color);
+  font-size: 1.5rem;
+}
+
+.crafting-material-slot__count {
+  position: absolute;
+  z-index: 3;
+  top: 5px;
+  left: 7px;
+  color: #fff2d1;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-shadow: 0 2px 4px #000;
+}
+
+.crafting-material-slot__name {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  padding: 1.25rem 0.25rem 0.24rem;
+  background: linear-gradient(transparent, rgba(8, 6, 5, 0.9));
+  color: rgba(247, 232, 201, 0.84);
+  font-family: var(--font-caps);
+  font-size: clamp(0.42rem, 0.72vw, 0.56rem);
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.crafting-material-slot__remove {
+  top: 4px;
+  right: 4px;
+  width: 19px;
+  height: 19px;
+  opacity: 0;
+}
+
+.crafting-material-slot:hover .crafting-material-slot__remove,
+.crafting-material-slot:focus-within .crafting-material-slot__remove {
+  opacity: 1;
+}
+
+.crafting-matrix-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  margin-top: 0.42rem;
+  color: rgba(235, 221, 191, 0.46);
+  font-size: 0.67rem;
+}
+
+.crafting-clear-button {
+  padding: 0.32rem 0.62rem;
+  border: 1px solid rgba(216, 175, 103, 0.22);
+  background: rgba(255,255,255,0.025);
+  color: rgba(239, 218, 179, 0.68);
+  cursor: pointer;
+}
+
+.crafting-clear-button:hover:not(:disabled) {
+  border-color: rgba(216, 175, 103, 0.46);
+  color: #f1d79e;
+}
+
+.crafting-clear-button:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
+.crafting-result-panel {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+}
+
+.crafting-result-panel__spacer {
+  visibility: hidden;
+  border-bottom-color: transparent;
+}
+
+.crafting-result-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--crafting-table-size);
+  height: var(--crafting-table-size);
+  min-height: 0;
+  padding: 0;
+}
+
+.crafting-result-slot {
+  display: grid;
+  place-items: center;
+  width: min(104px, 100%);
+  aspect-ratio: 1;
+  padding: 0;
+  text-align: center;
+}
+
+button.crafting-result-slot {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+button.crafting-result-slot:hover,
+button.crafting-result-slot:focus-visible {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
+button.crafting-result-slot:focus-visible {
+  outline: 2px solid rgba(245, 211, 132, 0.72);
+  outline-offset: 4px;
+}
+
+.crafting-result-slot--empty {
+  border: 1px dashed rgba(216, 175, 103, 0.3);
+  background: radial-gradient(circle, rgba(216, 175, 103, 0.08), transparent 66%), rgba(9, 8, 7, 0.52);
+}
+
+.crafting-result-card {
+  width: 100%;
+}
+
+.crafting-result-slot__glyph {
+  color: rgba(216, 175, 103, 0.34);
+  font-size: 2rem;
+}
+
+.crafting-result-label {
+  display: block;
+  margin-top: 0.28rem;
+  color: var(--craft-accent);
+  font-family: var(--font-caps);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.crafting-resource-tooltip__action {
+  margin-top: 0.38rem;
+  color: rgba(240, 207, 137, 0.86);
+}
+
+@media (max-width: 1080px) {
+  .crafting-pattern-workspace {
+    --crafting-table-size: clamp(285px, 36vh, 360px);
+    grid-template-columns: minmax(var(--crafting-table-size), 1fr) minmax(130px, 0.65fr);
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .main--arcana {
+    padding-inline: 0.7rem;
+  }
+
+  .crafting-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .crafting-header__stats {
+    justify-content: flex-start;
+  }
+
+  .crafting-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .crafting-pattern-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .crafting-rune-divider__stream {
+    gap: 0.55rem;
+    font-size: 0.5rem;
+  }
+
+  .crafting-result-panel {
+    justify-self: center;
+    width: 140px;
+  }
+
+  .crafting-crafters__stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .crafting-crafter-slot__card {
+    margin-inline: auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Persistent summoning altar
+   Idle, staged, opening and collected states share this exact geometry. The
+   pack/card focal point and action row therefore never chase the pointer.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.shop-summon--opening .unpack-pack-row {
+  display: flex;
+}
+
+.unpack-summon-field-wrap {
+  margin-top: 0.55rem;
+}
+
+.unpack-summon-field-wrap .summon-field {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: visible;
+  opacity: 1;
+}
+
+.unpack-summon-field-wrap .summon-col {
+  width: 100%;
+  flex: 0 0 auto;
+  border-right: 0;
+  padding: 10px 12px;
+}
+
+.unpack-summon-field-wrap .summon-col--left {
+  height: 190px;
+  min-height: 190px;
+  border-bottom: 1px solid rgba(120, 80, 30, 0.34);
+  background: linear-gradient(180deg, rgba(64, 38, 14, 0.2), rgba(16, 10, 5, 0.1));
+  overflow: hidden;
+}
+
+.unpack-summon-field-wrap .summon-col--left.summon-col--inactive {
+  min-height: 190px;
+  opacity: 0.48;
+}
+
+.unpack-summon-field-wrap .summon-col-header {
+  min-height: 21px;
+  margin-bottom: 2px;
+  padding-bottom: 5px;
+}
+
+.summon-attunement-count {
+  margin-left: auto;
+  color: rgba(235, 199, 116, 0.82);
+  font-variant-numeric: tabular-nums;
+}
+
+.unpack-summon-field-wrap .summon-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.unpack-summon-field-wrap .summon-slot {
+  min-height: 54px;
+  padding: 6px 7px;
+}
+
+.summon-attunement-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.summon-attunement-pips {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 3px;
+  flex: 1;
+}
+
+.summon-attunement-pip {
+  height: 3px;
+  background: rgba(154, 120, 60, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(199, 155, 72, 0.12);
+}
+
+.summon-attunement-pip--filled {
+  background: #b46cff;
+  box-shadow: 0 0 7px rgba(180, 108, 255, 0.78);
+}
+
+.summon-btn--attune {
+  min-width: 124px;
+  min-height: 27px;
+  padding: 0.28rem 0.55rem;
+  border-color: rgba(174, 105, 245, 0.5);
+  color: #d9b7ff;
+  background: linear-gradient(180deg, rgba(69, 31, 105, 0.82), rgba(35, 18, 54, 0.9));
+  font-size: 0.58rem;
+}
+
+.summon-btn--attune:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+/* The available Arcana items remain drag/click sources, but in one compact
+   horizontal tray instead of making the attunement band grow vertically. */
+.unpack-summon-field-wrap .summon-inventory {
+  flex: 0 0 auto;
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  margin-top: 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.unpack-summon-field-wrap .summon-inventory-divider {
+  display: none;
+}
+
+.unpack-summon-field-wrap .summon-inv-charm-grid {
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.unpack-summon-field-wrap .summon-inv-charm {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+}
+
+.unpack-summon-field-wrap .summon-inv-row {
+  flex: 0 0 auto;
+  min-width: 98px;
+  padding: 5px 7px;
+}
+
+.unpack-summon-field-wrap .summon-col--center {
+  min-height: 494px;
+  height: 494px;
+  padding: 10px 12px;
+  align-items: center;
+  justify-content: flex-start;
+  border-bottom: 1px solid rgba(120, 80, 30, 0.34);
+  background: radial-gradient(ellipse at 50% 46%, rgba(139, 85, 225, 0.09), transparent 58%);
+}
+
+.unpack-summon-field-wrap .summon-pack-wrap,
+.unpack-summon-field-wrap .opening-stage-main {
+  width: 200px;
+  height: 300px;
+}
+
+.unpack-summon-field-wrap .summon-pack-wrap {
+  margin-top: 20px;
+}
+
+.unpack-summon-field-wrap .summon-actions {
+  min-height: 36px;
+  margin-top: 0;
+}
+
+.unpack-summon-field-wrap .summon-card-tray,
+.unpack-summon-field-wrap .pack-opening__queue-tray {
+  min-height: 132px;
+  width: 100%;
+  border: 0;
+  background: linear-gradient(180deg, rgba(10, 7, 3, 0.36), rgba(20, 12, 5, 0.68));
+}
+
+.unpack-summon-field-wrap .summon-card-tray {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 132px;
+}
+
+/* Opening occupies the same middle and bottom measurements as the staged pack. */
+.unpack-summon-field-wrap .pack-opening {
+  display: grid;
+  grid-template-rows: 20px 300px 42px minmax(132px, auto);
+  width: 100%;
+  min-width: 0;
+}
+
+.unpack-summon-field-wrap .pack-opening > .hint {
+  grid-row: 1;
+  min-height: 20px;
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+.unpack-summon-field-wrap .pack-opening > .opening-stage {
+  grid-row: 2;
+  width: 100%;
+  min-height: 300px;
+  margin: 0;
+}
+
+.unpack-summon-field-wrap .pack-opening__actions {
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 42px;
+}
+
+.unpack-summon-field-wrap .pack-opening__actions .summon-btn {
+  min-width: 132px;
+  margin: 0;
+}
+
+.unpack-summon-field-wrap .pack-opening__actions .collect-btn {
+  min-width: 150px;
+}
+
+.unpack-summon-field-wrap .pack-opening__queue-tray {
+  grid-row: 4;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  padding: 10px 8px 4px;
+}
+
+.unpack-summon-field-wrap .cards-queue {
+  width: 100%;
+  margin: 0;
+  padding: 18px 2px 2px;
+}
+
+.pack-opening__queue-empty {
+  align-self: center;
+  margin: 0;
+  color: rgba(148, 130, 100, 0.35);
+  font-size: 0.68rem;
+  font-style: italic;
+}
+
+.unpack-summon-field-wrap .cards-remaining {
+  margin: 0;
+  color: rgba(229, 231, 235, 0.68);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.unpack-summon-field-wrap .unpack-next-area {
+  min-height: 342px;
+  justify-content: center;
+}
+
+@media (max-width: 680px) {
+  .unpack-summon-field-wrap .summon-slot-label { font-size: 0.52rem; }
+  .unpack-summon-field-wrap .summon-slot-item-name { font-size: 0.62rem; }
+  .summon-btn--attune { min-width: 112px; }
+}
+
+/* ── Wide, viewport-fitted Shop / Summon composition ────────────────────────
+   Shop is the one view that benefits from the full window width: moving its left
+   edge into the global margin buys the altar enough width for real square sockets
+   without changing the signed-off gutters on the production pages. */
+.main--shop {
+  max-width: none;
+  padding-left: 0.65rem;
+  padding-right: calc(var(--drawer-width) + 0.75rem);
+  padding-top: 0.55rem;
+}
+
+.main--shop .shop-summon {
+  grid-template-columns: minmax(440px, 0.62fr) minmax(620px, 1fr);
+  gap: 0.75rem;
+}
+
+/* Summon gets its room from the storefront, never from the Bag. The shop rail,
+   shelf spacing and goods cards tighten as one compact counter while the global
+   248px inventory width remains untouched. */
+.main--shop .shop-layout {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+.main--shop .shop-topbar,
+.main--shop .unpack-topbar {
+  flex: 0 0 auto;
+  min-height: clamp(128px, 15vh, 156px);
+  border-bottom: 1px solid rgba(180, 130, 40, 0.18);
+}
+
+.main--shop .shop-topbar {
+  display: grid;
+  grid-template-columns: 8.35rem minmax(0, 1fr);
+  gap: 0.8rem;
+  width: 100%;
+}
+
+.main--shop .shop-categories {
+  align-self: center;
+  gap: 0.2rem;
+}
+
+.main--shop .shop-category {
+  justify-content: center;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.62rem;
+}
+
+.main--shop .shop-summon__shop > .shop > .shop-topbar > .shop-header {
+  position: relative;
+  align-self: stretch;
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.main--shop .shop-summon__shop > .shop > .shop-topbar > .shop-header::before,
+.main--shop .shop-summon__shop > .shop > .shop-topbar > .shop-header::after,
+.main--shop .unpack-header::before,
+.main--shop .unpack-header::after {
+  content: '◇';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  color: rgba(205, 155, 65, 0.62);
+  font-size: 0.7rem;
+  line-height: 0;
+  text-align: center;
+  background: linear-gradient(90deg, transparent, rgba(175, 122, 38, 0.55) 34%, transparent 34% 66%, rgba(175, 122, 38, 0.55) 66%, transparent);
+}
+
+.main--shop .shop-summon__shop > .shop > .shop-topbar > .shop-header::before,
+.main--shop .unpack-header::before { top: 18%; }
+
+.main--shop .shop-summon__shop > .shop > .shop-topbar > .shop-header::after,
+.main--shop .unpack-header::after { bottom: 18%; }
+
+.main--shop .shop-summon__shop > .shop > .shop-topbar > .shop-header h2 {
+  position: absolute;
+  top: 42%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  transform: translateY(-50%);
+  font-size: clamp(1.2rem, 2.4vw, 1.72rem);
+  letter-spacing: 0.12em;
+  line-height: 1.05;
+}
+
+.main--shop .shop-header__section {
+  position: absolute;
+  top: 65%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  transform: translateY(-50%);
+  color: #c8a870;
+  font-family: var(--font-caps);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.main--shop .shop-header__status {
+  position: absolute;
+  top: 80%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  transform: translateY(-50%);
+  color: #7fa6a0;
+  font-family: var(--font-ui);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.main--shop .shop-section {
+  gap: 0.65rem;
+}
+
+.main--shop .shop-section-header {
+  gap: 0.18rem;
+  padding-bottom: 0.5rem;
+}
+
+.main--shop .shop-section-title-row {
+  gap: 0.45rem;
+}
+
+.main--shop .shop-section-title {
+  font-size: 0.92rem;
+}
+
+.main--shop .shop-section-tagline {
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+}
+
+.main--shop .shop-section-detail {
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.main--shop .goods-grid {
+  grid-template-columns: repeat(4, 72px);
+  place-content: start center;
+  place-items: center;
+  width: max-content;
+  max-width: 100%;
+  margin-inline: auto;
+  gap: 0.65rem;
+}
+
+.main--shop .goods-card {
+  gap: 0;
+}
+
+.main--shop .goods-card__tile {
+  width: 72px;
+  max-width: 72px;
+}
+
+.main--shop .goods-card__label {
+  font-size: 0.62rem;
+}
+
+.main--shop .goods-card__buy {
+  max-width: none;
+  padding: 8% 0 0;
+  font-size: 0.58rem;
+}
+
+.main--shop .shop-shelf__packs {
+  gap: 0.65rem;
+}
+
+.main--shop .shop-summon__altar {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding-left: 0.9rem;
+}
+
+.main--shop .unpack-page {
+  display: grid;
+  grid-template-rows: clamp(128px, 15vh, 156px) minmax(0, 1fr);
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main--shop .unpack-topbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: clamp(118px, 18%, 154px) minmax(170px, 28%) minmax(0, 1fr);
+  gap: 0.65rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.main--shop .unpack-header {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.main--shop .unpack-header h2 {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  right: auto;
+  width: max-content;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  font-size: clamp(1.2rem, 2.4vw, 1.72rem);
+  letter-spacing: 0.12em;
+}
+
+.main--shop .unpack-groups {
+  position: relative;
+  z-index: 2;
+  grid-column: 1;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.38rem;
+  min-height: 0;
+}
+
+.main--shop .unpack-group-tab {
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.42rem 0.62rem;
+  font-size: 0.68rem;
+}
+
+.main--shop .unpack-pack-row,
+.main--shop .shop-summon__altar .unpack-pack-row {
+  position: relative;
+  z-index: 2;
+  grid-column: 3;
+  --stack-w: clamp(58px, 6.2vh, 72px);
+  --stack-overlap: calc(var(--stack-w) * 0.5);
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  padding: 3px 2px 5px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.main--shop .unpack-pack-item,
+.main--shop .unpack-pack-item > .pack-display--sm {
+  width: var(--stack-w);
+  height: calc(var(--stack-w) * 1.45);
+}
+
+/* A treasure cache is a square loot tile. The generic rule above used to give
+   its WRAPPER pack proportions while LootTile kept its own 110px square, so the
+   child overflowed the narrow wrapper and the row clipped its right edge. Both
+   boxes now share the row's resolved size; there is no oversized hidden child. */
+.main--shop .unpack-pack-item--loot,
+.main--shop .unpack-pack-item--loot > .card-face-wrapper.held-loot--sm {
+  width: var(--stack-w);
+  height: var(--stack-w);
+}
+
+.main--shop .unpack-pack-row.stack-line > *:hover {
+  transform: translateY(-4px) scale(1.04);
+}
+
+/* The held-pack tray is a quiet selector. Rarity glows belong to the Shop
+   displays and to the opening payoff, not to this utility queue. Compound
+   selectors beat the per-pack hover filters defined earlier in the file. */
+.main--shop .unpack-pack-row .unpack-pack-item:hover .pack-display,
+.main--shop .unpack-pack-row .unpack-pack-item .pack-display {
+  filter: none;
+}
+
+.main--shop .unpack-summon-field-wrap {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  margin: 7px 0 0;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-col-header {
+  position: relative;
+  justify-content: center;
+  text-align: center;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-attunement-count {
+  position: absolute;
+  right: 0;
+  margin-left: 0;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-drop-zone {
+  position: absolute;
+  inset: 0 0 var(--summon-queue-h);
+  width: 100%;
+  padding: 1rem;
+  text-align: center;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-drop-label {
+  width: 100%;
+  font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+  letter-spacing: 0.13em;
+  text-align: center;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-drop-sub {
+  width: 100%;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-field {
+  --summon-stage-w: clamp(150px, 16vh, 200px);
+  --summon-stage-h: calc(var(--summon-stage-w) * 1.5);
+  --summon-queue-h: clamp(132px, 15vh, 164px);
+  --summon-action-h: 50px;
+  --summon-action-lift: clamp(36px, 5vh, 56px);
+  --summon-action-bottom: calc(var(--summon-queue-h) + var(--summon-action-lift));
+  display: grid;
+  grid-template-rows: clamp(108px, 27%, 130px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Three inventory-card-sized sockets. Controls use the width gained by widening
+   the altar instead of adding another row and making the page scroll. */
+.main--shop .unpack-summon-field-wrap .summon-col--left,
+.main--shop .unpack-summon-field-wrap .summon-col--left.summon-col--inactive {
+  --attune-slot-size: clamp(68px, 8vh, 86px);
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 7px 10px;
+  overflow: hidden;
+}
+
+.main--shop .summon-col--left .summon-col-header {
+  min-height: 18px;
+  padding-bottom: 3px;
+  margin-bottom: 4px;
+}
+
+.main--shop .summon-col--left > .summon-col-idle-hint {
+  align-self: center;
+  margin-block: auto;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-slots {
+  display: grid;
+  grid-template-columns: repeat(3, var(--attune-slot-size));
+  justify-content: center;
+  gap: 7px;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-slot {
+  position: relative;
+  display: flex;
+  width: var(--attune-slot-size);
+  height: var(--attune-slot-size);
+  min-height: 0;
+  aspect-ratio: 1;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.main--shop .summon-slot--locked {
+  pointer-events: none;
+  filter: grayscale(1) saturate(0.15);
+}
+
+.main--shop .summon-slot--locked::after {
+  content: '×';
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(205, 196, 181, 0.58);
+  background: rgba(7, 7, 7, 0.46);
+  font-family: var(--font-display);
+  font-size: calc(var(--attune-slot-size) * 0.52);
+  font-weight: 400;
+  line-height: 1;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.main--shop .summon-slot-head {
+  position: relative;
+  z-index: 3;
+  align-self: flex-start;
+}
+
+.main--shop .summon-slot-label {
+  max-width: calc(var(--attune-slot-size) - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.52rem;
+}
+
+.main--shop .summon-slot-hint {
+  position: relative;
+  z-index: 2;
+  margin: auto;
+  padding: 0;
+  text-align: center;
+  font-size: 0.57rem;
+}
+
+.main--shop .summon-slot-filled-row {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.main--shop .summon-slot-item-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+}
+
+.main--shop .summon-slot-item-name {
+  position: absolute;
+  z-index: 2;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  overflow: hidden;
+  color: #f1ddff;
+  font-size: 0.5rem;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px #000, 0 1px 2px #000;
+  white-space: nowrap;
+}
+
+.main--shop .summon-slot-clear {
+  position: absolute;
+  z-index: 4;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  color: #f4dfef;
+  background: rgba(14, 5, 18, 0.74);
+  border: 1px solid rgba(240, 190, 235, 0.28);
+}
+
+.main--shop .summon-attunement-controls {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  width: clamp(130px, 29%, 190px);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  margin: 0;
+}
+
+.main--shop .summon-btn--attune {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+}
+
+/* Inventory is the single source of placeable Arcana cards. Do not render a
+   second inventory inside the altar. */
+.main--shop .summon-inventory {
+  display: none;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-col--center {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-pack-wrap,
+.main--shop .unpack-summon-field-wrap .opening-stage-main {
+  width: var(--summon-stage-w);
+  height: var(--summon-stage-h);
+}
+
+.main--shop .unpack-summon-field-wrap .summon-pack-wrap {
+  margin: 0;
+  position: absolute;
+  left: 50%;
+  top: calc((100% - var(--summon-queue-h) - var(--summon-action-h)) / 2);
+  transform: translate(-50%, -50%);
+}
+
+.main--shop .unpack-summon-field-wrap .summon-pack-wrap--loot,
+.main--shop .unpack-summon-field-wrap .summon-pack-wrap--loot > .card-face-wrapper.held-loot--md {
+  width: var(--summon-stage-w);
+  height: var(--summon-stage-w);
+}
+
+.main--shop .summon-pack-wrap > .pack-display--md {
+  width: var(--summon-stage-w);
+  height: var(--summon-stage-h);
+}
+
+.main--shop .unpack-summon-field-wrap .summon-actions {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  bottom: var(--summon-action-bottom);
+  justify-content: center;
+  transform: none;
+  align-items: center;
+  height: var(--summon-action-h);
+  min-height: var(--summon-action-h);
+  margin: 0;
+  white-space: nowrap;
+}
+
+.main--shop .summon-actions .summon-btn--primary,
+.main--shop .unpack-summon-field-wrap .pack-opening__actions .summon-btn,
+.main--shop .unpack-summon-field-wrap .unpack-next-btn {
+  min-width: 210px;
+  min-height: 48px;
+  margin: 0;
+  padding: 0.68rem 1.5rem;
+  font-size: 0.82rem;
+}
+
+/* Back is secondary to the fixed central action. Taking it out of flow means
+   Summon Pack occupies the exact same x/y target as every later-state action. */
+.main--shop .summon-actions > .summon-btn--back {
+  position: absolute;
+  right: calc(50% + 119px);
+  min-width: 112px;
+  min-height: 44px;
+  margin: 0;
+}
+
+.main--shop .unpack-summon-field-wrap .summon-card-tray {
+  height: var(--summon-queue-h);
+  min-height: var(--summon-queue-h);
+  padding: 5px 8px;
+}
+
+.main--shop .summon-card-tray .summon-col-header {
+  min-height: 17px;
+  padding-bottom: 3px;
+  margin: 0;
+}
+
+.main--shop .summon-card-tray .summon-col-idle-hint {
+  margin-top: 5px;
+}
+
+/* Opening uses the same focal box and reserves a bottom row whose contents are
+   scaled to fit completely instead of being clipped by the old 132px rail. */
+.main--shop .unpack-summon-field-wrap .pack-opening {
+  position: absolute;
+  inset: 0;
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+.main--shop .unpack-summon-field-wrap .pack-opening > .hint {
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  left: 10px;
+  right: auto;
+  min-height: 16px;
+  margin: 0;
+  font-size: 0.58rem;
+  text-align: left;
+}
+
+.main--shop .unpack-summon-field-wrap .pack-opening > .opening-stage {
+  position: absolute;
+  inset: 0 0 calc(var(--summon-queue-h) + var(--summon-action-h)) 0;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+}
+
+.main--shop .unpack-summon-field-wrap .opening-stage-main {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.main--shop .unpack-summon-field-wrap .center-card {
+  --card-detail-scale: 1.33;
+  --card-tag-scale: 1.25;
+  inset: 0;
+  width: var(--summon-stage-w);
+  height: var(--summon-stage-h);
+}
+
+.main--shop .unpack-summon-field-wrap .pack-opening__actions {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  bottom: var(--summon-action-bottom);
+  height: var(--summon-action-h);
+  min-height: var(--summon-action-h);
+}
+
+.main--shop .unpack-summon-field-wrap .pack-opening__actions .summon-btn {
+  min-width: 210px;
+}
+
+/* Open Next is the same altar action state as Summon, Quick Draw and Claim.
+   It used to vertically centre its own panel, making the player's pointer chase
+   the button after every pack. The shared bottom variable fixes every action to
+   one stable, deliberately raised baseline. */
+.main--shop .unpack-summon-field-wrap .unpack-next-area {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  bottom: var(--summon-action-bottom);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--summon-action-h);
+}
+
+.main--shop .unpack-summon-field-wrap .unpack-next-label,
+.main--shop .unpack-summon-field-wrap .cards-remaining {
+  position: absolute;
+  right: calc(50% + 119px);
+  min-width: 82px;
+  margin: 0;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.main--shop .unpack-summon-field-wrap .pack-opening__queue-tray {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--summon-queue-h);
+  min-height: var(--summon-queue-h);
+  padding: 3px 8px 2px;
+  overflow: visible;
+}
+
+.main--shop .unpack-summon-field-wrap .cards-queue {
+  --stack-w: 110px;
+  --stack-overlap: 78px;
+  height: 160px;
+  padding: 0 2px;
+  overflow-x: hidden;
+  overflow-y: visible;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.main--shop .cards-queue .queued-card-slot,
+.main--shop .cards-queue .queued-card,
+.main--shop .cards-queue .card-face-wrapper {
+  width: 110px;
+  height: 160px;
+}
+
+/* Treasure rewards are loot cards, not playing cards. Keep the stack width so
+   its overlap calculation is unchanged, but make every box in the resource
+   branch square: slot, animation wrapper, card wrapper and the actual tile. */
+.main--shop .pack-opening--resource .cards-queue {
+  height: 110px;
+}
+
+.main--shop .pack-opening--resource .cards-queue .queued-card-slot--resource,
+.main--shop .pack-opening--resource .cards-queue .queued-card--resource,
+.main--shop .pack-opening--resource .cards-queue .card-face-wrapper.opening-resource-card--queue {
+  width: 110px;
+  height: 110px;
+  min-height: 110px;
+  aspect-ratio: 1;
+}
+
+.main--shop .pack-opening--resource .center-card.opening-resource-card--reveal {
+  width: var(--summon-stage-w);
+  height: var(--summon-stage-w);
+  min-height: var(--summon-stage-w);
+  aspect-ratio: 1;
+}
+
+/* Treasure does not use the playing-card queue. Once the chest disappears, all five square rewards occupy
+   the altar's focal area and arrive in a readable, non-overlapping row from left to right. */
+.main--shop .unpack-summon-field-wrap .pack-opening--treasure .opening-stage-main {
+  width: 100%;
+  height: 100%;
+  padding-inline: clamp(8px, 2.5%, 22px);
+}
+
+.treasure-reward-reveal-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 96px));
+  align-items: center;
+  justify-content: center;
+  gap: clamp(5px, 1.2vw, 14px);
+  width: 100%;
+  max-width: 620px;
+  margin-inline: auto;
+}
+
+.treasure-reward-reveal {
+  width: 100%;
+  aspect-ratio: 1;
+  opacity: 0;
+  transform: translateY(18px) scale(0.86);
+  pointer-events: none;
+}
+
+.treasure-reward-reveal--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+  animation: treasure-reward-arrive 0.42s cubic-bezier(0.18, 0.9, 0.24, 1.15) both;
+}
+
+.treasure-reward-reveal > .card-face-wrapper.opening-resource-card--treasure {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: 1;
+}
+
+@keyframes treasure-reward-arrive {
+  0% { opacity: 0; transform: translateY(18px) scale(0.86); filter: brightness(1.7); }
+  70% { opacity: 1; transform: translateY(-3px) scale(1.035); filter: brightness(1.2); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1); }
+}
+
+html[data-quality="low"] .treasure-reward-reveal--visible,
+html[data-quality="medium"] .treasure-reward-reveal--visible {
+  animation: treasure-reward-arrive 0.42s cubic-bezier(0.18, 0.9, 0.24, 1.15) both !important;
+}
+
+/* Queue cards are real cards, not screenshots squeezed into a thumbnail box.
+   Keeping their native dimensions also keeps CardFace's title, art, affix and
+   badge metrics readable; overlap is handled only by the row's negative margin. */
+.main--shop .cards-queue .card-face-wrapper {
+  --card-detail-scale: 0.64;
+  --card-tag-scale: 0.72;
+}
+
+.main--shop .opening-rewards-panel {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.main--shop .cards-queue.stack-line > *:hover {
+  transform: translateY(-5px) scale(1.04);
+}
+
+@media (max-width: 1180px) {
+  .main--shop .shop-summon {
+    grid-template-columns: minmax(300px, 0.55fr) minmax(430px, 1fr);
+  }
+  .main--shop .unpack-summon-field-wrap .summon-col--left,
+  .main--shop .unpack-summon-field-wrap .summon-col--left.summon-col--inactive {
+    --attune-slot-size: clamp(62px, 9vh, 78px);
+  }
+}
+
+@media (min-height: 851px) and (max-height: 1100px) {
+  .main--shop .unpack-summon-field-wrap .summon-field {
+    --summon-queue-h: 128px;
+  }
+
+  .main--shop .unpack-summon-field-wrap .center-card {
+    --card-detail-scale: 1.06;
+    --card-tag-scale: 1;
+  }
+
+  .main--shop .unpack-summon-field-wrap .cards-queue {
+    --stack-w: 88px;
+    --stack-overlap: 60px;
+    height: 128px;
+  }
+
+  .main--shop .cards-queue .queued-card-slot,
+  .main--shop .cards-queue .queued-card,
+  .main--shop .cards-queue .card-face-wrapper {
+    width: 88px;
+    height: 128px;
+  }
+
+  .main--shop .pack-opening--resource .cards-queue {
+    height: 88px;
+  }
+
+  .main--shop .pack-opening--resource .cards-queue .queued-card-slot--resource,
+  .main--shop .pack-opening--resource .cards-queue .queued-card--resource,
+  .main--shop .pack-opening--resource .cards-queue .card-face-wrapper.opening-resource-card--queue {
+    width: 88px;
+    height: 88px;
+    min-height: 88px;
+  }
+
+  .main--shop .cards-queue .card-face-wrapper {
+    --card-detail-scale: 0.51;
+    --card-tag-scale: 0.58;
+  }
+}
+
+/* Short windows still keep every region in the non-scrolling altar. Sizes step
+   down together, including CardFace's internal scale, so a card never becomes
+   a narrow shell filled with desktop-sized typography. */
+@media (max-height: 850px) {
+  .main--shop .unpack-page {
+    grid-template-rows: 92px minmax(0, 1fr);
+  }
+
+  .main--shop .shop-topbar,
+  .main--shop .unpack-topbar { min-height: 92px; }
+
+  .main--shop .shop-header__section { top: 67%; }
+  .main--shop .shop-header__status { top: 84%; }
+
+  .main--shop .unpack-pack-row,
+  .main--shop .shop-summon__altar .unpack-pack-row {
+    --stack-w: 54px;
+    height: 80px;
+    min-height: 80px;
+  }
+
+  .main--shop .unpack-summon-field-wrap .summon-field {
+    --summon-stage-w: 108px;
+    --summon-queue-h: 90px;
+    --summon-action-h: 42px;
+    --summon-action-lift: 22px;
+    grid-template-rows: 88px minmax(0, 1fr);
+  }
+
+  .main--shop .summon-actions .summon-btn--primary,
+  .main--shop .unpack-summon-field-wrap .pack-opening__actions .summon-btn,
+  .main--shop .unpack-summon-field-wrap .unpack-next-btn {
+    min-width: 174px;
+    min-height: 40px;
+    padding: 0.52rem 1.08rem;
+    font-size: 0.72rem;
+  }
+
+  .main--shop .summon-actions > .summon-btn--back {
+    right: calc(50% + 100px);
+    min-width: 96px;
+    min-height: 38px;
+  }
+
+  .main--shop .unpack-summon-field-wrap .unpack-next-label,
+  .main--shop .unpack-summon-field-wrap .cards-remaining {
+    right: calc(50% + 100px);
+  }
+
+  .main--shop .unpack-summon-field-wrap .summon-col--left,
+  .main--shop .unpack-summon-field-wrap .summon-col--left.summon-col--inactive {
+    --attune-slot-size: 54px;
+    padding-block: 5px;
+  }
+
+  .main--shop .unpack-summon-field-wrap .center-card {
+    --card-detail-scale: 0.72;
+    --card-tag-scale: 0.68;
+  }
+
+  .main--shop .unpack-summon-field-wrap .cards-queue {
+    --stack-w: 62px;
+    --stack-overlap: 42px;
+    height: 90px;
+  }
+
+  .main--shop .cards-queue .queued-card-slot,
+  .main--shop .cards-queue .queued-card,
+  .main--shop .cards-queue .card-face-wrapper {
+    width: 62px;
+    height: 90px;
+  }
+
+  .main--shop .pack-opening--resource .cards-queue {
+    height: 62px;
+  }
+
+  .main--shop .pack-opening--resource .cards-queue .queued-card-slot--resource,
+  .main--shop .pack-opening--resource .cards-queue .queued-card--resource,
+  .main--shop .pack-opening--resource .cards-queue .card-face-wrapper.opening-resource-card--queue {
+    width: 62px;
+    height: 62px;
+    min-height: 62px;
+  }
+
+  .main--shop .cards-queue .card-face-wrapper {
+    --card-detail-scale: 0.36;
+    --card-tag-scale: 0.41;
+  }
+}

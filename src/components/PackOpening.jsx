@@ -7,6 +7,10 @@ import { PACK_TYPES, getPackGroup } from '../game/cards';
 import { audioEngine } from '../game/audio/audioEngine';
 import { SOUND_IDS } from '../game/audio/audioLibrary';
 import { clearLootFlightGhosts, flyLootElement } from '../game/lootFlight';
+import PackModelOpening from './PackModelOpening';
+import LootTierBadge from './LootTierBadge';
+import { getArcanaResourceTier, getLootTier } from '../game/lootTiers';
+import { getCraftedArt, getIngotArt, getResourceArt } from '../game/resourceArt';
 
 const PHASES = { INTRO: 'intro', SPLITTING: 'splitting', REVEALING: 'revealing', ESSENCE: 'essence', DONE: 'done' };
 
@@ -63,7 +67,7 @@ function formatArcanaDropName(essence, tier, amount) {
   return `${baseName} ${plural}`;
 }
 
-function TooltipResourceCard({ artSrc, name, description, amount, className = '' }) {
+function TooltipResourceCard({ artSrc, name, description, amount, tier = 1, className = '' }) {
   const [tipPos, setTipPos] = useState(null);
   const [clampedPos, setClampedPos] = useState(null);
   const tipRef = useRef(null);
@@ -104,6 +108,7 @@ function TooltipResourceCard({ artSrc, name, description, amount, className = ''
             <div className="foundry-square-resource__art-wrap">
               {artSrc ? <img src={artSrc} alt={name} className="foundry-square-resource__art" /> : null}
             </div>
+            <LootTierBadge tier={tier} />
           </div>
         </div>
       </div>
@@ -135,18 +140,27 @@ function OpeningArcanaResourceCard({ essence, amount, tier, className = '' }) {
       name={name}
       description={description}
       amount={amount}
+      tier={getArcanaResourceTier(tier === 'essence' ? essence.id : `${essence.id}_${tier}`)}
       className={className}
     />
   );
 }
 
-function OpeningCurrencyCard({ reward, className = '' }) {
+function OpeningTreasureRewardCard({ reward, className = '' }) {
+  const artSrc = reward.type === 'coins'
+    ? RESOURCE_ART[(reward.artKey ?? '').toLowerCase()] ?? null
+    : reward.source === 'ingot'
+      ? getIngotArt(reward.artKey ?? reward.resourceId)
+      : reward.source === 'crafted'
+        ? getCraftedArt(reward.artKey ?? reward.resourceId)
+      : getResourceArt(reward.artKey ?? reward.resourceId);
   return (
     <TooltipResourceCard
-      artSrc={RESOURCE_ART[(reward.artKey ?? '').toLowerCase()] ?? null}
+      artSrc={artSrc}
       name={reward.name}
       description={reward.description}
       amount={reward.amount}
+      tier={getLootTier(reward.type === 'coins' ? 'currency' : reward.source, reward.resourceId, reward)}
       className={className}
     />
   );
@@ -349,7 +363,7 @@ function TreasureCache({ phase, onClick }) {
             ))}
           </span>
         ) : (
-          <LootTile artSrc={TREASURE_ART} name="Treasure" size="md" className="treasure-cache__tile">
+          <LootTile artSrc={TREASURE_ART} name="Treasure" size="md" tier={1} className="treasure-cache__tile">
             {/* The white-out lives inside the card's frame, so the border whitens with the art rather than
                 staying gold around a blank square. */}
             <span className="treasure-cache__whiteout" aria-hidden="true" />
@@ -444,9 +458,6 @@ function SplitPack({ phase, onClick, packType, flyAngle }) {
           <div className="pack-card-count">{pt.cardCount ?? 5} CARDS</div>
         </div>
       </div>
-      {isIdle && <div className="pack-holo-foil"    aria-hidden="true" />}
-      {isIdle && <div className="pack-holo-glare"   aria-hidden="true" />}
-      {isIdle && <div className="pack-holo-sparkle" aria-hidden="true" />}
     </div>
   );
 }
@@ -455,25 +466,26 @@ function SplitPack({ phase, onClick, packType, flyAngle }) {
 const COIN_POP_LARGE_THRESHOLD = 25;
 
 const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [], essenceDrops = [], onDone, onCoinPop, collectionBtnRef, inventoryTargetRef, packType }, ref) {
-  const [phase, setPhase] = useState(PHASES.INTRO);
+  /**
+   * Treasure already received its explicit Open Pack confirmation before this component mounts. Start it in
+   * the animated state on its very first render so there is never a closed, clickable intermediate cache.
+   */
+  const isTreasure = getPackGroup(packType?.id) === 'treasure';
+  const [phase, setPhase] = useState(() => (isTreasure ? PHASES.SPLITTING : PHASES.INTRO));
   const [flyAngle, setFlyAngle] = useState(0);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [queuedCards, setQueuedCards] = useState([]);
   const [collecting, setCollecting] = useState(false);
   const [visibleEssenceCards, setVisibleEssenceCards] = useState(0);
   const [visibleEssenceText, setVisibleEssenceText] = useState(0);
+  const [visibleTreasureRewards, setVisibleTreasureRewards] = useState(0);
   const queueRefs = useRef([]);
   const queueStripRef = useRef(null);
   const essenceRefs = useRef([]);
   const flyGhostsRef = useRef([]);
+  const splitStartedRef = useRef(false);
   const revealCards = cards.length > 0 ? cards : resourceCards;
   const isResourceReveal = cards.length === 0 && resourceCards.length > 0;
-  /**
-   * Driven by the pack's GROUP, not by `isResourceReveal`. Those coincide today — treasure is the only thing
-   * that opens into resources — but the group is the declared fact and the reveal shape is a consequence of
-   * it, so a future card pack that happened to yield resources would not accidentally get the chest.
-   */
-  const isTreasure = getPackGroup(packType?.id) === 'treasure';
 
   useEffect(() => () => {
     // Flight ghosts live under <body>, outside React's tree. Claiming normally unmounts this component,
@@ -492,28 +504,34 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
   }
 
   function handleSplit() {
-    // The cache's own sound, on the press that breaks it — the same rule the collect flows follow. Only for
-    // treasure: a card pack's `pack.open` already fired in App when the pack was committed, and playing it
-    // again here would double it.
-    if (isTreasure) audioEngine.play(SOUND_IDS.treasureOpen);
+    // Opening can also be requested by the keyboard while this transition is already running. Keep the
+    // phase strictly one-shot so rapid input cannot replay the sound or schedule a second reveal.
+    if (splitStartedRef.current) return;
+    splitStartedRef.current = true;
+
     // Random angle between -18° and 18°, never near zero
     const sign = Math.random() < 0.5 ? -1 : 1;
     setFlyAngle(sign * (8 + Math.random() * 10));
     setPhase(PHASES.SPLITTING);
-    // A cache bursts on its own schedule; a pack is 150ms pause + 320ms top fly + ~30ms buffer before the
-    // bottom starts (0.52s delay) + 480ms bottom = ~1100ms. Both read their duration from one constant so
-    // the reveal cannot start before the animation finishes.
-    setTimeout(() => {
+  }
+
+  useEffect(() => {
+    if (phase !== PHASES.SPLITTING) return undefined;
+    // A cache bursts on its own schedule; the 3-D pack's noise dissolve and particle release take 1080ms.
+    // Keep a small buffer before the first card replaces it so the last motes can clear cleanly.
+    const timer = window.setTimeout(() => {
       if (isTreasure) {
-        // A cache spills its whole contents. There is nothing to draw one at a time — the chest has already
-        // burst, so tapping five gold cards in sequence afterwards is ceremony for a reward that has been
-        // shown arriving. This is the same state `handleQuickDraw` produces, reached without the button.
-        revealAll();
+        // The chest is now gone. Its square rewards populate the altar itself from left to right; they do
+        // not enter the playing-card queue below and do not require five extra clicks.
+        setVisibleTreasureRewards(0);
+        setCurrentIdx(revealCards.length);
+        setPhase(PHASES.REVEALING);
         return;
       }
       setPhase(PHASES.REVEALING);
-    }, isTreasure ? TREASURE_BURST_MS : 1100);
-  }
+    }, isTreasure ? TREASURE_BURST_MS : 1140);
+    return () => window.clearTimeout(timer);
+  }, [phase, isTreasure, revealCards.length]);
 
   function handleQueueCurrent() {
     // The signature moment of the game. Pitch jitter on this sound is what stops five
@@ -571,27 +589,43 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
      * yours now" without implying a destination. The card itself just fades on the spot.
      */
     if (isResourceReveal) {
+      const inventoryTarget = inventoryTargetRef?.current?.getBoundingClientRect?.();
       queueRefs.current.forEach((el, i) => {
         if (!el) return;
         const reward = resourceCards[i];
         const rect = el.getBoundingClientRect();
-        const amount = reward?.type === 'coins' ? (reward.amount ?? 0) : 0;
-        window.setTimeout(() => {
-          onCoinPop?.({
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
-            // Two sizes, so a big find looks like one.
-            size: amount >= COIN_POP_LARGE_THRESHOLD ? 'large' : 'small',
+        if (reward?.type === 'coins') {
+          const amount = reward.amount ?? 0;
+          window.setTimeout(() => {
+            onCoinPop?.({
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+              size: amount >= COIN_POP_LARGE_THRESHOLD ? 'large' : 'small',
+            });
+          }, i * 110);
+          el.style.animation = 'none';
+          el.getBoundingClientRect();
+          el.style.transition = `transform 0.34s ease ${i * 0.11}s, opacity 0.3s ease ${i * 0.11 + 0.04}s`;
+          el.style.transform = 'scale(1.14)';
+          el.style.opacity = '0';
+          return;
+        }
+
+        if (inventoryTarget) {
+          const flight = flyLootElement(el, {
+            x: inventoryTarget.left + inventoryTarget.width / 2,
+            y: inventoryTarget.top + inventoryTarget.height / 2,
+            index: i,
+            durationMs: 520,
           });
-        }, i * 110);
-        el.style.animation = 'none';
-        el.getBoundingClientRect();
-        el.style.transition = `transform 0.34s ease ${i * 0.11}s, opacity 0.3s ease ${i * 0.11 + 0.04}s`;
-        el.style.transform = 'scale(1.14)';
-        el.style.opacity = '0';
+          if (flight) flyGhostsRef.current.push(flight);
+        }
       });
-      const popFlight = 420 + queueRefs.current.length * 110;
-      setTimeout(onDone, popFlight);
+      const popFlight = 520 + resourceCards.length * 110;
+      setTimeout(() => {
+        onDone();
+        clearLootFlightGhosts(flyGhostsRef.current);
+      }, popFlight);
       return;
     }
 
@@ -655,14 +689,31 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
     };
   }, [phase, essenceDrops]);
 
+  useEffect(() => {
+    if (!isTreasure || phase !== PHASES.REVEALING) return undefined;
+    const timers = resourceCards.map((_, index) => window.setTimeout(() => {
+      setVisibleTreasureRewards(index + 1);
+      audioEngine.play(SOUND_IDS.cardFlip);
+    }, 90 + index * 210));
+    timers.push(window.setTimeout(() => {
+      setPhase(PHASES.DONE);
+    }, 180 + resourceCards.length * 210));
+    return () => timers.forEach(timer => window.clearTimeout(timer));
+  }, [isTreasure, phase, resourceCards]);
+
   useImperativeHandle(ref, () => ({
     advance() {
       if (phase === PHASES.INTRO) {
         handleSplit();
       } else if (phase === PHASES.REVEALING) {
-        setQueuedCards(prev => [...prev, ...revealCards.slice(currentIdx)]);
-        setCurrentIdx(revealCards.length);
-        startEssenceRewardSequence();
+        if (isTreasure) {
+          setVisibleTreasureRewards(resourceCards.length);
+          setPhase(PHASES.DONE);
+        } else {
+          setQueuedCards(prev => [...prev, ...revealCards.slice(currentIdx)]);
+          setCurrentIdx(revealCards.length);
+          startEssenceRewardSequence();
+        }
       } else if (phase === PHASES.ESSENCE) {
         setVisibleEssenceCards(essenceDrops.length);
         setVisibleEssenceText(essenceDrops.length);
@@ -671,17 +722,17 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
         handleCollect();
       }
     },
-  }), [phase, currentIdx, collecting, revealCards, essenceDrops, isResourceReveal]);
+  }), [phase, currentIdx, collecting, revealCards, resourceCards, essenceDrops, isResourceReveal, isTreasure]);
 
   const cardsLeft = revealCards.length - currentIdx;
   const showEssenceRewards = essenceDrops.length > 0 && (phase === PHASES.ESSENCE || phase === PHASES.DONE);
 
   return (
-    <div className="pack-opening">
+    <div className={`pack-opening${isResourceReveal ? ' pack-opening--resource' : ''}${isTreasure ? ' pack-opening--treasure' : ''}`}>
       <p className="hint">
-        {phase === PHASES.INTRO && (isTreasure ? 'Click the cache to break it open' : 'Click the pack to open it')}
+        {phase === PHASES.INTRO && (isTreasure ? 'Opening cache' : 'Click the pack to open it')}
         {phase === PHASES.SPLITTING && '\u00a0'}
-        {phase === PHASES.REVEALING && (isResourceReveal ? 'Tap reward card to open next' : 'Tap card to open next')}
+        {phase === PHASES.REVEALING && (isTreasure ? 'Treasure uncovered' : isResourceReveal ? 'Tap reward card to open next' : 'Tap card to open next')}
         {phase === PHASES.ESSENCE && 'Motes distilled'}
         {phase === PHASES.DONE && 'Rewards ready'}
       </p>
@@ -691,12 +742,37 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
           {(phase === PHASES.INTRO || phase === PHASES.SPLITTING) && (
             isTreasure
               ? <TreasureCache phase={phase} onClick={handleSplit} />
-              : <SplitPack phase={phase} onClick={handleSplit} packType={packType} flyAngle={flyAngle} />
+              : (
+                <PackModelOpening
+                  phase={phase}
+                  onClick={handleSplit}
+                  packType={packType}
+                  fallback={(
+                    <SplitPack
+                      phase={phase}
+                      packType={packType}
+                      flyAngle={flyAngle}
+                    />
+                  )}
+                />
+              )
           )}
-          {phase === PHASES.REVEALING && (
-            isResourceReveal ? (
+          {(phase === PHASES.REVEALING || (isTreasure && phase === PHASES.DONE)) && (
+            isTreasure ? (
+              <div className="treasure-reward-reveal-row" aria-label="Treasure rewards">
+                {resourceCards.map((reward, index) => (
+                  <div
+                    key={reward.id}
+                    ref={el => { queueRefs.current[index] = el; }}
+                    className={`treasure-reward-reveal${index < visibleTreasureRewards ? ' treasure-reward-reveal--visible' : ''}`}
+                  >
+                    <OpeningTreasureRewardCard reward={reward} className="opening-resource-card opening-resource-card--treasure" />
+                  </div>
+                ))}
+              </div>
+            ) : isResourceReveal ? (
               <div key={currentIdx} className="opening-resource-card-slot" onClick={handleQueueCurrent}>
-                <OpeningCurrencyCard
+                <OpeningTreasureRewardCard
                   reward={revealCards[currentIdx]}
                   className="center-card opening-resource-card opening-resource-card--reveal"
                 />
@@ -711,11 +787,6 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
                 artDetail="full"
               />
             )
-          )}
-          {phase === PHASES.DONE && !collecting && (
-            <button className="collect-btn summon-btn summon-btn--primary" onClick={handleCollect}>
-              Claim Summon
-            </button>
           )}
         </div>
 
@@ -766,6 +837,7 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
         )}
       </div>
 
+      {!isTreasure && <div className="pack-opening__queue-tray">
       {queuedCards.length > 0 && (
         // Drawn cards are a stacked horizontal line, not a wrapping grid. A pack can hold 20, which wrapped
         // to four rows and made the reveal taller than its column — the scrolling this was meant to remove.
@@ -783,13 +855,13 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
             <div
               key={card.id}
               ref={el => { queueRefs.current[i] = el; }}
-              className="queued-card-slot"
+              className={`queued-card-slot${isResourceReveal ? ' queued-card-slot--resource' : ''}`}
               // Ascending, so each card lands on top of the last — it reads as being dealt onto a pile.
               style={{ zIndex: i + 1 }}
             >
               {isResourceReveal ? (
                 <div className="queued-card queued-card--resource">
-                  <OpeningCurrencyCard reward={card} className="opening-resource-card opening-resource-card--queue" />
+                  <OpeningTreasureRewardCard reward={card} className="opening-resource-card opening-resource-card--queue" />
                 </div>
               ) : (
                 <CardFace card={card} className="queued-card" holo />
@@ -798,22 +870,24 @@ const PackOpening = forwardRef(function PackOpening({ cards, resourceCards = [],
           ))}
         </div>
       )}
+      {queuedCards.length === 0 && <p className="pack-opening__queue-empty">Revealed cards collect here</p>}
+      </div>}
 
-      {phase === PHASES.REVEALING && (
-        <p className="cards-remaining">{cardsLeft} remaining</p>
-      )}
-
-      {/* Not for treasure: a cache already reveals everything at once, so the only thing Quick Draw could do
-          during its INTRO is skip the burst — turning the opening animation into a button you learn to avoid. */}
-      {!isTreasure && (phase === PHASES.INTRO || phase === PHASES.REVEALING) && revealCards.length > 1 && (
-        <button
-          className="quick-draw-btn"
-          onClick={handleQuickDraw}
-          title={`Reveal all ${revealCards.length} at once`}
-        >
-          Quick Draw
-        </button>
-      )}
+      <div className="pack-opening__actions">
+        {phase === PHASES.REVEALING && !isTreasure && <span className="cards-remaining">{cardsLeft} remaining</span>}
+        {/* Not for treasure: a cache already reveals everything at once, so the only thing Quick Draw could
+            do during its INTRO is skip the burst — turning the opening animation into a button you avoid. */}
+        {!isTreasure && (phase === PHASES.INTRO || phase === PHASES.REVEALING) && revealCards.length > 1 && (
+          <button className="quick-draw-btn summon-btn summon-btn--back" onClick={handleQuickDraw}>
+            Quick Draw
+          </button>
+        )}
+        {phase === PHASES.DONE && !collecting && (
+          <button className="collect-btn summon-btn summon-btn--primary" onClick={handleCollect}>
+            Claim Summon
+          </button>
+        )}
+      </div>
     </div>
   );
 });

@@ -2,7 +2,8 @@
 
 React 18 + Vite 5 collectible card game simulator. Persistent state in `localStorage` (web), a JSON file
 (desktop) or a Supabase row (online); nearly all orchestration and state mutation flows through
-`src/App.jsx`. Version `0.7.5` beta, `SAVE_VERSION` 25 — both live in source, never trust this file for them.
+`src/App.jsx`. Version `0.7.6` beta; the displayed build version comes from `package.json`, and the save
+version lives in `src/App.jsx` — never trust this file for either value.
 
 ```bash
 npm run dev              # vite

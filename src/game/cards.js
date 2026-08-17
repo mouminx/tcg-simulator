@@ -1,4 +1,6 @@
 import { ARCANA_ITEMS_BY_ID, ARCANA_SLOTS, getElementResourceId } from './arcana';
+import { TREASURE_GEMS } from './gems';
+import { getDiamondAffixAmplification, rollCardSocketCount } from './cardSockets';
 
 export { ESSENCES as ESSENCE_TYPES, DEFAULT_RESOURCES } from './arcana';
 
@@ -19,6 +21,11 @@ export const TIERS = {
   4: { name: 'IV',  weight: 8,  multiplier: 3.2 },
   5: { name: 'V',   weight: 3,  multiplier: 5.5 },
 };
+
+/** Tier I–V workers make one independently weighted material roll per tier each production cycle. */
+export function getCardProductionRollCount(card) {
+  return Math.max(1, Math.min(5, Math.floor(Number(card?.tier) || 1)));
+}
 
 export const AFFIX_VALUE_RANGES = {
   common:    [1, 5],
@@ -165,6 +172,46 @@ export const CLASS_REGISTRY = {
       mythic:    'Verdant Sovereign',
     },
   },
+  weaver: {
+    id: 'weaver',
+    label: 'Weaver',
+    rarityTitles: {
+      common: 'Spinner', uncommon: 'Weaver', rare: 'Loomwright',
+      epic: 'Master Weaver', legendary: 'Fateweaver', mythic: 'Worldloom',
+    },
+  },
+  woodworker: {
+    id: 'woodworker',
+    label: 'Woodworker',
+    rarityTitles: {
+      common: 'Sawyer', uncommon: 'Woodworker', rare: 'Joiner',
+      epic: 'Master Carpenter', legendary: 'Elderwright', mythic: 'Worldshaper',
+    },
+  },
+  tanner: {
+    id: 'tanner',
+    label: 'Tanner',
+    rarityTitles: {
+      common: 'Currier', uncommon: 'Tanner', rare: 'Leatherworker',
+      epic: 'Master Tanner', legendary: 'Hidewarden', mythic: 'Beastbinder',
+    },
+  },
+  prospector: {
+    id: 'prospector',
+    label: 'Prospector',
+    rarityTitles: {
+      common: 'Rock Picker', uncommon: 'Prospector', rare: 'Gemseeker',
+      epic: 'Deep Surveyor', legendary: 'Veinreader', mythic: 'Earthoracle',
+    },
+  },
+  gemcutter: {
+    id: 'gemcutter',
+    label: 'Gemcutter',
+    rarityTitles: {
+      common: 'Lapidary', uncommon: 'Gemcutter', rare: 'Jewelwright',
+      epic: 'Master Lapidary', legendary: 'Prismwright', mythic: 'Crownshaper',
+    },
+  },
 };
 
 export const UNIT_CLASSES = Object.values(CLASS_REGISTRY);
@@ -246,6 +293,33 @@ export const CLASS_AFFIX_POOLS = {
     { id: 'foragingLuck',        label: 'Foraging Luck',        stat: 'foragingLuck'        },
     { id: 'treasureSense',       label: 'Treasure Sense',       stat: 'treasureSense'       },
   ],
+  weaver: [
+    { id: 'weavingEfficiency', label: 'Weaving Efficiency', stat: 'weavingEfficiency' },
+    { id: 'weavingBounty', label: 'Weaving Bounty', stat: 'weavingBounty' },
+    { id: 'weavingLuck', label: 'Weaving Luck', stat: 'weavingLuck' },
+  ],
+  woodworker: [
+    { id: 'woodworkingEfficiency', label: 'Woodworking Efficiency', stat: 'woodworkingEfficiency' },
+    { id: 'woodworkingBounty', label: 'Woodworking Bounty', stat: 'woodworkingBounty' },
+    { id: 'woodworkingLuck', label: 'Woodworking Luck', stat: 'woodworkingLuck' },
+  ],
+  tanner: [
+    { id: 'tanningSpeed', label: 'Tanning Speed', stat: 'tanningSpeed' },
+    { id: 'tanningEfficiency', label: 'Tanning Efficiency', stat: 'tanningEfficiency' },
+    { id: 'tanningBounty', label: 'Tanning Bounty', stat: 'tanningBounty' },
+    { id: 'tanningLuck', label: 'Tanning Luck', stat: 'tanningLuck' },
+  ],
+  prospector: [
+    { id: 'miningEfficiency', label: 'Mining Efficiency', stat: 'miningSpeed' },
+    { id: 'miningAttunement', label: 'Mining Attunement', stat: 'miningAttunement' },
+    { id: 'miningLuck', label: 'Mining Luck', stat: 'miningLuck' },
+    { id: 'gemFind', label: 'Gem Find', stat: 'gemFind' },
+  ],
+  gemcutter: [
+    { id: 'gemcuttingEfficiency', label: 'Gemcutting Efficiency', stat: 'smeltingSpeed' },
+    { id: 'gemcuttingBounty', label: 'Gemcutting Bounty', stat: 'smeltingAttunement' },
+    { id: 'gemcuttingLuck', label: 'Gemcutting Luck', stat: 'smeltingLuck' },
+  ],
 };
 
 // ── General Affix Pool (any class can roll these) ──────────────────────────────
@@ -259,6 +333,14 @@ export const GENERAL_AFFIXES = [
   { id: 'overflow',           label: 'Overflow',            stat: 'overflow',           minTier: 2 },
   { id: 'prosperity',         label: 'Prosperity',          stat: 'prosperity',         minTier: 3 },
 ];
+
+const ELEMENTAL_AFFIX_IDS = ELEMENTAL_ATTUNEMENT_AFFIXES.map(affix => affix.id);
+const CLASS_GENERAL_AFFIX_IDS = Object.freeze({
+  weaver: new Set(['coinGeneration', 'productionSpeed', ...ELEMENTAL_AFFIX_IDS]),
+  woodworker: new Set(['coinGeneration', 'productionSpeed', ...ELEMENTAL_AFFIX_IDS]),
+  tanner: new Set(['coinGeneration', ...ELEMENTAL_AFFIX_IDS]),
+  gemcutter: new Set(['coinGeneration', 'productionSpeed', ...ELEMENTAL_AFFIX_IDS]),
+});
 
 // Flat map of all affix definitions keyed by id — used for label lookup, display, etc.
 export const CARD_AFFIXES = Object.fromEntries([
@@ -594,19 +676,84 @@ export function getPackTypeById(packTypeId) {
     : (PACK_TYPES[packTypeId] ?? PACK_TYPES.iron);
 }
 
-export function openTreasurePack() {
-  return Array.from({ length: 5 }, (_, index) => {
-    const amount = rollIntInRange(10, 250);
+const TREASURE_MATERIAL_POOL = Object.freeze([
+  { type: 'coins', weight: 40 },
+  { type: 'resource', source: 'ingot', resourceId: 'steel', name: 'Steel Ingot', artKey: 'steel', tier: 1, min: 1, max: 3, weight: 8, description: 'A sturdy refined steel bar recovered from a sealed cache.' },
+  { type: 'resource', source: 'ingot', resourceId: 'silver', name: 'Silver Ingot', artKey: 'silver', tier: 2, min: 1, max: 2, weight: 5, description: 'A pure silver ingot preserved inside an old treasure cache.' },
+  { type: 'resource', source: 'ingot', resourceId: 'gold', name: 'Gold Ingot', artKey: 'gold', tier: 3, min: 1, max: 1, weight: 2.5, description: 'A valuable gold ingot recovered intact from a treasure cache.' },
+  { type: 'resource', source: 'ingot', resourceId: 'platinum', name: 'Platinum Ingot', artKey: 'platinum', tier: 4, min: 1, max: 1, weight: 0.75, description: 'An exceptionally rare platinum ingot hidden in a treasure cache.' },
+  { type: 'resource', source: 'gathered', resourceId: 'voidwood', name: 'Voidwood', artKey: 'voidwood', tier: 5, min: 1, max: 1, weight: 0.8, description: 'Shadow-saturated timber recovered from a forgotten cache.' },
+  { type: 'resource', source: 'gathered', resourceId: 'arcanewood', name: 'Arcanewood', artKey: 'arcanewood', tier: 5, min: 1, max: 1, weight: 0.3, description: 'Raw magical timber preserved inside an ancient cache.' },
+  { type: 'resource', source: 'crafted', resourceId: 'gemsettersChisel', name: "Gemsetter's Chisel", artKey: 'gemsetters_chisel', tier: 2, min: 1, max: 1, weight: 0.6, description: 'A starsteel-edged chisel made to cut a new gemstone socket into a card.' },
+  { type: 'resource', source: 'crafted', resourceId: 'gemExtractor', name: 'Gem Extractor', artKey: 'gem_extractor', tier: 3, min: 1, max: 1, weight: 0.06, description: 'A precision arcane implement made to remove socketed gemstones from cards.' },
+  ...TREASURE_GEMS.map(gem => Object.freeze({
+    type: 'resource',
+    source: 'gathered',
+    resourceId: gem.id,
+    name: gem.name,
+    artKey: gem.artKey,
+    tier: gem.tier,
+    min: 1,
+    max: 1,
+    // Brilliant gems remain genuinely exceptional: five variants together carry only 0.3 weight.
+    weight: gem.tier === 1 ? 2 : gem.tier === 2 ? 0.6 : 0.06,
+    description: gem.description,
+  })),
+]);
+
+function makeTreasureReward(definition, random) {
+  if (definition.type === 'coins') {
+    const amount = rollIntWithRandom(10, 250, random);
     const artKey = amount >= 50 ? 'lots of coins' : 'few coins';
     return {
-      id: `treasure-reward-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+      id: newId(),
       type: 'coins',
+      source: 'currency',
+      resourceId: 'coins',
       name: amount >= 50 ? 'Lots of Coins' : 'Few Coins',
       amount,
       artKey,
-      description: 'A treasure cache of claimable gold pulled from a discovered treasure pack.',
+      tier: 1,
+      description: 'A treasure cache of claimable gold.',
     };
-  });
+  }
+
+  return {
+    ...definition,
+    id: newId(),
+    amount: rollIntWithRandom(definition.min ?? 1, definition.max ?? 1, random),
+  };
+}
+
+function rollTreasurePoolEntry(random) {
+  const total = TREASURE_MATERIAL_POOL.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = random() * total;
+  for (const entry of TREASURE_MATERIAL_POOL) {
+    roll -= entry.weight;
+    if (roll <= 0) return entry;
+  }
+  return TREASURE_MATERIAL_POOL[0];
+}
+
+export function openTreasurePack(random = Math.random) {
+  // Preserve the cache's gold identity while allowing the remaining four cards to roll real materials.
+  const rewards = [
+    makeTreasureReward(TREASURE_MATERIAL_POOL[0], random),
+    ...Array.from({ length: 4 }, () => makeTreasureReward(rollTreasurePoolEntry(random), random)),
+  ];
+
+  // The guaranteed coin card should not announce itself by always occupying the first reveal position.
+  for (let i = rewards.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [rewards[i], rewards[j]] = [rewards[j], rewards[i]];
+  }
+  return rewards;
+}
+
+function rollIntWithRandom(min, max, random) {
+  const floorMin = Math.ceil(min);
+  const floorMax = Math.floor(max);
+  return Math.floor(random() * (floorMax - floorMin + 1)) + floorMin;
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -663,7 +810,8 @@ export function getCardAffixBonuses(card) {
   for (const affix of card?.affixes ?? []) {
     const stat = resolveAffixStat(affix);
     if (!stat || bonuses[stat] == null) continue;
-    bonuses[stat] += affix.value ?? 0;
+    const amplification = getDiamondAffixAmplification(card, affix.id);
+    bonuses[stat] += (affix.value ?? 0) * (1 + amplification / 100);
   }
   return bonuses;
 }
@@ -674,7 +822,8 @@ export function getActiveAffixBonuses(activeCards = []) {
     for (const affix of card?.affixes ?? []) {
       const stat = resolveAffixStat(affix);
       if (!stat || totals[stat] == null) continue;
-      totals[stat] += affix.value ?? 0;
+      const amplification = getDiamondAffixAmplification(card, affix.id);
+      totals[stat] += (affix.value ?? 0) * (1 + amplification / 100);
     }
   }
   return totals;
@@ -733,8 +882,37 @@ function rollTier(weights) {
   return 1;
 }
 
-export function rollUnitClass() {
-  return UNIT_CLASSES[Math.floor(Math.random() * UNIT_CLASSES.length)];
+export const CALLING_TIER_WEIGHT_MULTIPLIERS = Object.freeze({
+  1: 1.5,
+  2: 2,
+  3: 3,
+  4: 5,
+  5: 8,
+});
+
+function getCallingWeightMultiplier(calling) {
+  return CALLING_TIER_WEIGHT_MULTIPLIERS[calling?.effect?.tier ?? calling?.tier ?? 1]
+    ?? CALLING_TIER_WEIGHT_MULTIPLIERS[1];
+}
+
+export function rollUnitClass(selectedCalling = null) {
+  const vocationalCallings = resolveCharmConfigs(selectedCalling)
+    .filter(calling => calling.effect?.bias === 'class' && calling.effect?.targetClassType);
+  if (vocationalCallings.length === 0) {
+    return UNIT_CLASSES[Math.floor(Math.random() * UNIT_CLASSES.length)];
+  }
+
+  const weights = UNIT_CLASSES.map(unitClass => vocationalCallings.reduce((weight, calling) => (
+    calling.effect.targetClassType === unitClass.id
+      ? weight * getCallingWeightMultiplier(calling)
+      : weight
+  ), 1));
+  let roll = Math.random() * weights.reduce((sum, weight) => sum + weight, 0);
+  for (let index = 0; index < UNIT_CLASSES.length; index += 1) {
+    roll -= weights[index];
+    if (roll <= 0) return UNIT_CLASSES[index];
+  }
+  return UNIT_CLASSES[UNIT_CLASSES.length - 1];
 }
 
 // ── Affixes ───────────────────────────────────────────────────────────────────
@@ -745,19 +923,42 @@ export function rollUnitClass() {
  * Pool = class-specific affixes (3) + general affixes filtered by minTier.
  * Drawn without replacement — no duplicate affixes.
  */
-export function rollCardAffixes(classType, rarity, tier = 1) {
+export function rollCardAffixes(classType, rarity, tier = 1, selectedCharm = null) {
   const affixCount = Math.max(1, Math.min(Number(tier) || 1, 5));
   const [minValue, maxValue] = AFFIX_VALUE_RANGES[rarity] ?? AFFIX_VALUE_RANGES.common;
 
   const classPool = (CLASS_AFFIX_POOLS[classType] ?? []).map(a => ({ ...a }));
-  const generalPool = GENERAL_AFFIXES.filter(a => tier >= (a.minTier ?? 1)).map(a => ({ ...a }));
+  const allowedGeneralIds = CLASS_GENERAL_AFFIX_IDS[classType] ?? null;
+  const generalPool = GENERAL_AFFIXES
+    .filter(a => tier >= (a.minTier ?? 1) && (!allowedGeneralIds || allowedGeneralIds.has(a.id)))
+    .map(a => ({ ...a }));
   const combined = [...classPool, ...generalPool];
 
   const rolledAffixes = [];
   const remaining = [...combined];
+  const activeCallings = resolveCharmConfigs(selectedCharm);
 
   for (let i = 0; i < affixCount && remaining.length > 0; i++) {
-    const index = Math.floor(Math.random() * remaining.length);
+    const selectionWeights = remaining.map(affix => {
+      return activeCallings.reduce((weight, calling) => {
+        const effect = calling.effect ?? {};
+        const matchesElement = effect.bias === 'element'
+          && effect.targetEssenceId
+          && effect.targetEssenceId === affix.elementId;
+        const matchesTrait = effect.bias === 'trait'
+          && Array.isArray(effect.targetAffixIds)
+          && effect.targetAffixIds.includes(affix.id);
+        return matchesElement || matchesTrait
+          ? weight * getCallingWeightMultiplier(calling)
+          : weight;
+      }, 1);
+    });
+    let selectionRoll = Math.random() * selectionWeights.reduce((sum, weight) => sum + weight, 0);
+    let index = 0;
+    for (; index < selectionWeights.length - 1; index++) {
+      selectionRoll -= selectionWeights[index];
+      if (selectionRoll <= 0) break;
+    }
     const affixDef = remaining.splice(index, 1)[0];
     const baseValue = rollPercentInRange(minValue, maxValue);
     const isHigher = Math.random() < HIGHER_AFFIX_CHANCE;
@@ -782,6 +983,26 @@ function resolveCatalystConfig(selectedCatalyst = null) {
   return null;
 }
 
+function resolveCharmConfig(selectedCharm = null) {
+  if (!selectedCharm) return null;
+  if (typeof selectedCharm === 'string') return ARCANA_ITEMS_BY_ID[selectedCharm] ?? null;
+  if (selectedCharm.itemId) return ARCANA_ITEMS_BY_ID[selectedCharm.itemId] ?? null;
+  if (selectedCharm.id) return ARCANA_ITEMS_BY_ID[selectedCharm.id] ?? null;
+  return null;
+}
+
+function resolveCharmConfigs(selectedCharm = null) {
+  return (Array.isArray(selectedCharm) ? selectedCharm : [selectedCharm])
+    .map(resolveCharmConfig)
+    .filter(config => config?.category === 'charm' && config.effect?.slot === ARCANA_SLOTS.CALLING);
+}
+
+function resolveCatalystConfigs(selectedCatalyst = null) {
+  return (Array.isArray(selectedCatalyst) ? selectedCatalyst : [selectedCatalyst])
+    .map(resolveCatalystConfig)
+    .filter(Boolean);
+}
+
 function resolveSigilConfig(selectedSigil = null) {
   if (!selectedSigil) return null;
   if (typeof selectedSigil === 'string') return ARCANA_ITEMS_BY_ID[selectedSigil] ?? null;
@@ -790,12 +1011,30 @@ function resolveSigilConfig(selectedSigil = null) {
   return null;
 }
 
+function resolveSigilConfigs(selectedSigil = null) {
+  return (Array.isArray(selectedSigil) ? selectedSigil : [selectedSigil])
+    .map(resolveSigilConfig)
+    .filter(Boolean);
+}
+
 export function resolveActiveTierDistribution(selectedCatalyst = null) {
-  const catalystConfig = resolveCatalystConfig(selectedCatalyst);
-  if (!catalystConfig) return BASE_PACK_TIER_DISTRIBUTION;
-  if (catalystConfig.category !== 'catalyst') return BASE_PACK_TIER_DISTRIBUTION;
-  if (catalystConfig.effect?.slot !== ARCANA_SLOTS.SURGE) return BASE_PACK_TIER_DISTRIBUTION;
-  return CATALYST_TIER_DISTRIBUTIONS[catalystConfig.id] ?? BASE_PACK_TIER_DISTRIBUTION;
+  const catalysts = resolveCatalystConfigs(selectedCatalyst).filter(config =>
+    config.category === 'catalyst' && config.effect?.slot === ARCANA_SLOTS.SURGE
+  );
+  if (catalysts.length === 0) return BASE_PACK_TIER_DISTRIBUTION;
+  if (catalysts.length === 1) {
+    return CATALYST_TIER_DISTRIBUTIONS[catalysts[0].id] ?? BASE_PACK_TIER_DISTRIBUTION;
+  }
+  const weights = { ...BASE_PACK_TIER_DISTRIBUTION };
+  for (const catalyst of catalysts) {
+    const distribution = CATALYST_TIER_DISTRIBUTIONS[catalyst.id];
+    if (!distribution) continue;
+    for (const tier of Object.keys(weights)) {
+      const base = BASE_PACK_TIER_DISTRIBUTION[tier] || 1;
+      weights[tier] *= (distribution[tier] ?? base) / base;
+    }
+  }
+  return weights;
 }
 
 export function rollTierFromDistribution(selectedCatalyst = null) {
@@ -807,11 +1046,8 @@ export function resolveModifiedTagWeights(selectedSigil = null, packBoost = null
     Object.entries(TAGS).map(([tagId, tagData]) => [tagId, tagData.weight]),
   );
 
-  const sigilConfig = resolveSigilConfig(selectedSigil);
-  if (
-    sigilConfig?.category === 'sigil' &&
-    sigilConfig.effect?.slot === ARCANA_SLOTS.INSCRIPTION
-  ) {
+  for (const sigilConfig of resolveSigilConfigs(selectedSigil)) {
+    if (sigilConfig?.category !== 'sigil' || sigilConfig.effect?.slot !== ARCANA_SLOTS.INSCRIPTION) continue;
     const sigilBoost = INSCRIPTION_SIGIL_TAG_BOOSTS[sigilConfig.id];
     if (sigilBoost && weights[sigilBoost.tag] != null) {
       weights[sigilBoost.tag] *= sigilBoost.weightMultiplier;
@@ -896,7 +1132,13 @@ export function newId() {
  * schema version — none of which exists yet, which is exactly why the boundary should exist first.
  */
 export function mintCard(fields) {
-  return { id: newId(), ...fields };
+  const socketCount = fields.socketCount ?? rollCardSocketCount(fields.rarity);
+  return {
+    id: newId(),
+    ...fields,
+    socketCount,
+    gemSockets: Array.from({ length: socketCount }, (_, index) => fields.gemSockets?.[index] ?? null),
+  };
 }
 
 const NEW_PLAYER_BOOST = 10;
@@ -908,6 +1150,7 @@ export function openPack(packTypeId = 'iron', boosted = false, options = {}) {
   const size = packType.cardCount ?? 5;
   const tierDistribution = resolveActiveTierDistribution(options.selectedCatalyst ?? options.surgeCatalyst ?? null);
   const selectedSigil = options.selectedSigil ?? options.inscriptionSigil ?? null;
+  const selectedCharm = options.selectedCharm ?? options.callingCharm ?? null;
   const weights = boosted
     ? {
         ...packType.rarityWeights,
@@ -920,9 +1163,9 @@ export function openPack(packTypeId = 'iron', boosted = false, options = {}) {
     const rarity    = rollRarity(weights);
     const tier      = rollTier(tierDistribution);
     const tag       = rollTag(packType.tagBoost ?? null, selectedSigil);
-    const unitClass = rollUnitClass();
+    const unitClass = rollUnitClass(selectedCharm);
     const value     = rollValue(rarity, tier, tag);
-    const affixes   = rollCardAffixes(unitClass.id, rarity, tier);
+    const affixes   = rollCardAffixes(unitClass.id, rarity, tier, selectedCharm);
     return mintCard({
       name: resolveCardName(unitClass.id, rarity, tier),
       classType: unitClass.id,

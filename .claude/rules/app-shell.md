@@ -22,7 +22,7 @@ The chrome around the views: nav and its indicators, the title screen, typograph
 Current view order:
 
 ```text
-Cards → Collection → Arcana → Foundry → Wilderness → Expedition → Lab → Market
+Shop → Collection → Crafting → Foundry → Wilderness → Expedition → Lab → Market
 ```
 
 **Eight tabs, not nine — `VIEWS.UNPACK` is deliberately absent from `VIEW_ORDER`.** Buying a pack and
@@ -32,7 +32,7 @@ opening it are one activity and they were two pages, so every purchase ended in 
 
 Notes:
 
-- `Cards` is the shop page (`VIEWS.SHOP`), laid out as **shelves**: each section is a
+- `Shop` is the shop page (`VIEWS.SHOP`), laid out as **shelves**: each section is a
   plank with packs standing on it and price tags hanging from its front edge. The pack
   itself is the buy button. Each pack keeps its `shop-pack-card--{id}` modifier class
   so the pre-existing per-pack glow and hover-colour rules still apply. `PackCard`
@@ -221,11 +221,13 @@ The release notes. Click-anywhere and any-key dismissal are **off** there on
 purpose — both would fire while the player is reading or arrow-scrolling the notes. The intro
 keeps them, because a splash that traps you is worse than no splash.
 
-Notes live in `src/game/changelog.js` as data (`RELEASE`), in three sections — **Changelog**,
-**Known Issues**, **Planned** — rendered as **three equal-width cards**, each scrolling
-independently, behind a toggle that is **closed by default**. Three cards fill the middle of the
-screen, which is exactly where the mountains and the drifting stream are; expanded, the menu is a
-changelog with some scenery at the edges rather than a title screen. Three shorter
+Notes live in `src/game/changelog.js` as data (`RELEASE`). The current release has three sections —
+**Changelog**, **Known Issues**, **Planned** — rendered as **three equal-width cards** behind a toggle
+that is **closed by default**. The notes pane owns vertical scrolling, and older entries in
+`RELEASE.history` sit below the current notes as collapsed `<details>` releases. This preserves the
+complete previous notes without confronting every returning player with them. Three cards fill the
+middle of the screen, which is exactly where the mountains and the drifting stream are; expanded,
+the menu is a changelog with some scenery at the edges rather than a title screen. Three shorter
 lists read far faster than one long column, and it lets the type sit at a comfortable 1rem instead
 of being shrunk to fit one panel. Columns are `repeat(3, minmax(0, 1fr))`: an earlier `1.25fr 1fr
 1fr` gave the longest list more room, but three different widths read as a layout accident —

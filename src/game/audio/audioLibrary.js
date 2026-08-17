@@ -98,11 +98,11 @@ const CARDS_RAPID_POOL = variantsOf('pool.cardsRapid', 3);
 /**
  * Interface pools, same one-encode-many-ids arrangement as the card pools.
  *
- *   PAGE_TURN  opening a pack — paper being turned over
+ *   PAGE_TURN  retained as a general paper pool; pack.open now has its own weighty impact recording
  *   UI_BLIP    navigating between views, and pressing buttons generally
  *   UI_PAPER   the Inventory and Hand drawers sliding open and shut
  *
- * `pack.buy` stays on CARD_FLIP (a pack being handled), while `pack.open` is the page turn.
+ * `pack.buy` stays on CARD_FLIP (a pack being handled), while `pack.open` uses its dedicated impact below.
  */
 /**
  * Placing a card into a slot. Its own recordings rather than a shared card-handling sound: a card
@@ -110,7 +110,6 @@ const CARDS_RAPID_POOL = variantsOf('pool.cardsRapid', 3);
  */
 const CARD_PLACE_POOL = variantsOf('pool.cardPlace', 2);
 
-const PAGE_TURN_POOL = variantsOf('pool.pageTurn', 4);
 const UI_BLIP_POOL = variantsOf('pool.uiBlip', 6);
 const UI_PAPER_POOL = variantsOf('pool.uiPaper', 2);
 
@@ -240,11 +239,11 @@ export const AUDIO_DEFINITIONS = Object.freeze([
   {
     id: SOUND_IDS.packOpen,
     bus: AUDIO_BUSES.sfx,
-    volume: 0.7,
+    volume: 0.78,
     preload: 'auto',
     maxVoices: 1,
     minRetriggerMs: 200,
-    variants: PAGE_TURN_POOL,
+    src: asset(SOUND_IDS.packOpen),
   },
   {
     id: SOUND_IDS.cardFlip,

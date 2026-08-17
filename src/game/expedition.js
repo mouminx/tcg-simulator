@@ -1,5 +1,6 @@
 import { getElementResourceId } from './arcana';
 import { ORE_TYPES, INGOT_RESOURCES } from './foundry';
+import { CRAFTED_RESOURCES_BY_ID } from './crafting';
 import { ALL_GATHERING_RESOURCES, PROCESSED_RESOURCES } from './wilderness';
 
 export const EXPEDITION_STATES = Object.freeze({
@@ -111,6 +112,7 @@ const RESOURCE_DEFINITIONS = Object.freeze({
   ingot: INGOT_RESOURCES,
   gathered: Object.fromEntries(ALL_GATHERING_RESOURCES.map(entry => [entry.id, entry])),
   processed: Object.fromEntries(PROCESSED_RESOURCES.map(entry => [entry.id, entry])),
+  crafted: CRAFTED_RESOURCES_BY_ID,
 });
 
 const EXPEDITION_REWARD_POOLS = Object.freeze({
@@ -132,16 +134,16 @@ const EXPEDITION_REWARD_POOLS = Object.freeze({
     { source: 'gathered', id: 'wood', min: 2, max: 5, weight: 28, rarityMultiplier: 0.06 },
     { source: 'gathered', id: 'hardwood', min: 1, max: 3, weight: 18, rarityMultiplier: 0.24 },
     { source: 'gathered', id: 'resin', min: 1, max: 3, weight: 16, rarityMultiplier: 0.34 },
-    { source: 'processed', id: 'timber', min: 1, max: 2, weight: 10, rarityMultiplier: 0.48 },
+    { source: 'crafted', id: 'timber', min: 1, max: 2, weight: 10, rarityMultiplier: 0.48 },
   ],
   hunter: [
     { source: 'gathered', id: 'hide', min: 2, max: 4, weight: 30, rarityMultiplier: 0.06 },
     { source: 'gathered', id: 'fine fur', min: 1, max: 3, weight: 16, rarityMultiplier: 0.26 },
     { source: 'gathered', id: 'fierce fang', min: 1, max: 2, weight: 14, rarityMultiplier: 0.42 },
-    { source: 'processed', id: 'leather', min: 1, max: 2, weight: 10, rarityMultiplier: 0.52 },
+    { source: 'crafted', id: 'roughLeather', min: 1, max: 2, weight: 10, rarityMultiplier: 0.52 },
   ],
   forager: [
-    { source: 'gathered', id: 'fiber', min: 2, max: 5, weight: 28, rarityMultiplier: 0.06 },
+    { source: 'gathered', id: 'fiberweed', min: 2, max: 5, weight: 28, rarityMultiplier: 0.06 },
     { source: 'gathered', id: 'hyssop', min: 1, max: 3, weight: 18, rarityMultiplier: 0.24 },
     { source: 'gathered', id: 'mushrooms', min: 1, max: 2, weight: 14, rarityMultiplier: 0.42 },
     { source: 'processed', id: 'alkahest', min: 1, max: 1, weight: 8, rarityMultiplier: 0.66 },
@@ -154,7 +156,7 @@ const EXPEDITION_REWARD_POOLS = Object.freeze({
   ],
   merchant: [
     { source: 'coins', id: 'coins', min: 30, max: 80, weight: 40, rarityMultiplier: 0.1 },
-    { source: 'processed', id: 'cloth', min: 1, max: 3, weight: 8, rarityMultiplier: 0.4 },
+    { source: 'crafted', id: 'linen', min: 1, max: 3, weight: 8, rarityMultiplier: 0.4 },
     { source: 'processed', id: 'sealant', min: 1, max: 2, weight: 6, rarityMultiplier: 0.55 },
   ],
   warrior: [
@@ -167,7 +169,7 @@ const EXPEDITION_REWARD_POOLS = Object.freeze({
     { source: 'coins', id: 'coins', min: 22, max: 65, weight: 28, rarityMultiplier: 0.14 },
     { source: 'arcana', id: getElementResourceId('blooming', 'mote'), min: 1, max: 2, weight: 9, rarityMultiplier: 0.5 },
     { source: 'arcana', id: getElementResourceId('jolting', 'mote'), min: 1, max: 2, weight: 9, rarityMultiplier: 0.5 },
-    { source: 'processed', id: 'cloth', min: 1, max: 2, weight: 8, rarityMultiplier: 0.42 },
+    { source: 'crafted', id: 'linen', min: 1, max: 2, weight: 8, rarityMultiplier: 0.42 },
   ],
 });
 
@@ -211,6 +213,13 @@ function getSupplySupportStats(slot) {
   if (!slot?.id || !(slot.count > 0)) return { power: 0, survival: 0, utility: 0 };
   const count = slot.count ?? 0;
   if (slot.source === 'processed') {
+    return {
+      power: 4 + count * 2,
+      survival: 10 + count * 5,
+      utility: 6 + count * 3,
+    };
+  }
+  if (slot.source === 'crafted') {
     return {
       power: 4 + count * 2,
       survival: 10 + count * 5,

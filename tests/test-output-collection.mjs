@@ -81,13 +81,14 @@ check('row-level ingot collection leaves the Forge bonus queue untouched',
   JSON.stringify(forgeAfter.forgeRewardQueue));
 
 await boot({
-  processedInventory:{timber:0,cloth:0,sealant:0,alkahest:0,mycelialExtract:0,leather:0},
+  processedInventory:{},
+  craftedInventory:{timber:0,lumber:0},
   processingSlots:[
     {slotId:1,card:null,inputId:null,inputCount:0,startedAt:null,endsAt:null,outputId:'timber'},
     {slotId:2,card:null,inputId:null,inputCount:0,startedAt:null,endsAt:null,outputId:'timber'},
-    {slotId:3,card:null,inputId:null,inputCount:0,startedAt:null,endsAt:null,outputId:'cloth'},
+    {slotId:3,card:null,inputId:null,inputCount:0,startedAt:null,endsAt:null,outputId:'lumber'},
   ],
-  processingOutputQueues:{1:{timber:1},2:{timber:5},3:{cloth:2}},
+  processingOutputQueues:{1:{timber:1},2:{timber:5},3:{lumber:2}},
   processingRewardQueue:{coins:11,blooming_mote:3},
 });
 await page.locator('.tab-bar button',{hasText:'Wilderness'}).first().click(); await page.waitForTimeout(700); await closeBag();
@@ -99,11 +100,12 @@ await page.locator('.wilderness-half--processing .forge-selector__tab').nth(1).c
 await page.locator('.wilderness-processing-row .foundry-collect-btn--row').click();
 await page.waitForTimeout(1050);
 const processingAfter=await saved();
-check('collecting Bench II transfers only Bench II output',
-  processingAfter.processedInventory.timber===5 && !processingAfter.processingOutputQueues['2'].timber,
-  JSON.stringify({inventory:processingAfter.processedInventory,queues:processingAfter.processingOutputQueues}));
+check('collecting Bench II transfers Timber to Crafted and only from Bench II',
+  processingAfter.craftedInventory.timber===5 && processingAfter.processedInventory.timber==null
+    && !processingAfter.processingOutputQueues['2'].timber,
+  JSON.stringify({crafted:processingAfter.craftedInventory,processed:processingAfter.processedInventory,queues:processingAfter.processingOutputQueues}));
 check('other Processing outputs remain waiting',
-  processingAfter.processingOutputQueues['1'].timber===1 && processingAfter.processingOutputQueues['3'].cloth===2,
+  processingAfter.processingOutputQueues['1'].timber===1 && processingAfter.processingOutputQueues['3'].lumber===2,
   JSON.stringify(processingAfter.processingOutputQueues));
 check('row-level Processing collection leaves its bonus queue untouched',
   processingAfter.processingRewardQueue.coins===11 && processingAfter.processingRewardQueue.blooming_mote===3,
@@ -114,7 +116,7 @@ await page.waitForTimeout(1050);
 const bonusAfter=await saved();
 check('the Processing bonus button collects only bonuses',
   bonusAfter.processingRewardQueue.coins===0 && bonusAfter.processingRewardQueue.blooming_mote===0
-    && bonusAfter.processingOutputQueues['1'].timber===1 && bonusAfter.processingOutputQueues['3'].cloth===2,
+    && bonusAfter.processingOutputQueues['1'].timber===1 && bonusAfter.processingOutputQueues['3'].lumber===2,
   JSON.stringify({rewards:bonusAfter.processingRewardQueue,queues:bonusAfter.processingOutputQueues}));
 
 check('no console errors',errors.length===0,errors.slice(0,3).join(' | '));

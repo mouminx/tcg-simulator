@@ -40,6 +40,7 @@ const run = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src/assets-original/audio');
 const OUT = join(ROOT, 'src/assets/audio');
+const ONLY_IDS = new Set(process.argv.slice(2));
 
 /**
  * Category presets. `target` is integrated loudness in LUFS — SFX sit hotter than ambience
@@ -76,6 +77,12 @@ const PRESETS = {
  * lands at a different time.
  */
 const MAP = [
+  // The weighty impact when a card pack is committed open. The source has ~108ms of leading silence and
+  // ~1.1s of trailing silence; the SFX preset trims both so the thump lands on the player's click and its
+  // natural decay remains intact. Treasure caches deliberately use their own `treasure.open` recordings.
+  // Opus adds roughly 1 dB of true-peak overshoot on this dense transient; a -3 dBTP encode ceiling keeps
+  // the shipped attack safely below 0 without changing its -14 LUFS perceived-loudness target.
+  { id: 'pack.open',                 preset: 'sfx',      files: 'WAV_impact_thunker_01', tp: -3 },
   // The two card pools are emitted once each under a `pool.*` id, then referenced by
   // several sound ids in audioLibrary. Encoding them per-sound would duplicate the same
   // seven files across six definitions.
@@ -286,13 +293,16 @@ async function main() {
     process.exit(1);
   }
 
-  await rm(OUT, { recursive: true, force: true });
+  // A named partial encode is useful when importing one new sound: preserve every unrelated shipped file
+  // instead of rewriting the entire audio library. With no ids, retain the full clean-rebuild behavior.
+  if (ONLY_IDS.size === 0) await rm(OUT, { recursive: true, force: true });
   await mkdir(OUT, { recursive: true });
 
   const rows = [];
   const unmatched = new Set(sources);
 
   for (const entry of MAP) {
+    if (ONLY_IDS.size > 0 && !ONLY_IDS.has(entry.id)) continue;
     const matches = sources
       .filter(f => f.startsWith(entry.files))
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -333,7 +343,7 @@ async function main() {
     console.log(`\n  Intentionally not encoded (see IGNORED):`);
     ignored.forEach(f => console.log(`    ${f}`));
   }
-  if (unmatched.size > 0) {
+  if (ONLY_IDS.size === 0 && unmatched.size > 0) {
     console.log(`\n  Unmapped sources (add them to MAP in this script):`);
     [...unmatched].forEach(f => console.log(`    ${f}`));
   }

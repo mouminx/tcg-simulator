@@ -1,5 +1,5 @@
 /**
- * Save-25 migration test.
+ * Save-27 migration test.
  *
  * The migration's whole job is a CONSISTENT rename: one legacy id maps to exactly one UUID
  * everywhere it appears. A migration that merely produced valid UUIDs — but a different one per
@@ -36,7 +36,11 @@ await enterGame(page);   // slots: no save is written until one is opened
 await page.waitForTimeout(2600);
 
 const fresh = await page.evaluate(() => JSON.parse(localStorage.getItem('tcg-sim')));
-check('fresh save is at version 25', fresh.version === 25, `got ${fresh.version}`);
+check('fresh save is at version 33', fresh.version === 33, `got ${fresh.version}`);
+check('fresh save has a distinct crafted inventory', fresh.craftedInventory?.fiber === 0, JSON.stringify(fresh.craftedInventory));
+check('fresh save has the crafting workspace',
+  fresh.craftingCardSlots?.length === 5 && fresh.craftingGridSlots?.length === 9,
+  `cards=${fresh.craftingCardSlots?.length} materials=${fresh.craftingGridSlots?.length}`);
 check('fresh save has empty staged-loot arrays',
   Array.isArray(fresh.mineLootStages) && fresh.mineLootStages.length === 0
     && Array.isArray(fresh.gatheringLootStages) && fresh.gatheringLootStages.length === 0,
@@ -62,6 +66,19 @@ const seeded = await page.evaluate(() => {
   const D = mk(3, 'warrior', 'legendary');  // -> collection, expeditionUnitSlots, expeditionRun x2
 
   save.version = 22;
+  save.processedInventory = { ...(save.processedInventory ?? {}), timber: 5 };
+  save.processedInventory.sealant = 4;
+  save.processedInventory.cloth = 6;
+  save.processedInventory.leather = 3;
+  save.gatheredInventory = { ...(save.gatheredInventory ?? {}), fiber: 7 };
+  save.gatheredInventory.honey = 5;
+  save.gatheringClaimQueue = { ...(save.gatheringClaimQueue ?? {}), fiber: 3 };
+  save.gatheringClaimQueue.honey = 2;
+  save.craftingGridSlots = save.craftingGridSlots.map((slot, index) => (
+    index === 0 ? { ...slot, source: 'processed', id: 'cloth', name: 'Cloth', count: 2 }
+      : index === 1 ? { ...slot, source: 'processed', id: 'leather', name: 'Leather', count: 1 }
+        : slot
+  ));
   save.collection = [A, B, C, D];
   // Copies, as the app stores them — structurally separate objects sharing only the id.
   save.pocket = [{ ...A }, { ...B }];
@@ -74,8 +91,12 @@ const seeded = await page.evaluate(() => {
   save.ingotClaimQueue = { ...(save.ingotClaimQueue ?? {}), steel: 3 };
   save.forgeOreSlots = save.forgeOreSlots.map((s, i) => (i === 0 ? { ...s, oreType: 'iron', count: 4 } : s));
   delete save.processingOutputQueues;
-  save.processedClaimQueue = { ...(save.processedClaimQueue ?? {}), timber: 2 };
-  save.processingSlots = save.processingSlots.map((s, i) => (i === 0 ? { ...s, outputId: 'timber' } : s));
+  save.processedClaimQueue = { ...(save.processedClaimQueue ?? {}), timber: 2, cloth: 4, leather: 2 };
+  save.processingSlots = save.processingSlots.map((s, i) => (
+    i === 0 ? { ...s, outputId: 'timber' }
+      : i === 1 ? { ...s, inputId: 'hide', inputCount: 6, outputId: 'leather', startedAt: 1, endsAt: Date.now() + 60000 }
+        : s
+  ));
   save.expeditionUnitSlots = save.expeditionUnitSlots.map((s, i) => (i === 0 ? { ...s, card: { ...D } } : s));
 
   // A run mid-reveal carries a third and fourth copy of the same card.
@@ -84,7 +105,10 @@ const seeded = await page.evaluate(() => {
     startedAt: 1, endsAt: 2, resolvedAt: 3,
     unitSlots: [{ slotId: 1, card: { ...D } }],
     unitResults: [{ slotId: 1, card: { ...D }, outcome: 'survived', survivalChance: 0.8, rewards: [], bonusRewards: [] }],
-    rewardEntries: [],
+    rewardEntries: [
+      { source: 'processed', id: 'cloth', name: 'Cloth', amount: 2 },
+      { source: 'processed', id: 'leather', name: 'Leather', amount: 1 },
+    ],
   };
 
   localStorage.setItem('tcg-sim', JSON.stringify(save));
@@ -99,7 +123,39 @@ await enterGame(page);
 
 const after = await page.evaluate(() => JSON.parse(localStorage.getItem('tcg-sim')));
 
-check('migrated save is at version 25', after.version === 25, `got ${after.version}`);
+check('migrated save is at version 33', after.version === 33, `got ${after.version}`);
+check('owned Timber migrates from Processed to Crafted',
+  after.craftedInventory?.timber === 5 && after.processedInventory?.timber == null,
+  `crafted=${after.craftedInventory?.timber} processed=${after.processedInventory?.timber}`);
+check('legacy alchemical reagents migrate from Processed to Crafted',
+  after.craftedInventory?.sealant === 4 && after.processedInventory?.sealant == null,
+  `crafted=${after.craftedInventory?.sealant} processed=${after.processedInventory?.sealant}`);
+check('legacy Cloth and Leather migrate into their crafted replacements',
+  after.craftedInventory?.linen === 10 && after.craftedInventory?.roughLeather === 5
+    && after.processedInventory?.cloth == null && after.processedInventory?.leather == null,
+  `crafted=${JSON.stringify(after.craftedInventory)} processed=${JSON.stringify(after.processedInventory)}`);
+check('placed and expedition legacy materials keep their quantities under the replacements',
+  after.craftingGridSlots?.[0]?.source === 'crafted' && after.craftingGridSlots[0].id === 'linen'
+    && after.craftingGridSlots[0].count === 2
+    && after.craftingGridSlots?.[1]?.source === 'crafted' && after.craftingGridSlots[1].id === 'roughLeather'
+    && after.expeditionRun?.rewardEntries?.[0]?.id === 'linen'
+    && after.expeditionRun?.rewardEntries?.[1]?.id === 'roughLeather',
+  `grid=${JSON.stringify(after.craftingGridSlots?.slice(0, 2))} rewards=${JSON.stringify(after.expeditionRun?.rewardEntries)}`);
+check('Hide loaded into the retired Processing recipe is safely returned',
+  after.gatheredInventory?.hide === 6
+    && after.processingSlots?.[1]?.inputId == null && after.processingSlots?.[1]?.outputId == null,
+  `hide=${after.gatheredInventory?.hide} slot=${JSON.stringify(after.processingSlots?.[1])}`);
+check('older saves receive an empty crafting workspace',
+  after.craftingCardSlots?.length === 5 && after.craftingGridSlots?.length === 9,
+  `cards=${after.craftingCardSlots?.length} materials=${after.craftingGridSlots?.length}`);
+check('legacy gathered Fiber migrates to Fiberweed',
+  after.gatheredInventory?.fiberweed === 7 && after.gatheredInventory?.fiber == null
+    && after.gatheringClaimQueue?.fiberweed === 3 && after.gatheringClaimQueue?.fiber == null,
+  `inventory=${JSON.stringify(after.gatheredInventory)} queue=${JSON.stringify(after.gatheringClaimQueue)}`);
+check('legacy Honey migrates to Honeycomb',
+  after.gatheredInventory?.honeycomb === 5 && after.gatheredInventory?.honey == null
+    && after.gatheringClaimQueue?.honeycomb === 2 && after.gatheringClaimQueue?.honey == null,
+  `inventory=${JSON.stringify(after.gatheredInventory)} queue=${JSON.stringify(after.gatheringClaimQueue)}`);
 check('older saves receive empty staged-loot arrays without disturbing their queues',
   Array.isArray(after.mineLootStages) && after.mineLootStages.length === 0
     && Array.isArray(after.gatheringLootStages) && after.gatheringLootStages.length === 0,
@@ -162,7 +218,11 @@ const minted = await page.evaluate(async () => {
   };
 });
 check('openPack mints UUIDs', minted.packIds.every(id => UUID_RE.test(id)) && new Set(minted.packIds).size === minted.packIds.length, `${minted.packIds.length} cards`);
-check('openWelcomePack mints UUIDs', minted.welcomeIds.every(id => UUID_RE.test(id)) && new Set(minted.welcomeIds).size === 9, `${minted.welcomeIds.length} cards`);
+check('openWelcomePack mints one unique UUID per current class',
+  minted.welcomeIds.every(id => UUID_RE.test(id))
+    && new Set(minted.welcomeIds).size === minted.welcomeIds.length
+    && minted.welcomeIds.length === 14,
+  `${minted.welcomeIds.length} cards`);
 check('makeCard mints a UUID', UUID_RE.test(minted.madeId), minted.madeId);
 check('newId() is unique per call', minted.twoCallsDiffer);
 check('mintCard stamps an id', minted.mintedHasId);

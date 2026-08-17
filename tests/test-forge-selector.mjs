@@ -106,6 +106,42 @@ for (const vp of [{ w: 1366, h: 768 }, { w: 1280, h: 800 }, { w: 1512, h: 982 }]
     `tabs right ${m.tabsRight} vs rail left ${m.railLeft}`);
   check(`${label}: the active iron slot shows its recipe-specific placed / required amount`,
     (await page.locator('[data-material-requirement="2/4"]').count()) === 1);
+  const requirementLayout = await page.locator('[data-material-requirement="2/4"]').evaluate(node => {
+    const card = node.closest('.foundry-square-resource__front');
+    const remove = node.closest('.foundry-forge-ore-slot')?.querySelector('.foundry-forge-ore-slot__clear');
+    const artWrap = card?.querySelector('.foundry-square-resource__art-wrap');
+    const countBox = node.getBoundingClientRect();
+    const cardBox = card?.getBoundingClientRect();
+    const removeBox = remove?.getBoundingClientRect();
+    const overlapsRemove = removeBox
+      ? Math.max(0, Math.min(countBox.right, removeBox.right) - Math.max(countBox.left, removeBox.left))
+        * Math.max(0, Math.min(countBox.bottom, removeBox.bottom) - Math.max(countBox.top, removeBox.top))
+      : 0;
+    return {
+      inBottomHalf: Boolean(cardBox && countBox.top > cardBox.top + cardBox.height / 2),
+      overlapsRemove,
+      frontOverflow: card ? getComputedStyle(card).overflow : null,
+      artOverflow: artWrap ? getComputedStyle(artWrap).overflow : null,
+      radius: card ? getComputedStyle(card).borderRadius : null,
+      frameRadius: card ? getComputedStyle(card, '::after').borderRadius : null,
+      tintRadius: card ? getComputedStyle(card, '::before').borderRadius : null,
+      tintInset: card ? getComputedStyle(card, '::before').inset : null,
+      artRadius: artWrap ? getComputedStyle(artWrap).borderRadius : null,
+      artInset: artWrap ? getComputedStyle(artWrap).inset : null,
+    };
+  });
+  check(`${label}: the recipe count is bottom-right and does not cover the remove button`,
+    requirementLayout.inBottomHalf && requirementLayout.overlapsRemove === 0,
+    JSON.stringify(requirementLayout));
+  check(`${label}: square resource artwork is clipped to the rounded card face`,
+    requirementLayout.frontOverflow === 'visible'
+      && requirementLayout.artOverflow === 'hidden'
+      && requirementLayout.radius === requirementLayout.frameRadius
+      && requirementLayout.tintRadius === requirementLayout.artRadius
+      && requirementLayout.tintInset === requirementLayout.artInset
+      && requirementLayout.artRadius !== '0px'
+      && requirementLayout.artInset === '2px',
+    JSON.stringify(requirementLayout));
   console.log(`      forge half ${m.halfH}px, inner scroll ${m.halfScroll}px`);
 
   if (vp.w === 1366) {

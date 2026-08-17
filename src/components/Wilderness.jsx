@@ -11,16 +11,23 @@ import { socketedCardDragProps } from './CardPocket';
 import StationMerge from './StationMerge';
 import HoverCardPreview, { buildHoverCardPreview } from './HoverCardPreview';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
+import ToolCard from './ToolCard';
+import LootTierBadge from './LootTierBadge';
+import { getLootTier } from '../game/lootTiers';
 import { ESSENCES_BY_ID, getElementResourceDescription, parseElementResourceId } from '../game/arcana';
+import { CRAFTED_RESOURCES_BY_ID } from '../game/crafting';
 import {
   ALL_GATHERING_RESOURCES,
-  PROCESSING_RECIPES,
-  PROCESSED_RESOURCES_BY_ID,
+  PROCESSING_BOOSTERS,
+  PROCESSING_OUTPUT_RESOURCES_BY_ID,
   TREASURE_PACK_RESOURCE,
   getGatheringAffixBonusPercent,
   getProcessingAffixBonusPercent,
+  getProcessingBoosterSpeedPercent,
   getProcessingDurationSeconds,
+  getProcessingRecipe,
   hasQueuedGatheredResources,
+  isProcessingSlotReady,
 } from '../game/wilderness';
 
 /** Processing row names. "Bench" rather than "Row" — it names the thing rather than its position, the
@@ -42,6 +49,7 @@ const RESOURCE_ART = (() => {
     }
   };
   add(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }));
+  add(import.meta.glob('../assets/crafted/*.webp', { eager: true, import: 'default' }));
   add(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' }), 'ore');
   add(import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' }));
   add(import.meta.glob('../assets/elements/**/*.webp', { eager: true, import: 'default' }));
@@ -87,12 +95,23 @@ function buildBonusRewardEntries(queue = {}) {
       artKey: many ? BONUS_COIN_REWARD.lotsArtKey : BONUS_COIN_REWARD.fewArtKey,
       description: 'Claimable coins earned from Coin Generation affixes during wilderness work.',
       count: queue.coins ?? 0,
+      tier: getLootTier('currency', 'coins'),
       gainNoun: 'coins',
     });
   }
 
   Object.entries(queue).forEach(([resourceId, count]) => {
     if (resourceId === 'coins' || !(count > 0)) return;
+    const crafted = CRAFTED_RESOURCES_BY_ID[resourceId];
+    if (crafted) {
+      entries.push({
+        ...crafted,
+        count,
+        tier: getLootTier('crafted', resourceId, crafted),
+        gainNoun: crafted.name.toLowerCase(),
+      });
+      return;
+    }
     const { elementId, tier } = parseElementResourceId(resourceId);
     const baseName = ESSENCES_BY_ID[elementId]?.name?.replace(/\s+Essence$/i, '') ?? elementId;
     const labelTier = tier.charAt(0).toUpperCase() + tier.slice(1);
@@ -102,6 +121,7 @@ function buildBonusRewardEntries(queue = {}) {
       artKey: `${elementId} ${tier}`,
       description: getElementResourceDescription(resourceId),
       count,
+      tier: getLootTier('arcana', resourceId),
       gainNoun: labelTier.toLowerCase(),
     });
   });
@@ -113,6 +133,7 @@ function SquareResourceCard({ resource, count = 0, requiredCount = null, classNa
   const artSrc = getResourceArt(resource);
   const name = typeof resource === 'string' ? resource : resource.name;
   const description = typeof resource === 'object' ? (resource.description ?? '') : '';
+  const tier = getLootTier(null, typeof resource === 'string' ? resource : resource?.id, resource);
   const showsRequirement = Number.isFinite(requiredCount) && requiredCount > 0;
   const [tipPos, setTipPos] = useState(null);
   const [clampedPos, setClampedPos] = useState(null);
@@ -150,7 +171,7 @@ function SquareResourceCard({ resource, count = 0, requiredCount = null, classNa
         ) : null}
         <div className="card-face-inner">
           <div className="card-face-front foundry-square-resource__front">
-            <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
+            <div className={`foundry-square-resource__header foundry-square-resource__header--count-only${showsRequirement ? ' foundry-square-resource__header--requirement' : ''}`}>
               <span
                 className={`foundry-square-resource__count${showsRequirement ? ' foundry-square-resource__count--requirement' : ''}`}
                 data-material-requirement={showsRequirement ? `${count ?? 0}/${requiredCount}` : undefined}
@@ -162,6 +183,7 @@ function SquareResourceCard({ resource, count = 0, requiredCount = null, classNa
             <div className="foundry-square-resource__art-wrap">
               {artSrc ? <img src={artSrc} alt={name} className="foundry-square-resource__art" /> : null}
             </div>
+            <LootTierBadge tier={tier} />
           </div>
         </div>
       </div>
@@ -193,13 +215,15 @@ function GatheringSlot({
   now,
   onPreviewEnter,
   onPreviewLeave,
+  onSocketTool,
+  onUnsocketTool,
 }) {
   const stagedTileRefs = useRef({});
   const stagedFlightsRef = useRef([]);
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
   const running = Boolean(slot.startedAt && slot.endsAt && remainingMs > 0);
-  const bonusPercent = slot.card ? getGatheringAffixBonusPercent(slot.card) : 0;
+  const bonusPercent = slot.card ? getGatheringAffixBonusPercent(slot.card, slot.tool, slot.momentumStacks) : 0;
   const durationMs = slot.startedAt && slot.endsAt ? Math.max(1, slot.endsAt - slot.startedAt) : 0;
   const progress = running && durationMs ? Math.max(0, Math.min(1, (now - slot.startedAt) / durationMs)) : 0;
   const clearTitle = returnsToPocket ? 'Remove and return to pocket' : 'Remove and return to collection';
@@ -271,10 +295,33 @@ function GatheringSlot({
             <CardFace card={slot.card} visualMode="compact" className="foundry-mine-slot__card-face no-twirl" />
           </div>
           <div className="foundry-mine-slot__right">
-            <div className="station-tool-slot" aria-label="Gathering tool or buff slot">
+            <div
+              className={`station-tool-slot${slot.tool ? ' station-tool-slot--filled' : ''}`}
+              aria-label="Gathering tool or buff slot"
+              data-tool-drop-target="gathering"
+              data-tool-slot-id={slot.slotId}
+              onDragOver={event => {
+                if (!event.dataTransfer.types.includes('application/x-cards-of-arcana-tool')) return;
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onDrop={event => {
+                const toolId = event.dataTransfer.getData('application/x-cards-of-arcana-tool');
+                if (!toolId) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onSocketTool?.(toolId);
+              }}
+            >
               <span className="station-tool-slot__speed">+{bonusPercent}% Speed</span>
-              <div className="station-tool-slot__socket">
-                <span>Tool/Buff</span>
+              <div className={`station-tool-slot__socket${slot.tool ? ' station-tool-slot__socket--filled' : ''}`}>
+                {slot.tool ? (
+                  <ToolCard
+                    tool={slot.tool}
+                    className="station-tool-card"
+                    onClick={() => onUnsocketTool?.()}
+                  />
+                ) : <span>Tool/Buff</span>}
               </div>
             </div>
             <div className={`station-loot-stage${hasStagedLoot ? ' station-loot-stage--active' : ''}`}>
@@ -383,6 +430,7 @@ function ProcessingCardSlot({
 
 function ProcessingInputSlot({
   slot,
+  kind = 'primary',
   isDragOver,
   onDragOver,
   onDragLeave,
@@ -393,8 +441,15 @@ function ProcessingInputSlot({
   carriedResource,
 }) {
   const [pickUpPopover, setPickUpPopover] = useState(null);
-  const resource = slot.inputId ? ALL_GATHERING_RESOURCES.find(entry => entry.id === slot.inputId) : null;
-  const recipe = slot.inputId ? PROCESSING_RECIPES[slot.inputId] : null;
+  const recipe = getProcessingRecipe(slot);
+  const isIngredient = kind === 'ingredient';
+  const source = isIngredient ? slot.ingredientSource : slot.inputSource;
+  const id = isIngredient ? slot.ingredientId : slot.inputId;
+  const count = isIngredient ? slot.ingredientCount : slot.inputCount;
+  const requiredCount = isIngredient ? recipe?.ingredientCount : recipe?.inputCount;
+  const resource = id
+    ? (source === 'crafted' ? CRAFTED_RESOURCES_BY_ID[id] : ALL_GATHERING_RESOURCES.find(entry => entry.id === id))
+    : null;
 
   return (
     <>
@@ -405,13 +460,13 @@ function ProcessingInputSlot({
         onDrop={onDrop}
         onPointerDown={e => {
           if (e.button !== 0) return;
-          if (carriedResource?.source === 'gathered') { onLoadFromCarry?.(); return; }
-          if (!carriedResource && resource && (slot.inputCount ?? 0) > 0) onPickUp?.(slot.inputCount);
+          if (['gathered', 'crafted'].includes(carriedResource?.source)) { onLoadFromCarry?.(); return; }
+          if (!carriedResource && resource && count > 0) onPickUp?.(source, id, count);
         }}
         onContextMenu={e => {
           e.preventDefault();
-          if (!resource || !(slot.inputCount > 0)) return;
-          setPickUpPopover({ max: slot.inputCount, position: { x: e.clientX + 10, y: e.clientY + 10 } });
+          if (!resource || !(count > 0)) return;
+          setPickUpPopover({ max: count, position: { x: e.clientX + 10, y: e.clientY + 10 } });
         }}
         data-resource-drop-target="wilderness-processing-input-slot"
         data-processing-slot-id={slot.slotId}
@@ -421,15 +476,15 @@ function ProcessingInputSlot({
             <button
               className="foundry-forge-ore-slot__clear"
               onPointerDown={e => e.stopPropagation()}
-              onClick={onClear}
+              onClick={() => onClear?.(source, id)}
               aria-label={`Remove ${resource.name} from processing slot`}
             >
               ✕
             </button>
             <SquareResourceCard
               resource={resource}
-              count={slot.inputCount ?? 0}
-              requiredCount={recipe?.inputCount ?? null}
+              count={count ?? 0}
+              requiredCount={requiredCount ?? null}
               className="foundry-forge-ore-slot__resource wilderness-square-resource"
             />
           </div>
@@ -448,7 +503,7 @@ function ProcessingInputSlot({
         mode="carry"
         onCancel={() => setPickUpPopover(null)}
         onConfirm={amount => {
-          onPickUp?.(amount);
+          onPickUp?.(source, id, amount);
           setPickUpPopover(null);
         }}
       />
@@ -456,10 +511,62 @@ function ProcessingInputSlot({
   );
 }
 
+function ProcessingBoosterSlot({ slot, onLoadFromCarry, onClear, onPickUp, carriedResource }) {
+  const booster = PROCESSING_BOOSTERS[slot?.boosterId] ?? null;
+  const resource = booster ? CRAFTED_RESOURCES_BY_ID[booster.id] : null;
+  const hasBooster = Boolean(resource && slot?.boosterCount > 0);
+  const canLoad = carriedResource?.source === 'crafted' && carriedResource?.id === 'tannin';
+
+  return (
+    <div
+      className={`foundry-forge-ingredient-slot station-booster-slot${hasBooster ? ' foundry-forge-ingredient-slot--filled station-booster-slot--active' : ''}`}
+      onPointerDown={event => {
+        if (event.button !== 0) return;
+        if (canLoad) { onLoadFromCarry?.(); return; }
+        if (!carriedResource && hasBooster) onPickUp?.();
+      }}
+      onDragOver={event => event.preventDefault()}
+      onDrop={event => { event.preventDefault(); onLoadFromCarry?.(); }}
+      data-resource-drop-target="wilderness-processing-booster-slot"
+      data-processing-slot-id={slot?.slotId}
+      aria-label={hasBooster ? `${resource.name}, ${booster.speedPercent}% tanning speed` : 'Place tannin'}
+    >
+      {hasBooster ? (
+        <div className="foundry-forge-ingredient-slot__placed">
+          <button
+            className="foundry-forge-ingredient-slot__clear"
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => { event.stopPropagation(); onClear?.(); }}
+            aria-label={`Remove ${resource.name}`}
+          >
+            ✕
+          </button>
+          <SquareResourceCard
+            resource={{
+              ...resource,
+              description: `${resource.description} +${booster.speedPercent}% tanning speed; one is consumed every ${booster.cyclesPerUnit} completed cycles.`,
+            }}
+            count={slot.boosterCount}
+            className="foundry-forge-ingredient-slot__resource station-booster-slot__resource"
+          />
+          <span className="station-booster-slot__charges">
+            {slot.boosterCharges}/{booster.cyclesPerUnit}
+          </span>
+        </div>
+      ) : (
+        <div className="foundry-forge-ingredient-slot__placeholder">
+          <span className="foundry-forge-ingredient-slot__placeholder-rune" aria-hidden="true">ᛚ</span>
+          <span className="foundry-forge-ingredient-slot__placeholder-text">Tannin</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProcessingOutputSlot({ slot, outputQueue, queueGain, tileRef = null }) {
   const queuedEntries = Object.entries(outputQueue ?? {}).filter(([, count]) => count > 0);
   const outputId = queuedEntries[0]?.[0] ?? slot.outputId ?? null;
-  const output = outputId ? PROCESSED_RESOURCES_BY_ID[outputId] : null;
+  const output = outputId ? PROCESSING_OUTPUT_RESOURCES_BY_ID[outputId] : null;
   if (!output) {
     return (
       <div className="foundry-forge-row__output-placeholder">
@@ -496,6 +603,9 @@ function ProcessingRow({
   onUnsocketInput,
   onLoadInput,
   onPickUpInput,
+  onLoadBooster,
+  onUnsocketBooster,
+  onPickUpBooster,
   carriedResource,
   onPreviewEnter,
   onPreviewLeave,
@@ -503,22 +613,23 @@ function ProcessingRow({
 }) {
   const progress = getProcessingRowProgress(slot, now);
   const running = progress > 0 && progress < 1;
-  const recipe = slot.inputId ? PROCESSING_RECIPES[slot.inputId] : null;
+  const recipe = getProcessingRecipe(slot);
   const hasOutput = hasProductionOutput(outputQueue);
-  const ready = Boolean(slot.card && recipe && (slot.inputCount ?? 0) >= recipe.inputCount);
-  const durationSeconds = slot.card ? getProcessingDurationSeconds(slot.card) : null;
+  const ready = isProcessingSlotReady(slot);
+  const durationSeconds = slot.card
+    ? getProcessingDurationSeconds(slot.card, getProcessingBoosterSpeedPercent(slot))
+    : null;
   const remainingMs = slot.endsAt ? Math.max(0, slot.endsAt - now) : 0;
   const remainingSeconds = Math.ceil(remainingMs / 1000);
 
   /**
    * Which inputs are actually feeding this cycle, keyed by position for the shared connector.
-   * Processing takes ONE material, so the middle stem is the only live one — the two aux slots are
-   * placeholders for a feature that does not exist yet and stay dark.
+   * Tanner's advanced recipe uses the left ingredient branch; single-material recipes stay centred.
    */
   const stemStates = {
-    left: 'off',
+    left: recipe?.ingredientId ? (ready ? 'live' : 'idle') : 'off',
     middle: !recipe ? 'idle' : (ready ? 'live' : 'idle'),
-    right: 'off',
+    right: getProcessingBoosterSpeedPercent(slot) > 0 ? 'live' : 'off',
   };
 
   return (
@@ -545,9 +656,24 @@ function ProcessingRow({
         <div className="foundry-forge-row__cell foundry-forge-row__cell--materials wilderness-processing-row__input">
           <div className="foundry-forge-row__rail foundry-forge-row__smelt-slots">
             <div className={`foundry-forge-row__stem-host foundry-forge-row__stem-host--${stemStates.left}`}>
-              <div className="foundry-forge-row__aux-slot">
-                <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᚲ</span>
-              </div>
+              {recipe?.ingredientId || slot.ingredientId ? (
+                <ProcessingInputSlot
+                  slot={slot}
+                  kind="ingredient"
+                  isDragOver={dragOverInputSlotId === slot.slotId}
+                  onDragOver={event => { event.preventDefault(); setDragOverInputSlotId(slot.slotId); }}
+                  onDragLeave={() => setDragOverInputSlotId(current => (current === slot.slotId ? null : current))}
+                  onDrop={event => handleInputSlotDrop(slot.slotId, event)}
+                  onClear={(source, id) => onUnsocketInput?.(slot.slotId, source, id)}
+                  onLoadFromCarry={() => onLoadInput?.(slot.slotId)}
+                  onPickUp={(source, id, amount) => onPickUpInput?.(slot.slotId, source, id, amount)}
+                  carriedResource={carriedResource}
+                />
+              ) : (
+                <div className="foundry-forge-row__aux-slot">
+                  <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᚲ</span>
+                </div>
+              )}
             </div>
             {/* The real slot takes the MIDDLE column, matching the forge putting ore there — the
                 primary input belongs on the trunk's own axis. */}
@@ -561,16 +687,20 @@ function ProcessingRow({
                 }}
                 onDragLeave={() => setDragOverInputSlotId(current => (current === slot.slotId ? null : current))}
                 onDrop={event => handleInputSlotDrop(slot.slotId, event)}
-                onClear={() => onUnsocketInput?.(slot.slotId)}
+                onClear={(source, id) => onUnsocketInput?.(slot.slotId, source, id)}
                 onLoadFromCarry={() => onLoadInput?.(slot.slotId)}
-                onPickUp={amount => onPickUpInput?.(slot.slotId, amount)}
+                onPickUp={(source, id, amount) => onPickUpInput?.(slot.slotId, source, id, amount)}
                 carriedResource={carriedResource}
               />
             </div>
             <div className={`foundry-forge-row__stem-host foundry-forge-row__stem-host--${stemStates.right}`}>
-              <div className="foundry-forge-row__aux-slot">
-                <span className="foundry-forge-row__aux-rune" aria-hidden="true">ᛚ</span>
-              </div>
+              <ProcessingBoosterSlot
+                slot={slot}
+                onLoadFromCarry={() => onLoadBooster?.(slot.slotId)}
+                onClear={() => onUnsocketBooster?.(slot.slotId)}
+                onPickUp={() => onPickUpBooster?.(slot.slotId)}
+                carriedResource={carriedResource}
+              />
             </div>
           </div>
 
@@ -635,8 +765,13 @@ export default function Wilderness({
   onLoadProcessingInput,
   onUnsocketProcessingInput,
   onPickUpProcessingInput,
+  onLoadProcessingBooster,
+  onUnsocketProcessingBooster,
+  onPickUpProcessingBooster,
   onCollectProcessedOutput,
   onCollectProcessingRewards,
+  onSocketGatheringTool,
+  onUnsocketGatheringTool,
   carriedResource = null,
   onPlaceCarriedResource,
 }) {
@@ -798,10 +933,9 @@ export default function Wilderness({
    * reasoning as the Forge's `forgeStatuses`, and as the nav's loot diamond before it.
    */
   const processingStatuses = processingSlots.map(slot => {
-    const recipe = slot.inputId ? PROCESSING_RECIPES[slot.inputId] : null;
     const progress = getProcessingRowProgress(slot, now);
     const hasCard = Boolean(slot.card);
-    const inputOk = Boolean(recipe) && (slot.inputCount ?? 0) >= recipe.inputCount;
+    const inputOk = isProcessingSlotReady(slot);
     return {
       progress,
       running: progress > 0 && progress < 1,
@@ -878,7 +1012,7 @@ export default function Wilderness({
   function handleProcessingInputSlotDrop(slotId, event) {
     event.preventDefault();
     setDragOverProcessingInputSlotId(null);
-    if (carriedResource?.source !== 'gathered' || typeof onLoadProcessingInput !== 'function') return;
+    if (!['gathered', 'crafted'].includes(carriedResource?.source) || typeof onLoadProcessingInput !== 'function') return;
     onLoadProcessingInput(slotId);
   }
 
@@ -970,6 +1104,8 @@ export default function Wilderness({
                     returnsToPocket={returnsGatheringCardsToPocket}
                     onPreviewEnter={(element, card) => setHoverPreview(buildHoverCardPreview(element, card))}
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
+                    onSocketTool={toolId => onSocketGatheringTool?.(toolId, slot.slotId)}
+                    onUnsocketTool={() => onUnsocketGatheringTool?.(slot.slotId)}
                   />
                 ))}
               </div>
@@ -1137,6 +1273,9 @@ export default function Wilderness({
                     onUnsocketInput={onUnsocketProcessingInput}
                     onLoadInput={onLoadProcessingInput}
                     onPickUpInput={onPickUpProcessingInput}
+                    onLoadBooster={onLoadProcessingBooster}
+                    onUnsocketBooster={onUnsocketProcessingBooster}
+                    onPickUpBooster={onPickUpProcessingBooster}
                     carriedResource={carriedResource}
                     onPreviewEnter={(element, card) => setHoverPreview(buildHoverCardPreview(element, card))}
                     onPreviewLeave={card => setHoverPreview(current => (current?.card?.id === card?.id ? null : current))}
@@ -1164,7 +1303,7 @@ export default function Wilderness({
                     {processingRewardEntries.map(entry => (
                       <SquareResourceCard
                         key={`processing-bonus-${entry.id}`}
-                        resource={{ name: entry.name, artKey: entry.artKey, description: entry.description }}
+                        resource={{ id: entry.id, name: entry.name, artKey: entry.artKey, description: entry.description, tier: entry.tier }}
                         count={entry.count}
                         gainLabel={queueGainByProcessingReward[entry.id] ? `+ ${queueGainByProcessingReward[entry.id]} ${entry.gainNoun}` : null}
                         tileRef={el => { processingRewardRefs.current[entry.id] = el; }}

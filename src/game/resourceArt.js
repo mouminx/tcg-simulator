@@ -26,6 +26,9 @@ const makeArtMap = (files) => {
 const ORE_ART = makeArtMap(import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' }));
 const INGOT_ART = makeArtMap(import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' }));
 const RESOURCE_ART = makeArtMap(import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }));
+const CRAFTED_ART = makeArtMap(import.meta.glob('../assets/crafted/*.webp', { eager: true, import: 'default' }));
+const TOOL_ART = makeArtMap(import.meta.glob('../assets/tools/*.webp', { eager: true, import: 'default' }));
+const GEM_ART = makeArtMap(import.meta.glob('../assets/gems/*.webp', { eager: true, import: 'default' }));
 const CHARM_ART = makeArtMap(import.meta.glob('../assets/cards/charms/*.webp', { eager: true, import: 'default' }));
 const ELEMENT_ART = makeArtMap({
   ...import.meta.glob('../assets/elements/essences/*.webp', { eager: true, import: 'default' }),
@@ -41,7 +44,22 @@ function titleCase(value) {
 export function getResourceArt(key) {
   if (!key) return null;
   const k = key.toLowerCase();
-  return RESOURCE_ART[k] ?? CHARM_ART[k] ?? null;
+  return RESOURCE_ART[k] ?? GEM_ART[k] ?? CHARM_ART[k] ?? CRAFTED_ART[k] ?? null;
+}
+
+export function getGemArt(key) {
+  if (!key) return null;
+  return GEM_ART[key.toLowerCase()] ?? null;
+}
+
+export function getCraftedArt(key) {
+  if (!key) return null;
+  return CRAFTED_ART[key.toLowerCase()] ?? null;
+}
+
+export function getToolArt(key) {
+  if (!key) return null;
+  return TOOL_ART[key.toLowerCase()] ?? null;
 }
 
 export function getArcanaResourceArt(resourceId) {
@@ -84,6 +102,9 @@ export function getShopMaterialArt(material) {
     case 'ore': return getOreArt(material.id);
     case 'ingot': return getIngotArt(material.id);
     case 'resource': return getArcanaResourceArt(material.id);
+    // Crafted inventory IDs are camelCase while optimized filenames use their authored art keys
+    // (`roughLeather` -> `rough_leather`). Shop entries carry that canonical key when the two differ.
+    case 'crafted': return getCraftedArt(material.artKey ?? material.id);
     case 'gathered':
     case 'processed':
     default: return getResourceArt(material.id);

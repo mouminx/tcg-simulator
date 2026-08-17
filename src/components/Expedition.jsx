@@ -10,10 +10,13 @@ import {
   getExpeditionClassIcon,
 } from '../game/expedition';
 import { parseElementResourceId } from '../game/arcana';
+import { getLootTier } from '../game/lootTiers';
+import LootTierBadge from './LootTierBadge';
 
 const RESOURCE_ART = Object.fromEntries(
   Object.entries({
     ...import.meta.glob('../assets/resources/*.webp', { eager: true, import: 'default' }),
+    ...import.meta.glob('../assets/crafted/*.webp', { eager: true, import: 'default' }),
     ...import.meta.glob('../assets/ores/*.webp', { eager: true, import: 'default' }),
     ...import.meta.glob('../assets/ingots/*.webp', { eager: true, import: 'default' }),
     ...import.meta.glob('../assets/elements/**/*.webp', { eager: true, import: 'default' }),
@@ -131,6 +134,7 @@ function ResourceSlot({ slot, label, dragOver = false, locked = false, onPointer
                 <div className="foundry-square-resource__art-wrap">
                   {artSrc ? <img src={artSrc} alt={slot.name} className="foundry-square-resource__art" /> : null}
                 </div>
+                <LootTierBadge tier={getLootTier(type === 'arcana' ? 'arcana-item' : slot.source, slot.id ?? slot.itemId, slot)} />
               </div>
             </div>
           </div>
@@ -181,6 +185,7 @@ function RewardTile({ reward }) {
           <div className="foundry-square-resource__art-wrap">
             {artSrc ? <img src={artSrc} alt={reward.name} className="foundry-square-resource__art" /> : null}
           </div>
+          <LootTierBadge tier={getLootTier(reward.source, reward.id, reward)} />
         </div>
       </div>
     </div>
@@ -482,7 +487,7 @@ export default function Expedition({
                             onPointerDown={event => {
                               if (event.button !== 0) return;
                               if (!carriedResource) return;
-                              if (!['gathered', 'processed'].includes(carriedResource.source)) return;
+                              if (!['gathered', 'processed', 'crafted'].includes(carriedResource.source)) return;
                               onLoadSupply?.(slot.slotId);
                             }}
                             onClear={() => onUnsocketSupply?.(slot.slotId)}

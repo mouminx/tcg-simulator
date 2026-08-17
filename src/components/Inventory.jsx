@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 
 import { ORE_TYPES, INGOT_RESOURCES } from '../game/foundry';
 import { GATHERED_ONLY_RESOURCES, PROCESSED_RESOURCES } from '../game/wilderness';
+import { CRAFTED_RESOURCES } from '../game/crafting';
+import { GEM_RESOURCES, GEM_RESOURCES_BY_ID } from '../game/gems';
 import {
   CHARMS,
   CATALYSTS,
@@ -12,10 +14,14 @@ import {
   parseElementResourceId,
 } from '../game/arcana';
 import ResourceQuantityPopover from './ResourceQuantityPopover';
+import ToolCard from './ToolCard';
+import LootTierBadge from './LootTierBadge';
+import { getLootTier } from '../game/lootTiers';
 // Moved to `game/resourceArt.js` so the shop's Goods shelf can draw the same cards. See that file for why
 // ore and ingot art must stay in separate maps.
 import {
   getArcanaResourceArt,
+  getCraftedArt,
   getIngotArt,
   getOreArt,
   getResourceArt,
@@ -71,7 +77,7 @@ function formatArcanaResourceName(resourceId) {
   return tier === 'essence' ? essence.name : `${base} ${titleCase(tier)}`;
 }
 
-function ResourceTile({ name, artSrc, count, description = '', onContextMenu, onClick, dataDropTarget, tileRef, draggable = false, onDragStart = null }) {
+function ResourceTile({ name, artSrc, count, tier = null, description = '', onContextMenu, onClick, dataDropTarget, tileRef, draggable = false, onDragStart = null }) {
   const [tipPos, setTipPos] = useState(null);
   const [clampedPos, setClampedPos] = useState(null);
   const [displayCount, setDisplayCount] = useState(count ?? 0);
@@ -163,6 +169,7 @@ function ResourceTile({ name, artSrc, count, description = '', onContextMenu, on
             <div className="foundry-square-resource__art-wrap">
               {artSrc && <img src={artSrc} alt={name} className="foundry-square-resource__art" />}
             </div>
+            <LootTierBadge tier={tier} />
           </div>
         </div>
       </div>
@@ -202,12 +209,17 @@ export default function Inventory({
   ingotInventory = {},
   gatheredInventory = {},
   processedInventory = {},
+  craftedInventory = {},
+  toolInventory = [],
   arcanaInventory = [],
   onBeginCarry,
   onPlaceCarriedResource,
+  onBeginToolDrag,
   carriedResource = null,
   open = true,
   onToggle,
+  craftingActive = false,
+  onCardCraftingResource = null,
 }) {
   const [carryPopover, setCarryPopover] = useState(null);
 
@@ -257,8 +269,11 @@ export default function Inventory({
    * filtering here keeps a stale save from re-displaying them in the wrong place before its migration
    * has been written back.
    */
-  const gathered = GATHERED_ONLY_RESOURCES.filter(r => (gatheredInventory[r.id] ?? 0) > 0 || isCarried('gathered', r.id));
+  const gems = GEM_RESOURCES.filter(r => (gatheredInventory[r.id] ?? 0) > 0 || isCarried('gathered', r.id));
+  const gathered = GATHERED_ONLY_RESOURCES.filter(r => !GEM_RESOURCES_BY_ID[r.id]
+    && ((gatheredInventory[r.id] ?? 0) > 0 || isCarried('gathered', r.id)));
   const processed = PROCESSED_RESOURCES.filter(r => (processedInventory[r.id] ?? 0) > 0 || isCarried('processed', r.id));
+  const crafted = CRAFTED_RESOURCES.filter(r => (craftedInventory[r.id] ?? 0) > 0 || isCarried('crafted', r.id));
   const arcanaResources = Object.entries(resources)
     .filter(([resourceId, count]) => (count ?? 0) > 0 || isCarried('arcana', resourceId))
     .map(([resourceId, count]) => {
@@ -277,10 +292,15 @@ export default function Inventory({
 
   const oreTotal = ORE_TYPES.reduce((sum, ore) => sum + (oreInventory[ore.id] ?? 0), 0);
   const ingotTotal = ORE_TYPES.reduce((sum, ore) => sum + (ingotInventory[ore.ingotId] ?? 0), 0);
-  const gatheredTotal = GATHERED_ONLY_RESOURCES.reduce((sum, r) => sum + (gatheredInventory[r.id] ?? 0), 0);
+  const gemTotal = GEM_RESOURCES.reduce((sum, r) => sum + (gatheredInventory[r.id] ?? 0), 0);
+  const gatheredTotal = GATHERED_ONLY_RESOURCES.reduce((sum, r) => (
+    GEM_RESOURCES_BY_ID[r.id] ? sum : sum + (gatheredInventory[r.id] ?? 0)
+  ), 0);
   const processedTotal = PROCESSED_RESOURCES.reduce((sum, r) => sum + (processedInventory[r.id] ?? 0), 0);
+  const craftedTotal = CRAFTED_RESOURCES.reduce((sum, r) => sum + (craftedInventory[r.id] ?? 0), 0);
+  const toolTotal = toolInventory.length;
   const arcanaResourceTotal = arcanaResources.reduce((sum, resource) => sum + (resource.count ?? 0), 0);
-  const grandTotal = oreTotal + ingotTotal + gatheredTotal + processedTotal + arcanaResourceTotal + (arcanaInventory?.length ?? 0);
+  const grandTotal = oreTotal + ingotTotal + gemTotal + gatheredTotal + processedTotal + craftedTotal + toolTotal + arcanaResourceTotal + (arcanaInventory?.length ?? 0);
 
   const arcanaCounts = arcanaInventory.reduce((acc, item) => {
     acc[item.itemId] = (acc[item.itemId] ?? 0) + 1;
@@ -292,7 +312,25 @@ export default function Inventory({
 
   return (
     <>
-      <div className={`inventory-panel${open ? ' inventory-panel--open' : ''}`}>
+      <div
+        className={`inventory-panel${open ? ' inventory-panel--open' : ''}${craftingActive ? ' inventory-panel--crafting' : ''}`}
+        onClickCapture={event => {
+          if (!craftingActive) return;
+          const tile = event.target.closest?.('[data-resource-drop-target]');
+          const target = tile?.dataset?.resourceDropTarget;
+          if (!target) return;
+          const separator = target.indexOf(':');
+          if (separator < 1) return;
+          const handled = onCardCraftingResource?.({
+            source: target.slice(0, separator),
+            id: target.slice(separator + 1),
+            cursor: { x: event.clientX, y: event.clientY },
+          });
+          if (!handled) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
         <button
           ref={inventoryRef}
           className="drawer-tab inventory-toggle"
@@ -329,6 +367,7 @@ export default function Inventory({
                   name={ore.name}
                   artSrc={getOreArt(ore.id)}
                   count={oreInventory[ore.id] ?? 0}
+                  tier={getLootTier('ore', ore.id, ore)}
                   description={ore.description}
                   onContextMenu={e => {
                     e.preventDefault();
@@ -358,6 +397,7 @@ export default function Inventory({
                     name={ingot.name}
                     artSrc={getIngotArt(ingot.artKey)}
                     count={ingotInventory[ore.ingotId] ?? 0}
+                    tier={getLootTier('ingot', ore.ingotId, ingot)}
                     description={ingot.description}
                     onContextMenu={e => {
                       e.preventDefault();
@@ -379,6 +419,34 @@ export default function Inventory({
               }) : <p className="inventory-empty">No ingots smelted</p>}
             </InventorySection>
 
+            <InventorySection title="Gems" total={gemTotal}>
+              {gems.length > 0 ? gems.map(resource => (
+                <ResourceTile
+                  key={resource.id}
+                  name={resource.name}
+                  artSrc={getResourceArt(resource.artKey)}
+                  count={gatheredInventory[resource.id] ?? 0}
+                  tier={getLootTier('gathered', resource.id, resource)}
+                  description={resource.description}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    if ((gatheredInventory[resource.id] ?? 0) <= 0) return;
+                    setCarryPopover({ source: 'gathered', id: resource.id, name: resource.name, max: gatheredInventory[resource.id] ?? 0, position: { x: e.clientX + 10, y: e.clientY + 10 } });
+                  }}
+                  onClick={event => {
+                    const count = gatheredInventory[resource.id] ?? 0;
+                    if (carriedResource) { onPlaceCarriedResource?.({ source: 'gathered', id: resource.id }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'gathered', id: resource.id, name: resource.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
+                  }}
+                  dataDropTarget={`gathered:${resource.id}`}
+                  draggable
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'gathered', id: resource.id, name: resource.name, amount: gatheredInventory[resource.id] ?? 0,
+                  })}
+                />
+              )) : <p className="inventory-empty">No gems found</p>}
+            </InventorySection>
+
             <InventorySection title="Gathered" total={gatheredTotal}>
               {gathered.length > 0 ? gathered.map(resource => (
                 <ResourceTile
@@ -386,6 +454,7 @@ export default function Inventory({
                   name={resource.name}
                   artSrc={getResourceArt(resource.artKey ?? resource.id)}
                   count={gatheredInventory[resource.id] ?? 0}
+                  tier={getLootTier('gathered', resource.id, resource)}
                   description={resource.description}
                   onContextMenu={e => {
                     e.preventDefault();
@@ -413,6 +482,7 @@ export default function Inventory({
                   name={resource.name}
                   artSrc={getResourceArt(resource.id)}
                   count={processedInventory[resource.id] ?? 0}
+                  tier={getLootTier('processed', resource.id, resource)}
                   description={resource.description}
                   onContextMenu={e => {
                     e.preventDefault();
@@ -433,6 +503,57 @@ export default function Inventory({
               )) : <p className="inventory-empty">Nothing processed yet</p>}
             </InventorySection>
 
+            <InventorySection title="Crafted" total={craftedTotal}>
+              {crafted.length > 0 ? crafted.map(resource => (
+                <ResourceTile
+                  key={resource.id}
+                  name={resource.name}
+                  artSrc={getCraftedArt(resource.artKey ?? resource.id)}
+                  count={craftedInventory[resource.id] ?? 0}
+                  tier={getLootTier('crafted', resource.id, resource)}
+                  description={resource.description}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    if ((craftedInventory[resource.id] ?? 0) <= 0) return;
+                    setCarryPopover({ source: 'crafted', id: resource.id, name: resource.name, max: craftedInventory[resource.id] ?? 0, position: { x: e.clientX + 10, y: e.clientY + 10 } });
+                  }}
+                  onClick={event => {
+                    const count = craftedInventory[resource.id] ?? 0;
+                    if (carriedResource) { onPlaceCarriedResource?.({ source: 'crafted', id: resource.id }); }
+                    else if (count > 0) { onBeginCarry?.({ source: 'crafted', id: resource.id, name: resource.name, amount: count, cursor: { x: event.clientX, y: event.clientY } }); }
+                  }}
+                  dataDropTarget={`crafted:${resource.id}`}
+                  draggable
+                  onDragStart={event => beginResourceDrag(event, {
+                    source: 'crafted', id: resource.id, name: resource.name, amount: craftedInventory[resource.id] ?? 0,
+                  })}
+                />
+              )) : <p className="inventory-empty">Nothing crafted yet</p>}
+            </InventorySection>
+
+            <InventorySection title="Tools" total={toolTotal}>
+              {toolInventory.length > 0 ? toolInventory.map(tool => (
+                <ToolCard
+                  key={tool.id}
+                  tool={tool}
+                  className="inventory-tool-card"
+                  draggable
+                  onClick={event => onBeginToolDrag?.(tool, { x: event.clientX, y: event.clientY })}
+                  onDragStart={event => {
+                    const began = onBeginToolDrag?.(tool, { x: event.clientX, y: event.clientY });
+                    if (!began) { event.preventDefault(); return; }
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('application/x-cards-of-arcana-tool', tool.id);
+                    const ghost = document.createElement('span');
+                    ghost.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;';
+                    document.body.appendChild(ghost);
+                    event.dataTransfer.setDragImage(ghost, 0, 0);
+                    requestAnimationFrame(() => ghost.remove());
+                  }}
+                />
+              )) : <p className="inventory-empty">No tools crafted</p>}
+            </InventorySection>
+
             <InventorySection title="Arcana" total={arcanaTotal}>
               {arcanaResources.length > 0 ? arcanaResources.map(resource => (
                 <ResourceTile
@@ -440,6 +561,7 @@ export default function Inventory({
                   name={resource.name}
                   artSrc={getArcanaResourceArt(resource.resourceId)}
                   count={resource.count}
+                  tier={getLootTier('arcana', resource.resourceId)}
                   description={resource.description}
                   onContextMenu={e => {
                     e.preventDefault();
@@ -470,6 +592,7 @@ export default function Inventory({
                   name={item.name}
                   artSrc={item.artKey ? getResourceArt(item.artKey) : null}
                   count={arcanaCounts[item.id] ?? 0}
+                  tier={getLootTier('arcana-item', item.id, item)}
                   description={item.description}
                   onContextMenu={e => {
                     e.preventDefault();

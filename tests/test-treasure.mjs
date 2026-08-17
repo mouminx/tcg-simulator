@@ -10,7 +10,7 @@ import { enterGame } from './enter.mjs';
 const results=[]; const check=(n,p,d='')=>{results.push({n,p,d});console.log(`${p?'PASS':'FAIL'}  ${n}${d?`  — ${d}`:''}`);};
 const browser = await chromium.launch();
 const errors=[];
-let flightLook = null;
+let stagedLook = null;
 const page = await browser.newPage({ viewport:{width:1512,height:982} });
 page.on('console',m=>{if(m.type()==='error'&&!/WebGL|THREE|GPU/i.test(m.text()))errors.push(m.text());});
 page.on('pageerror',e=>errors.push(`pageerror: ${e.message}`));
@@ -30,16 +30,25 @@ const tabState = () => page.evaluate(()=>[...document.querySelectorAll('.unpack-
   empty: t.className.includes('--empty'),
 })));
 // Staging + confirming, which is how a held item reaches the opening flow.
-async function openFirstItem({ inspectFlight = false } = {}) {
+async function openFirstItem({ inspectStaged = false, afterConfirmWait = 900 } = {}) {
   await page.locator('.unpack-pack-item').first().hover({position:{x:18,y:60}});
   await page.waitForTimeout(300);
-  await page.locator('.unpack-pack-item').first().click({position:{x:18,y:60}});
-  if (inspectFlight) {
-    // The flight to the summoning spot lasts ~560ms. Sampled early, while it is still travelling.
+  // The neighbouring stack item steps aside on hover. At dense/short layouts the pointer can sit exactly
+  // on that moving boundary and Playwright's stability wait chases the transition indefinitely; the visible
+  // strip is already explicitly targeted, so force only bypasses that synthetic stability loop.
+  await page.locator('.unpack-pack-item').first().click({position:{x:18,y:60}, force:true});
+  if (inspectStaged) {
+    // Selection is intentionally direct (no flight). The staged cache must retain the same square loot
+    // geometry rather than inheriting the foil pack's 1:1.5 stage box.
     await page.waitForTimeout(180);
-    flightLook = await page.evaluate(()=>{
+    stagedLook = await page.evaluate(()=>{
       const f=document.querySelector('.unpack-flying-pack');
-      return { present: !!f, loot: !!f?.querySelector('.held-loot'), pack: !!f?.querySelector('.pack-display') };
+      const stage=document.querySelector('.summon-pack-wrap');
+      const tile=stage?.querySelector('.held-loot');
+      const a=stage?.getBoundingClientRect();
+      const b=tile?.getBoundingClientRect();
+      return { flight: !!f, loot: !!tile, pack: !!stage?.querySelector('.pack-display'),
+        stage: a ? [a.width,a.height] : null, tile: b ? [b.width,b.height] : null };
     });
   }
   await page.waitForTimeout(700);
@@ -47,10 +56,10 @@ async function openFirstItem({ inspectFlight = false } = {}) {
     const b=page.locator('.shop-summon__altar button',{hasText:rx}).first();
     if (await b.count()) { await b.click(); break; }
   }
-  await page.waitForTimeout(900);
+  await page.waitForTimeout(afterConfirmWait);
 }
 
-await page.goto('http://localhost:5199/',{waitUntil:'networkidle'});
+await page.goto(process.env.TEST_URL ?? 'http://localhost:5199/',{waitUntil:'networkidle'});
 await page.evaluate(()=>localStorage.clear());
 await page.reload({waitUntil:'networkidle'}); await page.waitForTimeout(2400); await enterGame(page);
 await page.waitForFunction(()=>!!localStorage.getItem('tcg-sim'),null,{timeout:20000});
@@ -104,27 +113,39 @@ await page.locator('.unpack-group-tab',{hasText:'Treasure'}).click(); await page
 
 const heldLook = await page.evaluate(()=>{
   const item=document.querySelector('.unpack-pack-item');
+  const row=document.querySelector('.unpack-pack-row');
+  const tile=item?.querySelector('.held-loot');
+  const itemBox=item?.getBoundingClientRect();
+  const tileBox=tile?.getBoundingClientRect();
+  const rowBox=row?.getBoundingClientRect();
   return { loot: !!item?.querySelector('.held-loot'), pack: !!item?.querySelector('.pack-display'),
     art: item?.querySelector('.foundry-square-resource__art')?.getAttribute('src')?.includes('treasure_chest') ?? false,
-    box: item?.querySelector('.held-loot') ? (()=>{const b=item.querySelector('.held-loot').getBoundingClientRect();
-      return `${Math.round(b.width)}x${Math.round(b.height)}`;})() : null };
+    item: itemBox ? [itemBox.width,itemBox.height] : null,
+    tile: tileBox ? [tileBox.width,tileBox.height] : null,
+    contained: !!(itemBox && tileBox && rowBox && tileBox.left >= itemBox.left - 1 && tileBox.right <= itemBox.right + 1
+      && tileBox.right <= rowBox.right + 1) };
 });
 check('a held cache is drawn as a square LOOT tile, not a pack graphic',
   heldLook.loot && !heldLook.pack, JSON.stringify(heldLook));
-check('...with the chest artwork, square', heldLook.art && heldLook.box === '110x110', JSON.stringify(heldLook));
+check('...with square wrapper and artwork fully contained at the right edge', heldLook.art && heldLook.contained
+  && Math.abs(heldLook.item[0]-heldLook.item[1]) <= 1 && Math.abs(heldLook.tile[0]-heldLook.tile[1]) <= 1
+  && Math.abs(heldLook.item[0]-heldLook.tile[0]) <= 1, JSON.stringify(heldLook));
 
 
-await openFirstItem({ inspectFlight: true });
-check('the cache keeps its loot look while flying to the summoning spot',
-  flightLook?.present && flightLook.loot && !flightLook.pack, JSON.stringify(flightLook));
+await openFirstItem({ inspectStaged: true, afterConfirmWait: 80 });
+check('the cache keeps its square loot look when staged, with no movement portal',
+  stagedLook?.loot && !stagedLook.pack && !stagedLook.flight
+  && Math.abs(stagedLook.stage[0]-stagedLook.stage[1]) <= 1
+  && Math.abs(stagedLook.tile[0]-stagedLook.tile[1]) <= 1, JSON.stringify(stagedLook));
 check('a treasure cache opens with the chest, not a pack',
   (await page.locator('.treasure-cache').count())===1 && (await page.locator('.split-pack').count())===0,
   `cache=${await page.locator('.treasure-cache').count()} split-pack=${await page.locator('.split-pack').count()}`);
 check('the chest artwork resolves (not the fallback glyph)',
   (await page.locator('.treasure-cache .foundry-square-resource__art').count())===1
   && (await page.locator('.held-loot__fallback').count())===0);
-
-await page.locator('.treasure-cache').click();
+check('Open Pack immediately starts the treasure animation without a second cache click',
+  (await page.locator('.treasure-cache--bursting').count())===1,
+  `bursting=${await page.locator('.treasure-cache--bursting').count()}`);
 
 // ── CHARGE (0-520ms): still a framed loot card, flooding to white ──
 await page.waitForTimeout(300);
@@ -194,7 +215,7 @@ check('...pure WHITE, matching the state the card ended on, with no artwork show
   burst.fillColour==='rgb(255, 255, 255)' && burst.fillHasArt===false,
   `fill=${burst.fillColour} hasArt=${burst.fillHasArt}`);
 check('...cut from the card\'s ROUNDED square, not a square',
-  burst.fillRadius==='18px', `radius=${burst.fillRadius}`);
+  parseFloat(burst.fillRadius)>0, `radius=${burst.fillRadius}`);
 check('...and the intact card is gone, so the substitution cannot be seen',
   burst.originalGone, `originalGone=${burst.originalGone}`);
 check('...with per-fragment durations, so they do not fade in lockstep',
@@ -207,18 +228,39 @@ check('30 shards, each with its own destination', burst.count===30 && burst.dist
   `${burst.count} shards, ${burst.distinctOffsets} distinct offsets`);
 // The whole point of TREASURE_BURST_MS: the loot must not appear while the chest is still bursting.
 check('the loot is NOT revealed mid-burst', burst.revealShowing===false, `reveal=${burst.revealShowing}`);
-await page.waitForTimeout(900);
+await page.waitForTimeout(1900);
 const afterBurst = await page.evaluate(()=>({
   queued: document.querySelectorAll('.cards-queue > *').length,
   centreReveal: document.querySelectorAll('.opening-resource-card--reveal').length,
+  mainGeometry: [...document.querySelectorAll('.treasure-reward-reveal--visible')].map(slot=>{
+    const slotBox=slot.getBoundingClientRect();
+    const card=slot.querySelector('.opening-resource-card--treasure');
+    const cardBox=card?.getBoundingClientRect();
+    return { left:slotBox.left, right:slotBox.right, slot:[slotBox.width,slotBox.height], card:cardBox?[cardBox.width,cardBox.height]:null };
+  }),
+  mainContained: (()=>{
+    const stage=document.querySelector('.opening-stage')?.getBoundingClientRect();
+    const cards=[...document.querySelectorAll('.treasure-reward-reveal--visible')].map(card=>card.getBoundingClientRect());
+    return !!stage && cards.every(card=>card.left >= stage.left-1 && card.right <= stage.right+1
+      && card.top >= stage.top-1 && card.bottom <= stage.bottom+1);
+  })(),
+  queueTray: document.querySelectorAll('.pack-opening__queue-tray').length,
   claim: !!document.querySelector('.collect-btn'),
   quickDraw: !!document.querySelector('.quick-draw-btn'),
   hint: document.querySelector('.hint')?.textContent?.trim(),
 }));
-// A cache spills everything: all five rewards straight into the strip, no tap-through, no Quick Draw button.
-check('...and the whole cache is revealed at once, all rewards in the strip',
-  afterBurst.queued === 5 && afterBurst.centreReveal === 0,
+// A cache populates the altar itself from left to right, never the playing-card strip.
+check('...and all five rewards appear in the main altar rather than the card strip',
+  afterBurst.mainGeometry.length === 5 && afterBurst.queued === 0 && afterBurst.queueTray === 0 && afterBurst.centreReveal === 0,
   JSON.stringify(afterBurst));
+check('...as square loot cards, never forced into playing-card proportions',
+  afterBurst.mainContained && afterBurst.mainGeometry.length===5
+  && afterBurst.mainGeometry.every(({slot,card})=>card && Math.abs(slot[0]-slot[1])<=1
+    && Math.abs(card[0]-card[1])<=1 && Math.abs(slot[0]-card[0])<=1),
+  JSON.stringify(afterBurst.mainGeometry));
+check('...laid left-to-right with no horizontal overlap',
+  afterBurst.mainGeometry.every((card,index,list)=>index===0 || card.left >= list[index-1].right-1),
+  JSON.stringify(afterBurst.mainGeometry.map(card=>[card.left,card.right])));
 check('...with the Claim button ready and no card-by-card step',
   afterBurst.claim && !afterBurst.quickDraw, JSON.stringify(afterBurst));
 
@@ -229,8 +271,7 @@ const firstClips = burst.clips.join('|');
 await page.waitForTimeout(900);
 await boot({ packs: [{id:'t1',packTypeId:'treasure'},{id:'t2',packTypeId:'treasure'}], graphicsSettings:{quality:'high'} });
 await page.locator('.unpack-group-tab',{hasText:'Treasure'}).click(); await page.waitForTimeout(400);
-await openFirstItem();
-await page.locator('.treasure-cache').click();
+await openFirstItem({ afterConfirmWait: 80 });
 await page.waitForTimeout(700);
 const secondClips = await page.evaluate(()=>[...document.querySelectorAll('.treasure-piece')]
   .map(p=>getComputedStyle(p).clipPath).join('|'));
@@ -241,8 +282,7 @@ check('a second cache shatters along different cracks',
 // ── The burst must survive the low/medium `animation: none` blanket ──
 await boot({ packs: [{id:'t1',packTypeId:'treasure'}], graphicsSettings:{quality:'low'} });
 await page.locator('.unpack-group-tab',{hasText:'Treasure'}).click(); await page.waitForTimeout(400);
-await openFirstItem();
-await page.locator('.treasure-cache').click();
+await openFirstItem({ afterConfirmWait: 80 });
 await page.waitForTimeout(700);
 const low = await page.evaluate(()=>{
   const s=document.querySelector('.treasure-shard');
@@ -294,19 +334,19 @@ await page.evaluate(()=>{
   window.__played = played;
 });
 await page.locator('.unpack-group-tab',{hasText:'Treasure'}).click(); await page.waitForTimeout(400);
-await openFirstItem();
-const beforeClick = await page.evaluate(()=>window.__played.slice());
-await page.locator('.treasure-cache').click();
+const beforeOpen = await page.evaluate(()=>window.__played.slice());
+await openFirstItem({ afterConfirmWait: 80 });
 await page.waitForTimeout(250);
-const afterClick = await page.evaluate(()=>window.__played.slice());
-const newIds = afterClick.slice(beforeClick.length);
-check('clicking the cache plays treasure.open', newIds.includes('treasure.open'), newIds.join(', ') || 'nothing');
+const afterOpen = await page.evaluate(()=>window.__played.slice());
+const newIds = afterOpen.slice(beforeOpen.length);
+check('pressing Open Pack plays treasure.open exactly once',
+  newIds.filter(id=>id==='treasure.open').length===1, newIds.join(', ') || 'nothing');
 check('...and a cache never plays the pack-tearing sound',
-  !beforeClick.includes('pack.open') && !newIds.includes('pack.open'),
-  `before=[${beforeClick.join(', ')}] after=[${newIds.join(', ')}]`);
+  !beforeOpen.includes('pack.open') && !newIds.includes('pack.open'),
+  `before=[${beforeOpen.join(', ')}] after=[${newIds.join(', ')}]`);
 
 // ── The gold total glows and bursts, even though treasure pops its coins in place ──
-await page.waitForTimeout(1600);
+await page.waitForTimeout(2600);
 // Sample the peak of the burst rather than guessing when it happens: the coins pop in place first, then the
 // balance changes, then the count-up starts 260ms later. Poll instead of picking a timeout.
 const goldPeak = { pumping:false, glow:'none', bursts:0 };

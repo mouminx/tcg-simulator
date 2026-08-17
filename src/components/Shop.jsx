@@ -3,34 +3,16 @@ import { createPortal } from 'react-dom';
 import PackCard from './PackCard';
 import { PACK_TYPES } from '../game/cards';
 import Gold from './Gold';
-import { PERMANENT_PACK_IDS } from '../game/cards';
-import { SHOP_MATERIALS, getRotationOffers, discountedCost } from '../game/shop';
+import {
+  SHOP_MATERIALS,
+  getEscalatingShopPrice,
+  getGoodsRotation,
+  getRotationOffers,
+  normalizeShopPurchases,
+} from '../game/shop';
 import { getShopMaterialArt } from '../game/resourceArt';
-
-/**
- * The permanently-stocked shelves. Two, not five.
- *
- * The shop carried 21 purchasable packs across five shelves, of which most were permanently ignored — the
- * Horizon Set in particular was five 10-card near-duplicates of the Core ladder at overlapping prices, and
- * has been deleted. The Vault and Tag Edition packs still exist but are stocked a few at a time by the
- * rotation, so what is on sale changes instead of being a wall.
- */
-const PERMANENT_SECTIONS = [
-  {
-    id: 'core',
-    label: 'Core Set',
-    tagline: '5 cards per pack',
-    detail: 'The essentials. Standard drop rates across all rarities.',
-    packIds: PERMANENT_PACK_IDS,
-  },
-  {
-    id: 'arcana',
-    label: 'Arcana Packs',
-    tagline: '5 cards · Attunement-ready',
-    detail: 'Blank Slate packs can be routed through the Arcana Station before opening.',
-    packIds: ['blankSlate'],
-  },
-];
+import { getLootTier } from '../game/lootTiers';
+import LootTierBadge from './LootTierBadge';
 
 function FlyingPack({ startX, startY, endX, endY, packType, onDone }) {
   const ref = useRef(null);
@@ -59,8 +41,40 @@ function FlyingPack({ startX, startY, endX, endY, packType, onDone }) {
   );
 }
 
+function FlyingGood({ startX, startY, endX, endY, material, artSrc, onDone }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.style.transform = `translate(${endX - startX}px, ${endY - startY}px) scale(0.08)`;
+      el.style.opacity = '0';
+    }));
+    const timer = setTimeout(onDone, 620);
+    return () => clearTimeout(timer);
+  }, []);
+  return createPortal(
+    <div ref={ref} className="flying-good" style={{ left: startX, top: startY }} aria-hidden="true">
+      <div className="card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned goods-card__tile">
+        <div className="card-face-inner">
+          <div className="card-face-front foundry-square-resource__front">
+            <div className="foundry-square-resource__art-wrap">
+              {artSrc
+                ? <img src={artSrc} alt="" className="foundry-square-resource__art" />
+                : <span className="goods-card__no-art">⬡</span>}
+            </div>
+            <LootTierBadge tier={getLootTier(material.inventory, material.id)} />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function Shop({
-  balance, onBuyPack, onBuyMaterial, packsNavRef, packsHeld = 0, maxPacks = Infinity,
+  balance, onBuyPack, onBuyMaterial, packsNavRef, inventoryTargetRef, shopPurchases,
+  packsHeld = 0, maxPacks = Infinity,
   /**
    * Permanent upgrades, as `{ id, label, detail, unit, cost, current, max }`.
    *
@@ -73,64 +87,64 @@ export default function Shop({
   onBuyUpgrade,
 }) {
   const buyBtnRefs = useRef({});
+  const goodsTileRefs = useRef({});
   const [flyingPacks, setFlyingPacks] = useState([]);
-  // One shelf at a time. Ten stacked sections was ~3600px of scroll; a few categories
-  // with one visible shelf fits any viewport and reads as a shop counter.
-  const [activeSection, setActiveSection] = useState(PERMANENT_SECTIONS[0].id);
+  const [flyingGoods, setFlyingGoods] = useState([]);
+  const [goodsTooltip, setGoodsTooltip] = useState(null);
+  const [activeSection, setActiveSection] = useState('goods');
 
   /**
    * The rotation shelf, rebuilt as the window turns.
    *
-   * `now` ticks once a minute rather than once a second: the only thing it drives is a countdown shown to
-   * the minute, so a per-second interval would re-render the whole shop sixty times for no visible change.
+   * `now` ticks once a second so the five-minute countdown reaches the next shelf without a stale minute.
    * The offers themselves are a pure function of the clock (see `getRotationOffers`), so nothing is stored
    * and a reload cannot reroll them.
    */
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
+    const id = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
 
   const rotation = getRotationOffers(now);
-  const discountById = Object.fromEntries(rotation.offers.map(o => [o.packId, o.discountPct]));
-  const hoursLeft = Math.floor(rotation.msRemaining / 3_600_000);
-  const minsLeft = Math.max(0, Math.round((rotation.msRemaining % 3_600_000) / 60_000));
+  const goodsRotation = getGoodsRotation(now);
+  const purchases = normalizeShopPurchases(shopPurchases, now);
+  const minsLeft = Math.floor(Math.max(0, rotation.msRemaining) / 60_000);
+  const secsLeft = Math.floor(Math.max(0, rotation.msRemaining % 60_000) / 1000);
+  const countdown = `${minsLeft}:${String(secsLeft).padStart(2, '0')}`;
+  const rotatedGoods = goodsRotation.offers
+    .map(offer => SHOP_MATERIALS.find(material => material.shopId === offer.materialId))
+    .filter(Boolean);
 
   const SECTIONS = [
-    ...PERMANENT_SECTIONS,
+    {
+      id: 'packs',
+      label: 'Card Packs',
+      packIds: ['blankSlate', ...rotation.offers.map(offer => offer.packId)],
+    },
     {
       id: 'goods',
       label: 'Goods',
-      tagline: 'Materials, delivered to your Bag',
-      detail: 'Bought at a premium over what they sell for — a shortcut when a forge is idle, not a way to '
-        + 'turn gold into more gold.',
-      // Not packs. The shelf below branches on this id; the count still wants a length.
-      packIds: SHOP_MATERIALS.map(m => m.id),
+      packIds: rotatedGoods.map(material => material.shopId),
     },
     {
       id: 'upgrades',
       label: 'Upgrades',
-      tagline: 'Permanent · one-off',
-      detail: 'Bought once and kept. These were buttons buried in the Hand rail and the Mine, where a '
-        + 'player with gold to spend had no reason to look.',
       // Only what can still be bought. A shelf of maxed-out upgrades is a shelf of things you cannot
-      // buy, and the count in the rail has to agree with what is actually on offer.
+      // buy, even though the category itself remains available in the rail.
       packIds: upgrades.filter(u => u.cost != null && u.current < u.max).map(u => u.id),
     },
-    {
-      id: 'rotation',
-      label: 'Rotation Deals',
-      tagline: hoursLeft > 0 ? `New stock in ${hoursLeft}h ${minsLeft}m` : `New stock in ${minsLeft}m`,
-      detail: 'Vault and Edition packs, a few at a time. Rotates on its own — what is here now will not be.',
-      packIds: rotation.offers.map(o => o.packId),
-    },
   ];
+  const activeSectionMeta = SECTIONS.find(section => section.id === activeSection) ?? SECTIONS[0];
+  const activeSectionStatus = activeSection === 'upgrades' ? 'Permanent' : `New stock in ${countdown}`;
 
   const packsFull = packsHeld >= maxPacks;
 
   function handleBuy(pt) {
-    if (balance < discountedCost(pt.cost, discountById[pt.id] ?? 0) || packsFull) return;
+    if (packsFull) return;
+    const price = getEscalatingShopPrice(pt.cost, purchases.packs[pt.id] ?? 0);
+    if (balance < price) return;
+    if (onBuyPack?.(pt.id) !== true) return;
     const btn = buyBtnRefs.current[pt.id];
     if (btn && packsNavRef?.current) {
       const start = btn.getBoundingClientRect();
@@ -144,29 +158,33 @@ export default function Shop({
         endY: end.top + end.height / 2,
       }]);
     }
-    onBuyPack(pt.id);
+  }
+
+  function handleBuyGood(material) {
+    const price = getEscalatingShopPrice(material.cost, purchases.goods[material.shopId] ?? 0);
+    if (balance < price || onBuyMaterial?.(material.shopId) !== true) return;
+    const source = goodsTileRefs.current[material.shopId];
+    const target = inventoryTargetRef?.current;
+    if (source && target) {
+      const start = source.getBoundingClientRect();
+      const end = target.getBoundingClientRect();
+      const id = Date.now() + Math.random();
+      setFlyingGoods(previous => [...previous, {
+        id,
+        material,
+        artSrc: getShopMaterialArt(material),
+        startX: start.left,
+        startY: start.top,
+        endX: end.left + end.width / 2 - start.width / 2,
+        endY: end.top + end.height / 2 - start.height / 2,
+      }]);
+    }
   }
 
   return (
     <>
       <div className={`shop${packsFull ? ' shop--packs-full' : ''}`}>
-        <div className="shop-header">
-          <h2>Shop</h2>
-          {/* No standing subtitle. Explanatory prose under a heading reads as a web page
-              rather than a game; the shelf itself says what this screen is for. The one line
-              that stays is functional — it tells the player why buying stopped working. */}
-          {packsFull && (
-            <p className="shop-subtitle">
-              {`Pack limit reached — open some of your ${packsHeld} unopened packs to buy more.`}
-            </p>
-          )}
-        </div>
-
-        {/* Two columns: the section rail on the left, the shelf on the right.
-            It was a horizontal row of tabs above the shelf, which read as page navigation. Stacked down
-            the left it reads as a buy menu — the thing a shop counter actually has — and it also gives the
-            rail a fixed narrow column instead of one that reflows into two rows as sections are added. */}
-        <div className="shop-layout">
+        <div className="shop-topbar">
           <div className="shop-categories" role="tablist" aria-label="Shop sections">
             {SECTIONS.map(section => (
               <button
@@ -177,63 +195,69 @@ export default function Shop({
                 onClick={() => setActiveSection(section.id)}
               >
                 <span className="shop-category__label">{section.label}</span>
-                <span className="shop-category__count">{section.packIds.length}</span>
               </button>
             ))}
           </div>
 
+          <div className="shop-header">
+            <h2>Shop</h2>
+            <h3 className="shop-header__section">{activeSectionMeta.label}</h3>
+            <p className="shop-header__status">{activeSectionStatus}</p>
+          </div>
+        </div>
+
+        <div className="shop-layout">
+
           {activeSection === 'goods' && (
             <div className="shop-section shop-section--goods">
-              <div className="shop-section-header">
-                <div className="shop-section-title-row">
-                  <h3 className="shop-section-title">Goods</h3>
-                  <span className="shop-section-tagline">Materials, delivered to your Bag</span>
-                </div>
-                <p className="shop-section-detail">
-                  Bought at a premium over what they sell for — a shortcut when a forge is idle, not a way to
-                  turn gold into more gold.
-                </p>
-              </div>
-
               {/* The goods themselves, as the same square resource cards the Bag and the production
                   queues draw — so what you are buying looks like what you will receive. It was a list of
                   text rows with a price button, which read as a spreadsheet rather than a shop. */}
               <ul className="goods-grid">
-                {SHOP_MATERIALS.map(material => {
-                  const affordable = balance >= material.cost;
+                {rotatedGoods.map(material => {
+                  const bought = purchases.goods[material.shopId] ?? 0;
+                  const price = getEscalatingShopPrice(material.cost, bought);
+                  const affordable = balance >= price;
                   const artSrc = getShopMaterialArt(material);
                   return (
-                    <li key={material.id} className="goods-card">
+                    <li
+                      key={material.shopId}
+                      className="goods-card"
+                      onMouseEnter={event => setGoodsTooltip({
+                        x: event.clientX,
+                        y: event.clientY,
+                        name: material.label,
+                        body: `Buy 1 · ${bought} purchased this rotation · Current price ${price} gold`,
+                      })}
+                      onMouseMove={event => setGoodsTooltip(previous => previous && ({ ...previous, x: event.clientX, y: event.clientY }))}
+                      onMouseLeave={() => setGoodsTooltip(null)}
+                    >
                       {/* `card-face-wrapper no-twirl foundry-square-resource` is the shared inventory tile
                           treatment, reused rather than restyled so the two cannot drift apart. */}
-                      <div className="card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned goods-card__tile">
+                      <div
+                        ref={element => { goodsTileRefs.current[material.shopId] = element; }}
+                        className="card-face-wrapper no-twirl foundry-square-resource foundry-square-resource--owned goods-card__tile"
+                      >
                         <div className="card-face-inner">
                           <div className="card-face-front foundry-square-resource__front">
-                            <div className="foundry-square-resource__header foundry-square-resource__header--count-only">
-                              {/* The quantity SOLD, not a quantity owned — hence the leading multiplier. */}
-                              <span className="foundry-square-resource__count">×{material.qty}</span>
-                            </div>
                             <div className="foundry-square-resource__art-wrap">
                               {artSrc
                                 ? <img src={artSrc} alt={material.label} className="foundry-square-resource__art" />
                                 : <span className="goods-card__no-art" aria-hidden="true">⬡</span>}
                             </div>
+                            <LootTierBadge tier={getLootTier(material.inventory, material.id)} />
+                            <button
+                              type="button"
+                              className="goods-item__buy goods-card__buy"
+                              disabled={!affordable}
+                              aria-label={`Buy one ${material.label} for ${price}`}
+                              onClick={() => handleBuyGood(material)}
+                            >
+                              <Gold amount={price} />
+                            </button>
                           </div>
                         </div>
                       </div>
-
-                      <span className="goods-card__label">{material.label}</span>
-
-                      <button
-                        type="button"
-                        className="goods-item__buy goods-card__buy"
-                        disabled={!affordable}
-                        title={affordable ? `Buy ${material.qty} ${material.label}` : 'Not enough gold'}
-                        aria-label={`Buy ${material.qty} ${material.label} for ${material.cost}`}
-                        onClick={() => onBuyMaterial?.(material.id)}
-                      >
-                        <Gold amount={material.cost} />
-                      </button>
                     </li>
                   );
                 })}
@@ -243,16 +267,6 @@ export default function Shop({
 
           {activeSection === 'upgrades' && (
             <div className="shop-section shop-section--upgrades">
-              <div className="shop-section-header">
-                <div className="shop-section-title-row">
-                  <h3 className="shop-section-title">Upgrades</h3>
-                  <span className="shop-section-tagline">Permanent · one-off</span>
-                </div>
-                <p className="shop-section-detail">
-                  Bought once and kept. Each shows what you have now and what you would have.
-                </p>
-              </div>
-
               <ul className="goods-shelf upgrade-shelf">
                 {upgrades.map(upgrade => {
                   const maxed = upgrade.current >= upgrade.max || upgrade.cost == null;
@@ -277,7 +291,6 @@ export default function Shop({
                           type="button"
                           className="goods-item__buy"
                           disabled={!affordable}
-                          title={affordable ? `Unlock — ${upgrade.label}` : 'Not enough gold'}
                           onClick={() => onBuyUpgrade?.(upgrade.id)}
                         >
                           <Gold amount={upgrade.cost} />
@@ -293,18 +306,10 @@ export default function Shop({
             </div>
           )}
 
-          {SECTIONS.filter(section => section.id === activeSection && !['goods', 'upgrades'].includes(section.id)).map(section => {
+          {SECTIONS.filter(section => section.id === activeSection && section.id === 'packs').map(section => {
             const packs = section.packIds.map(id => PACK_TYPES[id]).filter(Boolean);
             return (
               <div key={section.id} className={`shop-section shop-section--${section.id}`}>
-                <div className="shop-section-header">
-                  <div className="shop-section-title-row">
-                    <h3 className="shop-section-title">{section.label}</h3>
-                    <span className="shop-section-tagline">{section.tagline}</span>
-                  </div>
-                  <p className="shop-section-detail">{section.detail}</p>
-                </div>
-
                 {/* Shelf: packs stand on a plank, price tags hang off its front edge.
                     The `shop-pack-card--{id}` modifier is kept on each pack so the
                     existing per-pack glow and hover-colour rules still apply. */}
@@ -314,7 +319,7 @@ export default function Shop({
                     {packs.map(pt => {
                       // Same pure function App uses to charge, so the tag cannot show a price that is not
                       // the one taken. See handleBuyPack.
-                      const price = discountedCost(pt.cost, discountById[pt.id] ?? 0);
+                      const price = getEscalatingShopPrice(pt.cost, purchases.packs[pt.id] ?? 0);
                       const canAfford = balance >= price;
                       const blocked = !canAfford || packsFull;
                       return (
@@ -327,13 +332,6 @@ export default function Shop({
                             className={`shelf-pack__grab shop-pack-card--${pt.id}`}
                             onClick={() => handleBuy(pt)}
                             disabled={blocked}
-                            title={
-                              packsFull
-                                ? `Open some packs first — ${maxPacks} unopened is the limit`
-                                : canAfford
-                                  ? `Buy ${pt.name} Pack — ${pt.description}`
-                                  : `Not enough gold for ${pt.name} Pack`
-                            }
                             aria-label={`Buy ${pt.name} Pack for ${price}. ${pt.description}`}
                           >
                             <span className="shop-pack-preview">
@@ -348,9 +346,6 @@ export default function Shop({
                               {blocked
                                 ? <span className="shelf-pack__tag-short"><Gold amount={price} /></span>
                                 : <Gold amount={price} />}
-                              {discountById[pt.id] > 0 && (
-                                <span className="shelf-pack__discount">−{discountById[pt.id]}%</span>
-                              )}
                             </span>
                           </div>
 
@@ -375,6 +370,20 @@ export default function Shop({
           onDone={() => setFlyingPacks(prev => prev.filter(fp => fp.id !== p.id))}
         />
       ))}
+      {flyingGoods.map(item => (
+        <FlyingGood
+          key={item.id}
+          {...item}
+          onDone={() => setFlyingGoods(previous => previous.filter(entry => entry.id !== item.id))}
+        />
+      ))}
+      {goodsTooltip && createPortal(
+        <div className="resource-tooltip shop-goods-tooltip" style={{ left: goodsTooltip.x, top: goodsTooltip.y }}>
+          <span className="resource-tooltip__name">{goodsTooltip.name}</span>
+          <span className="resource-tooltip__desc">{goodsTooltip.body}</span>
+        </div>,
+        document.body,
+      )}
     </>
   );
 }
